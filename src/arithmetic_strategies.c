@@ -89,6 +89,7 @@ strategy_t arithmetic_neg_strategy = {
 int can_handle_arithmetic_not(cs_insn *insn) {
     // NOT strategy only makes sense for MOV, not arithmetic operations
     // Removing this strategy from arithmetic operations
+    (void)insn;  // Parameter intentionally unused
     return 0;
 }
 
