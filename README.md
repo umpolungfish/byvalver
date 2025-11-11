@@ -306,8 +306,8 @@ Specialized modules for different instruction types:
 - **`NOT` OPERATIONS** - Construct values via bitwise NOT
   - Example: `MOV EAX, 0x11220033` → `MOV EAX, 0xEEDDFFCC; NOT EAX`
   
-- **`ADD/SUB` ENCODING** - Multi-step arithmetic construction
-  - Example: `MOV EAX, 0x00100000` → `MOV EAX, 0x00100005; SUB EAX, 5`
+- **`ADD/SUB` ENCODING** - Multi-step arithmetic construction. The system can now robustly find two null-free values that, when added or subtracted, produce the target immediate.
+  - Example: `MOV EAX, 0x00100000` → `MOV EAX, 0x11223344; SUB EAX, 0x11123344`
   
 - **`XOR` ENCODING** - XOR-based value construction
 

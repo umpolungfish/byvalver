@@ -1,6 +1,14 @@
 #include "utils.h"
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
+
+// Initialize random seed
+__attribute__((constructor))
+static void initialize_rand() {
+    srand(time(NULL));
+}
+
 
 // Helper functions for buffer manipulation
 void buffer_write_byte(struct buffer *b, uint8_t byte) {
@@ -566,58 +574,36 @@ void generate_xor_encoded_arithmetic(struct buffer *b, cs_insn *insn) {
 
 // ADD/SUB Encoding functions
 // Find a suitable add/sub operation that when applied to the target doesn't produce null bytes in the encoded value
-int find_addsub_key(uint32_t target, uint32_t *add_key, int *is_add) {
-    // Try different ADD/SUB values to see if any produce an encoded value without null bytes
-    for (uint32_t key = 1; key <= 0x00FFFFFF; key += 0x111111) {  // Limit range to avoid null bytes in key itself
-        // Try ADD operation: if target = encoded_val + key, then encoded_val = target - key
-        if (target >= key) {  // Only if subtraction is valid
-            uint32_t encoded = target - key;
-            
-            // Check if encoded value has null bytes
-            int has_null = 0;
-            for (int i = 0; i < 4; i++) {
-                if (((encoded >> (i * 8)) & 0xFF) == 0) {
-                    has_null = 1;
-                    break;
-                }
-            }
-            
-            if (!has_null) {
-                *add_key = key;
-                *is_add = 0; // SUB
-                return 1; // Found a suitable key for SUB operation
-            }
+int find_addsub_key(uint32_t target, uint32_t *val1, uint32_t *val2, int *is_add) {
+    // Try to find a pair of null-free numbers (val1, val2) such that:
+    // 1. val1 - val2 = target  (operation is SUB)
+    // 2. val1 + val2 = target  (operation is ADD)
+
+    for (int i = 0; i < 1000; i++) { // Try 1000 times to find a pair
+        uint32_t temp_val2 = rand();
+        if (!is_null_free(temp_val2)) {
+            continue;
         }
-        
-        // Try SUB operation: if target = encoded_val - key, then encoded_val = target + key
-        uint32_t encoded = target + key;
-        
-        // Check if encoded value has null bytes
-        int has_null = 0;
-        for (int i = 0; i < 4; i++) {
-            if (((encoded >> (i * 8)) & 0xFF) == 0) {
-                has_null = 1;
-                break;
-            }
+
+        // Try SUB
+        uint32_t temp_val1 = target + temp_val2;
+        if (is_null_free(temp_val1)) {
+            *val1 = temp_val1;
+            *val2 = temp_val2;
+            *is_add = 0; // SUB
+            return 1;
         }
-        
-        if (!has_null) {
-            // Also check that the key itself has no null bytes
-            int key_has_null = 0;
-            for (int i = 0; i < 4; i++) {
-                if (((key >> (i * 8)) & 0xFF) == 0) {
-                    key_has_null = 1;
-                    break;
-                }
-            }
-            
-            if (!key_has_null) {
-                *add_key = key;
-                *is_add = 1; // ADD
-                return 1; // Found a suitable key for ADD operation
-            }
+
+        // Try ADD
+        temp_val1 = target - temp_val2;
+        if (is_null_free(temp_val1)) {
+            *val1 = temp_val1;
+            *val2 = temp_val2;
+            *is_add = 1; // ADD
+            return 1;
         }
     }
+
     return 0; // No suitable key found
 }
 
@@ -630,9 +616,9 @@ void generate_addsub_encoded_mov(struct buffer *b, cs_insn *insn) {
     uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
     uint8_t target_reg = insn->detail->x86.operands[0].reg;
     
-    uint32_t addsub_key;
+    uint32_t val1, val2;
     int is_add;
-    if (!find_addsub_key(target, &addsub_key, &is_add)) {
+    if (!find_addsub_key(target, &val1, &val2, &is_add)) {
         // If we can't find a good ADD/SUB key, this strategy can't handle it
         // The system will fall back to other strategies
         generate_mov_reg_imm(b, insn);
@@ -641,7 +627,7 @@ void generate_addsub_encoded_mov(struct buffer *b, cs_insn *insn) {
     
     // If target register is EAX, we can work directly
     if (target_reg == X86_REG_EAX) {
-        uint32_t encoded_val = is_add ? (target + addsub_key) : (target - addsub_key);
+        uint32_t encoded_val = is_add ? (target + val2) : (target - val2);
         
         // MOV EAX, encoded_val (using null-free construction)
         generate_mov_eax_imm(b, encoded_val);
@@ -649,16 +635,16 @@ void generate_addsub_encoded_mov(struct buffer *b, cs_insn *insn) {
         // ADD/SUB EAX, key
         if (is_add) {
             uint8_t add_eax_key[] = {0x05, 0, 0, 0, 0};  // ADD EAX, imm32
-            memcpy(add_eax_key + 1, &addsub_key, 4);
+            memcpy(add_eax_key + 1, &val2, 4);
             buffer_append(b, add_eax_key, 5);
         } else {
             uint8_t sub_eax_key[] = {0x2D, 0, 0, 0, 0};  // SUB EAX, imm32
-            memcpy(sub_eax_key + 1, &addsub_key, 4);
+            memcpy(sub_eax_key + 1, &val2, 4);
             buffer_append(b, sub_eax_key, 5);
         }
     } else {
         // For other registers, use a save/restore approach
-        uint32_t encoded_val = is_add ? (target + addsub_key) : (target - addsub_key);
+        uint32_t encoded_val = is_add ? (target + val2) : (target - val2);
         
         // PUSH EAX
         uint8_t push_eax[] = {0x50};
@@ -670,11 +656,11 @@ void generate_addsub_encoded_mov(struct buffer *b, cs_insn *insn) {
         // ADD/SUB EAX, key
         if (is_add) {
             uint8_t add_eax_key[] = {0x05, 0, 0, 0, 0};  // ADD EAX, imm32
-            memcpy(add_eax_key + 1, &addsub_key, 4);
+            memcpy(add_eax_key + 1, &val2, 4);
             buffer_append(b, add_eax_key, 5);
         } else {
             uint8_t sub_eax_key[] = {0x2D, 0, 0, 0, 0};  // SUB EAX, imm32
-            memcpy(sub_eax_key + 1, &addsub_key, 4);
+            memcpy(sub_eax_key + 1, &val2, 4);
             buffer_append(b, sub_eax_key, 5);
         }
         
@@ -698,9 +684,9 @@ void generate_addsub_encoded_arithmetic(struct buffer *b, cs_insn *insn) {
     uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
     uint8_t target_reg = insn->detail->x86.operands[0].reg;
     
-    uint32_t addsub_key;
+    uint32_t val1, val2;
     int is_add;
-    if (!find_addsub_key(target, &addsub_key, &is_add)) {
+    if (!find_addsub_key(target, &val1, &val2, &is_add)) {
         // If we can't find a good ADD/SUB key, this strategy can't handle it
         // The system will fall back to other strategies
         generate_op_reg_imm(b, insn);
@@ -713,17 +699,17 @@ void generate_addsub_encoded_arithmetic(struct buffer *b, cs_insn *insn) {
     buffer_append(b, &push_reg, 1);
     
     // MOV EAX, encoded_val (using null-free construction)
-    uint32_t encoded_val = is_add ? (target + addsub_key) : (target - addsub_key);
+    uint32_t encoded_val = is_add ? (target + val2) : (target - val2);
     generate_mov_eax_imm(b, encoded_val);
     
     // ADD/SUB EAX, key
     if (is_add) {
         uint8_t add_eax_key[] = {0x05, 0, 0, 0, 0};  // ADD EAX, imm32
-        memcpy(add_eax_key + 1, &addsub_key, 4);
+        memcpy(add_eax_key + 1, &val2, 4);
         buffer_append(b, add_eax_key, 5);
     } else {
         uint8_t sub_eax_key[] = {0x2D, 0, 0, 0, 0};  // SUB EAX, imm32
-        memcpy(sub_eax_key + 1, &addsub_key, 4);
+        memcpy(sub_eax_key + 1, &val2, 4);
         buffer_append(b, sub_eax_key, 5);
     }
     
@@ -844,5 +830,10 @@ void generate_op_reg_imm_not(struct buffer *b, cs_insn *insn) {
     } else {
         generate_op_reg_imm(b, insn);
     }
+}
+
+// Check if a 32-bit value is null-free
+int is_null_free(uint32_t val) {
+    return !((val & 0x000000FF) == 0 || (val & 0x0000FF00) == 0 || (val & 0x00FF0000) == 0 || (val & 0xFF000000) == 0);
 }
 

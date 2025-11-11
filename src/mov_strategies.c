@@ -1,6 +1,7 @@
 #include "strategy.h"
 #include "utils.h"
 #include <stdio.h>
+#include <string.h>
 
 // MOV with original strategy
 int can_handle_mov_original(cs_insn *insn) {
@@ -164,15 +165,74 @@ strategy_t mov_not_strategy = {
 
 // MOV with ADD/SUB strategy
 int can_handle_mov_addsub(cs_insn *insn) {
-    return is_mov_instruction(insn) && has_null_bytes(insn);
+    if (!is_mov_instruction(insn) || !has_null_bytes(insn)) {
+        return 0;
+    }
+    uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
+    uint32_t val1, val2;
+    int is_add;
+    return find_addsub_key(target, &val1, &val2, &is_add);
 }
 
 size_t get_size_mov_addsub(cs_insn *insn) {
-    return get_addsub_encoded_mov_size(insn);
+    // MOV reg, val1 (5-6 bytes) + SUB/ADD reg, val2 (3-6 bytes)
+    // Conservatively, 6 + 6 = 12 bytes.
+    // If the register is EAX, it's 5 + 5 = 10.
+    // If we use a temporary register, it's PUSH + MOV EAX + SUB/ADD + MOV + POP = 1 + 5 + 5 + 2 + 1 = 14
+    uint8_t reg = insn->detail->x86.operands[0].reg;
+    if (reg == X86_REG_EAX) {
+        return 10;
+    }
+    return 14;
 }
 
 void generate_mov_addsub(struct buffer *b, cs_insn *insn) {
-    generate_addsub_encoded_mov(b, insn);
+    uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
+    uint8_t target_reg = insn->detail->x86.operands[0].reg;
+
+    uint32_t val1, val2;
+    int is_add;
+    if (!find_addsub_key(target, &val1, &val2, &is_add)) {
+        // Fallback if no key is found (should not happen if can_handle is correct)
+        generate_mov_reg_imm(b, insn);
+        return;
+    }
+
+    cs_insn temp_insn = *insn;
+
+    if (target_reg == X86_REG_EAX) {
+        // MOV EAX, val1
+        temp_insn.detail->x86.operands[1].imm = val1;
+        generate_mov_reg_imm(b, &temp_insn);
+
+        // SUB/ADD EAX, val2
+        uint8_t opcode = is_add ? 0x05 : 0x2D; // ADD EAX, imm32 or SUB EAX, imm32
+        uint8_t code[] = {opcode, 0, 0, 0, 0};
+        memcpy(code + 1, &val2, 4);
+        buffer_append(b, code, 5);
+    } else {
+        // Use EAX as a temporary register
+        // PUSH EAX
+        uint8_t push_eax[] = {0x50};
+        buffer_append(b, push_eax, 1);
+
+        // MOV EAX, val1
+        generate_mov_eax_imm(b, val1);
+
+        // SUB/ADD EAX, val2
+        uint8_t opcode = is_add ? 0x05 : 0x2D;
+        uint8_t code[] = {opcode, 0, 0, 0, 0};
+        memcpy(code + 1, &val2, 4);
+        buffer_append(b, code, 5);
+
+        // MOV target_reg, EAX
+        uint8_t mov_reg_eax[] = {0x89, 0xC0 + get_reg_index(target_reg)};
+        buffer_append(b, mov_reg_eax, 2);
+
+        // POP EAX
+        uint8_t pop_eax[] = {0x58};
+        buffer_append(b, pop_eax, 1);
+    }
 }
 
 strategy_t mov_addsub_strategy = {

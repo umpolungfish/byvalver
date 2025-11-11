@@ -260,6 +260,15 @@ The BYVALVER system has been completely refactored with a clean, modular archite
 - **Benefits**: Provides a robust solution for complex memory access patterns with segment prefixes and displacement addresses containing null bytes, significantly expanding BYVALVER's capability to handle real-world shellcode patterns.
 - **Verification**: Testing confirmed that the strategy successfully eliminates null bytes from complex instructions like `JMP [0x30000000]` with GS prefix in `injector.bin` while maintaining logical functionality.
 
+## Additional Strategy Implementation: Arithmetic Equivalent Substitution
+
+- **Inspiration**: Based on the "Arithmetic Equivalent Substitution" strategy (#11) from `NEW_STRATEGIES.md`, which references `linux_x86/13339.asm` using `mov bx,1666; sub bx,1634` to achieve the value `32` without null bytes.
+- **Implementation**: Implemented a robust strategy that, for a `MOV reg, imm32` instruction with a null-containing immediate, finds a pair of null-free 32-bit integers (`val1`, `val2`) that can produce the target immediate via arithmetic. The system randomly searches for a `val2` and checks if `val1 = target + val2` (for a `SUB` operation) or `val1 = target - val2` (for an `ADD` operation) are also null-free.
+- **Usage**: When a suitable pair is found, BYVALVER generates a sequence like `MOV reg, val1` followed by `SUB reg, val2` (or `ADD reg, val2`). This provides another polymorphic method for constructing immediate values.
+- **Integration**: This strategy is implemented in the `mov_strategies.c` module and is chosen based on the priority system, competing with other immediate-value-construction strategies like `NEG`, `NOT`, `SHIFT`, and `XOR`.
+- **Benefits**: Enhances the polymorphic capabilities of `byvalver` by adding another technique to its arsenal for immediate value construction, making the generated shellcode more varied.
+- **Verification**: The strategy was tested using a dedicated test case (`test_asm/test_addsub.asm`). After temporarily elevating its priority, it was confirmed that the strategy was correctly selected and generated a null-free sequence of `MOV` and `SUB` instructions that was functionally equivalent to the original instruction.
+
 ## Additional Strategy Implementation: ADD/SUB Encoding for Polymorphic Shellcode
 
 ### Polymorphic Encoding with ADD/SUB Operations

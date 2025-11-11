@@ -60,6 +60,7 @@ size_t get_xor_encoded_arithmetic_size(cs_insn *insn);
 void generate_xor_encoded_arithmetic(struct buffer *b, cs_insn *insn);
 
 // ADD/SUB Encoding functions
+int find_addsub_key(uint32_t target, uint32_t *val1, uint32_t *val2, int *is_add);
 size_t get_addsub_encoded_mov_size(cs_insn *insn);
 void generate_addsub_encoded_mov(struct buffer *b, cs_insn *insn);
 size_t get_addsub_encoded_arithmetic_size(cs_insn *insn);
@@ -80,5 +81,8 @@ void buffer_resize(struct buffer *b, size_t new_size);
 // Additional utility functions used in generate_mov_eax_imm
 int find_xor_key(uint32_t target, uint32_t *xor_key);
 int find_arithmetic_equivalent(uint32_t target, uint32_t *base, uint32_t *offset, int *operation);
+
+// Check if a 32-bit value contains any null bytes
+int is_null_free(uint32_t val);
 
 #endif
