@@ -1,6 +1,6 @@
 # `byvalver`: THE SHELLCODE NULL-BYTE ELIMINATOR / `·𐑚𐑲𐑝𐑨𐑤𐑝𐑼`: 𐑞 𐑖𐑧𐑤𐑒𐑴𐑛 𐑯𐑫𐑤–𐑚𐑲𐑑 𐑩𐑤𐑦𐑥𐑦𐑯𐑱𐑑𐑼
 
-![vape](images/VAPE.png)
+![vape](./IMAGES/VAPE.png)
 
 ## OVERVIEW / 𐑴𐑝𐑻𐑝𐑿
 
@@ -82,7 +82,7 @@ The tool will write the modified, null-free shellcode to `output.bin`
 
 ---
 
-![adaptive vertical](images/adapvert.png)
+![adaptive vertical](./IMAGES/adapvert.png)
 
 ---
 
