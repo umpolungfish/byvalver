@@ -195,8 +195,13 @@ def verify_shellcode_functionality(original_file, processed_file):
         
         if orig_has_nulls and not proc_has_nulls:
             print("SUCCESS: Null bytes successfully removed!")
+        elif not orig_has_nulls and not proc_has_nulls:
+            print("INFO: Both files have no null bytes")
+        elif not orig_has_nulls and proc_has_nulls:
+            print("ERROR: Processed shellcode has null bytes but original didn't - this should not happen!")
+            return False
         else:
-            print("INFO: No null bytes to remove or both have/none have nulls")
+            print("INFO: Original had null bytes but processed still has them")
         
         # For each original instruction, find a semantically equivalent sequence in processed
         # This is a simplified check - for full verification we'd need symbolic execution

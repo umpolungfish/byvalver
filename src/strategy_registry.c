@@ -30,9 +30,9 @@ void init_strategies() {
     register_memory_strategies();  // Register all memory strategies
     register_jump_strategies();  // Register all jump strategies
     register_general_strategies();  // Register all general strategies
-    register_anti_debug_strategies();  // Register all anti-debug strategies
+    // register_anti_debug_strategies();  // DISABLED - causes issues with non-NOP instructions
     register_shift_strategy();  // Register shift-based strategy
-    register_peb_strategies();  // Register PEB-related strategies
+    // register_peb_strategies();  // ALSO DISABLE THIS - was causing inappropriate application to non-NOP instructions
     // printf("init_strategies: Registered %d strategies.\n", strategy_count); // Removed debug print
 }
 

@@ -837,3 +837,49 @@ int is_null_free(uint32_t val) {
     return !((val & 0x000000FF) == 0 || (val & 0x0000FF00) == 0 || (val & 0x00FF0000) == 0 || (val & 0xFF000000) == 0);
 }
 
+// Find a XOR key to construct the target value without null bytes
+int find_xor_key(uint32_t target, uint32_t *xor_key) {
+    // Simple approach: try some common XOR keys that don't have null bytes
+    uint32_t test_keys[] = {0x41414141, 0x42424242, 0x43434343, 0x55555555, 0xAAAAAAAA, 0x12345678, 0x87654321};
+    int num_keys = sizeof(test_keys) / sizeof(test_keys[0]);
+    
+    for (int i = 0; i < num_keys; i++) {
+        uint32_t encoded = target ^ test_keys[i];
+        if (is_null_free(test_keys[i]) && is_null_free(encoded)) {
+            *xor_key = test_keys[i];
+            return 1; // Found a valid key
+        }
+    }
+    return 0; // No valid key found
+}
+
+// Find arithmetic equivalent (base +/- offset) to construct the target value without null bytes
+int find_arithmetic_equivalent(uint32_t target, uint32_t *base, uint32_t *offset, int *operation) {
+    // Try addition: base + offset = target
+    uint32_t test_offsets[] = {1, 2, 5, 10, 0x100, 0x1000, 0x10000};
+    int num_offsets = sizeof(test_offsets) / sizeof(test_offsets[0]);
+    
+    for (int i = 0; i < num_offsets; i++) {
+        if (target >= test_offsets[i]) {  // For addition, target must be >= offset
+            uint32_t test_base = target - test_offsets[i];
+            if (is_null_free(test_base) && is_null_free(test_offsets[i])) {
+                *base = test_base;
+                *offset = test_offsets[i];
+                *operation = 0;  // Addition
+                return 1;
+            }
+        }
+        
+        // Also try subtraction: base - offset = target
+        uint32_t test_base = target + test_offsets[i];
+        if (is_null_free(test_base) && is_null_free(test_offsets[i])) {
+            *base = test_base;
+            *offset = test_offsets[i];
+            *operation = 1;  // Subtraction
+            return 1;
+        }
+    }
+    
+    return 0;  // No valid combination found
+}
+
