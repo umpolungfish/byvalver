@@ -337,10 +337,10 @@ Confirm that the logical operations are preserved:
 
 <div align="center">
   <img src="./IMAGES/scap1.png" alt="Null byte detection" width="800">
-  <p><i>Verifying functionality preservation after transformation</i></p>
+  <p><i>Detecting null bytes in original shellcode</i></p>
   <br>
   <img src="./IMAGES/scap2.png" alt="Functionality verification" width="800">
-  <p><i>Detecting null bytes in original shellcode</i></p>
+  <p><i>Verifying functionality preservation after transformation</i></p>
 </div>
 
 <br>
