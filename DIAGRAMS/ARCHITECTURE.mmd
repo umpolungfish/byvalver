@@ -1,0 +1,62 @@
+graph TD
+    A[INPUT SHELLCODE] --> B[CORE ENGINE<br/>src/core.c/src/core.h<br/>- Disassemble with Capstone<br/>- Analyze for null bytes<br/>- Coordinate strategy selection<br/>- Offset recalculation<br/>- Generate final shellcode]
+
+    B --> C[STRATEGY REGISTRY<br/>src/strategy_registry.c/h<br/>- Global strategy collection<br/>- Priority-based selection<br/>- Strategy registration<br/>- Strategy ranking]
+
+    C --> D[STRATEGY SELECTION PROCESS<br/>1. Evaluate all strategies<br/>2. Collect applicable ones<br/>3. Sort by priority<br/>4. Use highest priority]
+
+    D --> E[MOV STRATEGIES<br/>mov_strat*<br/>- MOV imm<br/>- Arithmetic<br/>- NEG, XOR]
+
+    D --> F[ARITHMETIC STRATEGIES<br/>arithmetic_str*<br/>- ADD, SUB, AND<br/>- Complex equivalents<br/>- XOR, OR, CMP]
+
+    D --> G[JUMP STRATEGIES<br/>jump_strategies<br/>- CALL, JMP<br/>- Relative offset<br/>- Conditional jumps]
+
+    E --> H[MEMORY STRATEGIES<br/>memory_str*<br/>- Memory operations<br/>- Direct access<br/>- Complex patterns]
+
+    F --> I[GENERAL STRATEGIES<br/>general_strat*<br/>- PUSH, etc.<br/>- imm8/imm32 optimization<br/>- Common replacements]
+
+    G --> J[OTHER STRATEGIES<br/>(Extensible)]
+
+    K[STRATEGY INTERFACE<br/>strategy_t:<br/>- const char* name<br/>- int (*can_handle)()<br/>- size_t (*get_size)()<br/>- void (*generate)()<br/>- int priority]
+
+    L[UTILITY FUNCTIONS<br/>src/utils.c/src/utils.h<br/>- Helper functions for all strategies<br/>- Low-level operations<br/>- Buffer management<br/>- Register indexing]
+
+    M[BUILD SYSTEM<br/>Makefile<br/>- Compiles modular source files<br/>- Links executable<br/>- Avoids duplicate errors<br/>- Clean compilation]
+
+    N[EXTENSIBILITY<br/>Adding New Strategies:<br/>1. Create function implementing strategy interface<br/>2. Register strategy in appropriate module<br/>3. System automatically incorporates]
+
+    %% Strategy interface connections
+    E -.-> K
+    F -.-> K
+    G -.-> K
+    H -.-> K
+    I -.-> K
+    J -.-> K
+    C -.-> K
+
+    %% Utility function connections
+    B -.-> L
+    E -.-> L
+    F -.-> L
+    G -.-> L
+    H -.-> L
+    I -.-> L
+    J -.-> L
+
+    %% Build system connections
+    B -.-> M
+    C -.-> M
+    E -.-> M
+    F -.-> M
+    G -.-> M
+    H -.-> M
+    I -.-> M
+    J -.-> M
+
+    %% Extensibility connections
+    E -.-> N
+    F -.-> N
+    G -.-> N
+    H -.-> N
+    I -.-> N
+    J -.-> N

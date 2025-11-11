@@ -1,0 +1,18 @@
+     1                                  bits 32
+     2                                  
+     3 00000000 EB11                    jmp short call_decoder
+     4                                  
+     5                                  decoder:
+     6 00000002 5E                          pop esi
+     7 00000003 89F7                        mov edi, esi
+     8 00000005 B978563412                  mov ecx, 0x12345678 ; length placeholder
+     9                                  
+    10                                  decode_loop:
+    11 0000000A 8036DE                      xor byte [esi], 0xDE ; key placeholder
+    12 0000000D 46                          inc esi
+    13 0000000E 49                          dec ecx
+    14 0000000F 75F9                        jnz decode_loop
+    15 00000011 FFE7                        jmp edi
+    16                                  
+    17                                  call_decoder:
+    18 00000013 E8EAFFFFFF                  call decoder

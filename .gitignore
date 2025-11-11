@@ -1,0 +1,55 @@
+# Build artifacts
+/bin/
+*.o
+*.exe
+*.out
+
+# Test files
+test_*.bin
+test_*.py
+*.log
+
+# Python related
+__pycache__/
+*.pyc
+*.pyo
+.Python
+env/
+venv/
+.venv/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+.DS_Store?
+ehthumbs.db
+Icon?
+desktop.ini
+
+# Local configuration files
+config.local
+*.local
+.env
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Backup files
+*~
+*.bak
+*.backup
+
+# Shellcode test files created during testing
+shellcode.bin.original
+
+# Context files
+GEMINI.md
+QWEN.md
