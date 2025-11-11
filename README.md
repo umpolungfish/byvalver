@@ -412,6 +412,6 @@ Contributions are welcome! Feel free to:
 
 <div align="center">
   <hr>
-  <p><i>Built with ❤️ for the security research community</i></p>
-  <p><b>byvalver</b> - Making shellcode analysis and exploitation research more accessible</p>
+  <p><i>out here creepin' while you're sleepin'!</i></p>
+  <p><b>byvalver</b> - get it? cuz like bivalves have shells. and, like bcuz, is of that the thing is, the shellcode.</p>
 </div>
