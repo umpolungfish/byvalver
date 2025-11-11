@@ -39,17 +39,23 @@
 
 ### 🔄 THE PIPELINE
 
+---
+
 <div align="center">
   <img src="./IMAGES/adapvert.png" alt="Architecture diagram" width="600">
 </div>
 
-**byvalver** accomplishes this through:
+---
+
+**byvalver**:
 
 1. **TAKES** raw binary shellcode as input
 2. **REPLACES** instructions containing null bytes with functionally equivalent, nullbyte-free alternatives
 3. **OUTPUTS** clean, nullbyte-free, ready-to-use shellcode
 
-The core of `byvalver` is a powerful disassembly and reconstruction engine built on the [Capstone disassembly framework](http://www.capstone-engine.org/). It meticulously analyzes each instruction and applies a growing set of replacement strategies to ensure the final shellcode is both functional and de-nullified.
+The core of `byvalver` is a powerful disassembly and reconstruction engine built on the [Capstone disassembly framework](http://www.capstone-engine.org/).  
+
+It meticulously analyzes each instruction and applies a growing set of replacement strategies to ensure the final shellcode is both `functional` and `denullified`.
 
 <br>
 
