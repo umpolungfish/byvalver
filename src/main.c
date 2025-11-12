@@ -43,7 +43,10 @@ int main(int argc, char *argv[]) {
     fseek(file, 0, SEEK_SET);
     uint8_t *shellcode = malloc(file_size);
     if (!shellcode) { fprintf(stderr, "Memory allocation failed\n"); fclose(file); return 1; }
-    fread(shellcode, 1, file_size, file);
+    size_t bytes_read = fread(shellcode, 1, file_size, file);
+    if (bytes_read != (size_t)file_size) {
+        fprintf(stderr, "Warning: Could not read complete file\n");
+    }
     fclose(file);
 
     init_strategies(); // Initialize strategies

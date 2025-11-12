@@ -414,16 +414,7 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
         current = current->next;
     }
 
-    // Clean up
-    current = head;
-    while (current != NULL) {
-        struct instruction_node *next = current->next;
-        free(current);
-        current = next;
-    }
-    cs_free(insn_array, count);
-
-    // Final verification
+    // Final verification - DO THIS BEFORE CLEANUP
     DEBUG_LOG("Final verification pass", 0);
     int null_count = 0;
     for (size_t i = 0; i < new_shellcode.size; i++) {
@@ -454,6 +445,15 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
     } else {
         DEBUG_LOG("SUCCESS: No null bytes in final shellcode", 0);
     }
+
+    // Clean up only AFTER verification
+    current = head;
+    while (current != NULL) {
+        struct instruction_node *next = current->next;
+        free(current);
+        current = next;
+    }
+    cs_free(insn_array, count);
 
     cs_close(&handle);
     return new_shellcode;

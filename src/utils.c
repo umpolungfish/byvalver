@@ -252,10 +252,10 @@ void generate_push_imm8(struct buffer *b, int8_t imm) {
     buffer_append(b, code, 2);
 }
 
-size_t get_mov_reg_mem_imm_size(__attribute__((unused)) cs_insn *insn) {
+size_t get_mov_reg_mem_imm_size(cs_insn *insn) {
+    uint32_t addr = (uint32_t)insn->detail->x86.operands[1].mem.disp;
     // MOV reg, [imm32] -> MOV EAX, imm32 + MOV reg, [EAX]
-    // Size: 5 (MOV EAX, imm32) + 2 (MOV reg, [EAX] for EAX) = 7 bytes (simplified)
-    return 7;  // Conservative estimate
+    return get_mov_eax_imm_size(addr) + 2;  // 2 for MOV reg, [EAX] instruction
 }
 
 void generate_mov_reg_mem_imm(struct buffer *b, cs_insn *insn) {
@@ -266,14 +266,26 @@ void generate_mov_reg_mem_imm(struct buffer *b, cs_insn *insn) {
     generate_mov_eax_imm(b, addr);
     
     // MOV reg, [EAX]
-    uint8_t code[] = {0x8B, 0x00}; // MOV reg, [EAX] format
-    code[1] = 0x00 + (get_reg_index(reg) << 3);  // Encode destination register
-    buffer_append(b, code, 2);
+    // The ModR/M byte for MOV r32, [r32] is: MM RRR MMM
+    // For [EAX] (MMM=000) and reg (RRR), ModR/M = 00 (RRR<<3) 000
+    // If reg is EAX, RRR=000, so ModR/M = 00 000 000 = 0x00 (null byte!)
+    if (reg == X86_REG_EAX) {
+        // Use SIB byte to avoid null: MOV EAX, [EAX + ECX*1]
+        // This becomes: 8B 04 08 (where 04 is ModR/M with SIB, 08 is SIB for [EAX+ECX*1])
+        uint8_t code[] = {0x8B, 0x04, 0x08}; // MOV EAX, [EAX + ECX*1]
+        buffer_append(b, code, 3);
+    } else {
+        // For other registers, the ModR/M byte is safe
+        uint8_t code[] = {0x8B, 0x00}; // MOV reg, [EAX] format
+        code[1] = (get_reg_index(reg) << 3) | 0;  // Encode reg in reg field, [EAX] in r/m field
+        buffer_append(b, code, 2);
+    }
 }
 
-size_t get_lea_reg_mem_disp32_size(__attribute__((unused)) cs_insn *insn) {
+size_t get_lea_reg_mem_disp32_size(cs_insn *insn) {
+    uint32_t addr = (uint32_t)insn->detail->x86.operands[1].mem.disp;
     // LEA reg, [disp32] -> MOV EAX, disp32 + LEA reg, [EAX]
-    return 7;  // Conservative estimate
+    return get_mov_eax_imm_size(addr) + 2;  // 2 for LEA reg, [EAX] instruction
 }
 
 void generate_lea_reg_mem_disp32(struct buffer *b, cs_insn *insn) {
@@ -284,14 +296,26 @@ void generate_lea_reg_mem_disp32(struct buffer *b, cs_insn *insn) {
     generate_mov_eax_imm(b, addr);
     
     // LEA dst_reg, [EAX]
-    uint8_t code[] = {0x8D, 0x00}; // LEA reg, [EAX] format
-    code[1] = 0x00 + (get_reg_index(dst_reg) << 3);  // Encode destination register
-    buffer_append(b, code, 2);
+    // The ModR/M byte for LEA r32, [r32] is: MM RRR MMM
+    // For [EAX] (MMM=000) and dst_reg (RRR), ModR/M = 00 (RRR<<3) 000  
+    // If dst_reg is EAX, RRR=000, so ModR/M = 00 000 000 = 0x00 (null byte!)
+    if (dst_reg == X86_REG_EAX) {
+        // Use SIB byte to avoid null: LEA EAX, [EAX + ECX*1]
+        // This becomes: 8D 04 08 (where 04 is ModR/M with SIB, 08 is SIB for [EAX+ECX*1])
+        uint8_t code[] = {0x8D, 0x04, 0x08}; // LEA EAX, [EAX + ECX*1]
+        buffer_append(b, code, 3);
+    } else {
+        // For other registers, the ModR/M byte is safe
+        uint8_t code[] = {0x8D, 0x00}; // LEA reg, [EAX] format
+        code[1] = (get_reg_index(dst_reg) << 3) | 0;  // Encode dst_reg in reg field, [EAX] in r/m field
+        buffer_append(b, code, 2);
+    }
 }
 
-size_t get_mov_disp32_reg_size(__attribute__((unused)) cs_insn *insn) {
-    // MOV [disp32], reg -> MOV EAX, disp32 + MOV [EAX], reg
-    return 7;  // Conservative estimate
+size_t get_mov_disp32_reg_size(cs_insn *insn) {
+    uint32_t addr = (uint32_t)insn->detail->x86.operands[0].mem.disp;
+    // MOV EAX, addr (null-free) + MOV [EAX], reg
+    return get_mov_eax_imm_size(addr) + 2;  // 2 for MOV [EAX], reg instruction
 }
 
 void generate_mov_disp32_reg(struct buffer *b, cs_insn *insn) {
@@ -302,14 +326,27 @@ void generate_mov_disp32_reg(struct buffer *b, cs_insn *insn) {
     generate_mov_eax_imm(b, addr);
     
     // MOV [EAX], src_reg
-    uint8_t code[] = {0x89, 0x00}; // MOV [EAX], reg format
-    code[1] = 0x00 + get_reg_index(src_reg);  // Encode source register
-    buffer_append(b, code, 2);
+    // The ModR/M byte for MOV [r32], r32 is: MM RRR MMM 
+    // For [EAX] (MMM=000) and src_reg (RRR), ModR/M = 00 (RRR<<3) 000
+    // If src_reg is EAX, RRR=000, so ModR/M = 00 000 000 = 0x00 (null byte!)
+    uint8_t src_reg_idx = get_reg_index(src_reg);
+    if (src_reg == X86_REG_EAX) {
+        // Use SIB byte to avoid null: MOV [EAX + ECX*1], EAX
+        // This becomes: 89 04 08 (where 04 is ModR/M with SIB, 08 is SIB for [EAX+ECX*1])
+        uint8_t code[] = {0x89, 0x04, 0x08}; // MOV [EAX + ECX*1], EAX
+        buffer_append(b, code, 3);
+    } else {
+        // For other registers, the ModR/M byte is safe
+        uint8_t code[] = {0x89, 0x00}; // MOV [EAX], reg format
+        code[1] = (src_reg_idx << 3) | 0;  // Encode src_reg in reg field, [EAX] in r/m field
+        buffer_append(b, code, 2);
+    }
 }
 
-size_t get_cmp_mem32_reg_size(__attribute__((unused)) cs_insn *insn) {
+size_t get_cmp_mem32_reg_size(cs_insn *insn) {
+    uint32_t addr = (uint32_t)insn->detail->x86.operands[0].mem.disp;
     // CMP [disp32], reg -> MOV EAX, disp32 + CMP [EAX], reg
-    return 7;  // Conservative estimate
+    return get_mov_eax_imm_size(addr) + 2;  // 2 for CMP [EAX], reg instruction
 }
 
 void generate_cmp_mem32_reg(struct buffer *b, cs_insn *insn) {
@@ -320,9 +357,20 @@ void generate_cmp_mem32_reg(struct buffer *b, cs_insn *insn) {
     generate_mov_eax_imm(b, addr);
     
     // CMP [EAX], reg
-    uint8_t code[] = {0x39, 0x00}; // CMP [EAX], reg format
-    code[1] = 0x00 + get_reg_index(reg);  // Encode source register
-    buffer_append(b, code, 2);
+    // The ModR/M byte for CMP [r32], r32 is: MM RRR MMM
+    // For [EAX] (MMM=000) and reg (RRR), ModR/M = 00 (RRR<<3) 000
+    // If reg is EAX, RRR=000, so ModR/M = 00 000 000 = 0x00 (null byte!)
+    if (reg == X86_REG_EAX) {
+        // Use SIB byte to avoid null: CMP [EAX + ECX*1], EAX
+        // This becomes: 39 04 08 (where 04 is ModR/M with SIB, 08 is SIB for [EAX+ECX*1])
+        uint8_t code[] = {0x39, 0x04, 0x08}; // CMP [EAX + ECX*1], EAX
+        buffer_append(b, code, 3);
+    } else {
+        // For other registers, the ModR/M byte is safe
+        uint8_t code[] = {0x39, 0x00}; // CMP [EAX], reg format
+        code[1] = (get_reg_index(reg) << 3) | 0;  // Encode reg in reg field, [EAX] in r/m field
+        buffer_append(b, code, 2);
+    }
 }
 
 size_t get_arith_mem32_imm32_size(__attribute__((unused)) cs_insn *insn) {
@@ -351,11 +399,16 @@ void generate_arith_mem32_imm32(struct buffer *b, cs_insn *insn) {
     }
     
     // For now, using a 32-bit immediate for memory operations
-    uint8_t code[] = {0x83, 0x00, 0, 0, 0, 0};
-    code[0] = base_opcode + 1; // Switch to 32-bit immediate
-    code[1] = 0x00; // Encoding for [EAX]
-    memcpy(code + 2, &imm, 4);
-    buffer_append(b, code, 6);
+    // The opcode is 83/8B - but 83 is for 8-bit immediates, 81 is for 32-bit immediates
+    // For memory operations like ADD [EAX], imm32, the format is: 81 /0 imm32
+    // where ModR/M byte 00 is for [EAX], but that creates null byte
+    // Using SIB byte to avoid null: 81 /0 uses ModR/M=04 with SIB=00
+    uint8_t fixed_code[] = {0x81, 0x04, 0x00, 0, 0, 0, 0};
+    fixed_code[0] = base_opcode + 0x01; // Switch from 83 to 81 for 32-bit immediate
+    // fixed_code[1] = 0x04; is ModR/M byte that indicates SIB byte follows
+    // fixed_code[2] = 0x00; is SIB byte for [EAX + no index * 1] 
+    memcpy(fixed_code + 3, &imm, 4);
+    buffer_append(b, fixed_code, 7);
 }
 
 size_t get_xor_reg_reg_size(__attribute__((unused)) cs_insn *insn) {

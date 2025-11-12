@@ -1,39 +1,36 @@
 # Project Summary
 
 ## Overall Goal
-To enhance the BYVALVER shellcode null-byte elimination framework by replacing all placeholder, simplification, mock code, and dummy values with fully functional enterprise-grade code implementations, ensuring the project compiles without errors and maintains complete functionality.
+Fix a shellcode null-byte remover tool (`byvalver`) that was crashing with segmentation faults and null-byte errors when processing binary files (`cBf.bin` and `syutil.bin`).
 
 ## Key Knowledge
-- **Technology Stack**: C/C++ with Capstone disassembly framework, NASM assembler, Python for utilities
-- **Architecture**: Modular strategy-based system with MOV, arithmetic, memory, jump, and general strategies
-- **Core Components**: 
-  - Advanced strategy implementations in `advanced_strategies.c`
-  - Improved decoder stub with JMP-CALL-POP technique in `decoder.asm`
-  - Enhanced Python utilities (`extract_hex.py`, `verify_functionality.py`, `verify_nulls.py`)
-  - Comprehensive Makefile with multiple build configurations
-- **Build Commands**: `make`, `make debug`, `make test`, `make clean`
-- **Testing**: 11 comprehensive test cases covering various instruction types
-- **File Structure**: Modular source in `/src/` directory with specialized strategy files
+- **Tool Purpose**: `byvalver` is an enterprise-grade shellcode null-byte eliminator
+- **Technology Stack**: C-based tool using Capstone disassembly library, x86/x86_64 assembly
+- **Build Commands**: `make` for release build, `make DEBUG=1` for debug build
+- **Architecture**: Strategy pattern for handling various x86 instructions that contain null bytes
+- **Key Files**: `utils.c` (instruction generation), `core.c` (main processing loop), `memory_strategies.c` (memory operation strategies)
+- **File Locations**: 
+  - Source: `/src/`
+  - Binary: `/bin/byvalver`
 
 ## Recent Actions
-- [DONE] **Advanced Strategies Implementation**: Replaced placeholder functions with enterprise-grade arithmetic, XOR encoding, shift-based, and conditional instruction selection algorithms
-- [DONE] **Decoder Enhancement**: Improved JMP-CALL-POP stub with better null-byte avoidance logic
-- [DONE] **Python Utility Enhancement**: Created robust extraction and verification tools with error handling and detailed analysis
-- [DONE] **Build System Improvement**: Implemented comprehensive Makefile with debug/release configurations, testing, and installation targets
-- [DONE] **Core Functionality Fixes**: Added PUSH instruction handling in fallback functions to prevent segmentation faults
-- [DONE] **Documentation Update**: Enhanced README.md with comprehensive usage instructions and architecture details
-- [DONE] **Compilation Error Resolution**: Fixed C99 compliance issues in variadic macros by adjusting macro definitions and calls
-- [DONE] **Testing**: All 11 test cases now pass successfully, validating MOV, PUSH, CALL, arithmetic, and complex multi-instruction sequences
+- **[DONE]** Fixed null bytes in ModR/M byte encoding for EAX-based memory operations (`MOV [EAX], reg`, `LEA reg, [EAX]`, `CMP [EAX], reg`, `ADD [EAX], imm32`, etc.)
+- **[DONE]** Added proper handling for NOP instructions in the fallback function
+- **[DONE]** Fixed memory management bug causing heap-use-after-free errors in the verification phase
+- **[DONE]** Fixed size calculation functions for memory operation strategies to improve accuracy
+- **[DONE]** Resolved original error messages: "Strategy 'mov_mem_dst' introduced null at offset 8" and "Strategy 'lea_disp32' introduced null at offset 8"
+- **Result**: Both problematic binaries (`cBf.bin` and `syutil.bin`) now process without segmentation faults
+  - `syutil.bin`: Now processes successfully without crashes (though has 2 remaining null bytes)
+  - `cBf.bin`: Now processes without crashes (though has 3 remaining null bytes from unhandled instructions like `test` and conditional jumps)
 
 ## Current Plan
-- [DONE] **Build System**: Comprehensive Makefile with debug/release/static configurations and dependency checking
-- [DONE] **Core Implementation**: All strategy modules implemented with enterprise-grade functionality
-- [DONE] **Testing**: Complete test suite with 11 comprehensive test cases passing
-- [DONE] **Documentation**: Updated README.md with detailed usage and architecture information  
-- [DONE] **Error Resolution**: Fixed compilation warnings to ensure clean build process
-- [DONE] **Verification**: All null-byte elimination functionality working with complex instruction patterns
+- **[DONE]** Fix ModR/M byte null byte issues in memory operations
+- **[DONE]** Add NOP instruction handling to fallback
+- **[DONE]** Fix memory management heap-use-after-free bug
+- **[TODO]** Address remaining unhandled instruction types causing null bytes (TEST instructions, conditional jumps with null byte offsets)
+- **[DONE]** Ensure no warnings in build process (aside from intentional disabled strategies)
 
 ---
 
 ## Summary Metadata
-**Update time**: 2025-11-12T06:20:04.608Z 
+**Update time**: 2025-11-12T08:10:24.707Z 
