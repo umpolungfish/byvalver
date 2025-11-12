@@ -9,7 +9,8 @@
 int can_handle_alt_peb_traversal(cs_insn *insn) {
     // This strategy would typically be used as a replacement for code that finds kernel32
     // We'll match NOP instructions or other suitable candidates where this strategy can be used
-    return (insn->id == X86_INS_NOP) ? 1 : 0;
+    (void)insn;
+    return 0;  // Disabled
 }
 
 size_t get_size_alt_peb_traversal(__attribute__((unused)) cs_insn *insn) {
@@ -78,7 +79,8 @@ strategy_t alt_peb_traversal_strategy = {
 // to find kernel32.dll by comparing module names.
 int can_handle_standard_peb_traversal(cs_insn *insn) {
     // This strategy would also be used for kernel32 finding
-    return (insn->id == X86_INS_NOP) ? 1 : 0;
+    (void)insn;
+    return 0;  // Disabled
 }
 
 size_t get_size_standard_peb_traversal(__attribute__((unused)) cs_insn *insn) {

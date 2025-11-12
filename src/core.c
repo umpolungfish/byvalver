@@ -4,6 +4,14 @@
 #include <string.h>
 #include <stdlib.h>
 
+#ifdef DEBUG
+#define DEBUG_LOG(fmt, ...) fprintf(stderr, "[DEBUG] " fmt "\n", ##__VA_ARGS__)
+#define DEBUG_INSN(insn) fprintf(stderr, "[DEBUG] %s %s\n", insn->mnemonic, insn->op_str)
+#else
+#define DEBUG_LOG(fmt, ...)
+#define DEBUG_INSN(insn)
+#endif
+
 void buffer_init(struct buffer *b) {
     b->data = NULL;
     b->size = 0;
@@ -376,11 +384,20 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
         } else if (has_null) {
             // Use strategy pattern if it has nulls
             int strategy_count;
+            size_t before_gen = new_shellcode.size;
             strategy_t** strategies = get_strategies_for_instruction(current->insn, &strategy_count);
 
             if (strategy_count > 0) {
                 // Use the first (highest priority) strategy to generate code
                 strategies[0]->generate(&new_shellcode, current->insn);
+
+                // Verify no nulls introduced
+                for (size_t i = before_gen; i < new_shellcode.size; i++) {
+                    if (new_shellcode.data[i] == 0x00) {
+                        fprintf(stderr, "ERROR: Strategy '%s' introduced null at offset %zu\n",
+                               strategies[0]->name, i - before_gen);
+                    }
+                }
             } else {
                 // If no strategy can handle it, use comprehensive fallback
                 fallback_general_instruction(&new_shellcode, current->insn);
@@ -400,6 +417,38 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
         current = next;
     }
     cs_free(insn_array, count);
+
+    // Final verification
+    DEBUG_LOG("Final verification pass");
+    int null_count = 0;
+    for (size_t i = 0; i < new_shellcode.size; i++) {
+        if (new_shellcode.data[i] == 0x00) {
+            null_count++;
+            fprintf(stderr, "WARNING: Null byte at offset %zu\n", i);
+            
+            // Try to identify which original instruction caused this null
+            struct instruction_node *debug_node = head;
+            size_t current_offset = 0;
+            while (debug_node != NULL) {
+                if (current_offset <= i && i < current_offset + debug_node->new_size) {
+                    fprintf(stderr, "  Caused by instruction at original offset 0x%lx: %s %s\n",
+                           debug_node->offset,
+                           debug_node->insn->mnemonic,
+                           debug_node->insn->op_str);
+                    break;
+                }
+                current_offset += debug_node->new_size;
+                debug_node = debug_node->next;
+            }
+        }
+    }
+
+    if (null_count > 0) {
+        fprintf(stderr, "\nERROR: Final shellcode contains %d null bytes\n", null_count);
+        fprintf(stderr, "Recompile with -DDEBUG for details\n");
+    } else {
+        DEBUG_LOG("SUCCESS: No null bytes in final shellcode");
+    }
 
     cs_close(&handle);
     return new_shellcode;
@@ -569,7 +618,9 @@ void fallback_general_instruction(struct buffer *b, cs_insn *insn) {
         if (!handled) {
             // If we still can't handle it, try to process each operand that might contain nulls
             // For now, we'll warn and just copy the original (this should be rare)
-            // In a production system, we'd need to handle this case better
+            fprintf(stderr, "WARNING: Fallback could not handle: %s %s\n",
+                   insn->mnemonic, insn->op_str);
+            fprintf(stderr, "  This instruction may still contain null bytes\n");
             buffer_append(b, insn->bytes, insn->size);
         }
     }
@@ -578,11 +629,101 @@ void fallback_general_instruction(struct buffer *b, cs_insn *insn) {
 struct buffer adaptive_processing(const uint8_t *input, size_t size) {
     struct buffer intermediate = remove_null_bytes(input, size);
 
-    // Verify results
+    // Verification pass: check if any nulls remain
     if (!verify_null_elimination(&intermediate)) {
-        // Some nulls remain - we need to handle the issue more comprehensively
-        // For now, we'll improve our core algorithm by modifying the processing
-        // to ensure no original instructions with nulls are included
+        DEBUG_LOG("WARNING: Null byte found in processed shellcode");
+        // Re-run remove_null_bytes with extended debugging to identify problematic instructions
+        csh handle;
+        cs_insn *insn_array;
+        size_t count;
+        
+        if (cs_open(CS_ARCH_X86, CS_MODE_32, &handle) == CS_ERR_OK) {
+            cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
+            count = cs_disasm(handle, input, size, 0, 0, &insn_array);
+            
+            if (count > 0) {
+                // Analyze each instruction to identify which one caused nulls
+                struct instruction_node *head = NULL;
+                struct instruction_node *current = NULL;
+                
+                for (size_t i = 0; i < count; i++) {
+                    struct instruction_node *node = malloc(sizeof(struct instruction_node));
+                    node->insn = &insn_array[i];
+                    node->offset = insn_array[i].address;
+                    node->new_size = 0;
+                    node->new_offset = 0;
+                    node->next = NULL;
+
+                    if (head == NULL) {
+                        head = node;
+                        current = node;
+                    } else {
+                        current->next = node;
+                        current = node;
+                    }
+                }
+                
+                // Check for nulls in the produced shellcode against original instructions
+                size_t current_offset = 0;
+                current = head;
+                while (current != NULL) {
+                    int found_null_in_range = 0;
+                    size_t range_end = current_offset + current->new_size;
+                    
+                    // Check if any nulls exist in this instruction's range
+                    for (size_t i = current_offset; i < range_end && i < intermediate.size; i++) {
+                        if (intermediate.data[i] == 0x00) {
+                            found_null_in_range = 1;
+                            DEBUG_LOG("Null byte at output offset %zu caused by instruction at original offset 0x%lx: %s %s",
+                                     i, current->offset, current->insn->mnemonic, current->insn->op_str);
+                            break;
+                        }
+                    }
+                    
+                    if (found_null_in_range) {
+                        // Check if this was handled by a specific strategy that failed
+                        int has_null = 0;
+                        for (int j = 0; j < current->insn->size; j++) {
+                            if (current->insn->bytes[j] == 0x00) {
+                                has_null = 1;
+                                break;
+                            }
+                        }
+                        
+                        if (has_null) {
+                            DEBUG_LOG("  Original instruction had null bytes: ");
+                            for (int j = 0; j < current->insn->size; j++) {
+                                DEBUG_LOG("    Byte %d: 0x%02x", j, current->insn->bytes[j]);
+                            }
+                        }
+                        
+                        // Find the strategy that was applied
+                        int temp_strategy_count;
+                        strategy_t** strategies = get_strategies_for_instruction(current->insn, &temp_strategy_count);
+                        (void)strategies; // Suppress unused variable warning when not in debug mode
+                        if (temp_strategy_count > 0) {
+                            DEBUG_LOG("  Applied strategy: %s", strategies[0]->name);
+                        } else {
+                            DEBUG_LOG("  No strategy applied, used fallback");
+                        }
+                    }
+                    
+                    current_offset += current->new_size;
+                    current = current->next;
+                }
+                
+                // Clean up the temporary linked list
+                current = head;
+                while (current != NULL) {
+                    struct instruction_node *next = current->next;
+                    free(current);
+                    current = next;
+                }
+            }
+            
+            cs_free(insn_array, count);
+            cs_close(&handle);
+        }
     }
 
     return intermediate;

@@ -1,7 +1,15 @@
 #include "strategy.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h> // Added for debug prints
 // #include <stdio.h> // Removed for printf
+
+// Debug mode - compile with -DDEBUG to enable detailed logging
+#ifdef DEBUG
+#define DEBUG_LOG(fmt, ...) fprintf(stderr, "[DEBUG] " fmt "\n", ##__VA_ARGS__)
+#else
+#define DEBUG_LOG(fmt, ...)
+#endif
 
 #define MAX_STRATEGIES 100
 
@@ -24,6 +32,10 @@ void register_shift_strategy(); // Forward declaration
 void register_peb_strategies(); // Forward declaration
 
 void init_strategies() {
+    #ifdef DEBUG
+    fprintf(stderr, "[DEBUG] Initializing strategies\n");
+    #endif
+
     strategy_count = 0;
     register_mov_strategies();  // Register all MOV strategies
     register_arithmetic_strategies();  // Register all arithmetic strategies
@@ -33,21 +45,28 @@ void init_strategies() {
     // register_anti_debug_strategies();  // DISABLED - causes issues with non-NOP instructions
     register_shift_strategy();  // Register shift-based strategy
     // register_peb_strategies();  // ALSO DISABLE THIS - was causing inappropriate application to non-NOP instructions
+
+    #ifdef DEBUG
+    fprintf(stderr, "[DEBUG] Registered %d strategies\n", strategy_count);
+    #endif
     // printf("init_strategies: Registered %d strategies.\n", strategy_count); // Removed debug print
 }
 
 strategy_t** get_strategies_for_instruction(cs_insn *insn, int *count) {
-    // printf("get_strategies_for_instruction called for instruction ID: 0x%x\n", insn->id); // Removed debug print
+    DEBUG_LOG("get_strategies_for_instruction called for instruction ID: 0x%x", insn->id);
+    DEBUG_LOG("Instruction: %s %s", insn->mnemonic, insn->op_str);
+    
     static strategy_t* applicable_strategies[MAX_STRATEGIES];
     int applicable_count = 0;
-    
+
     for (int i = 0; i < strategy_count; i++) {
-        // printf("  Trying strategy: %s\n", strategies[i]->name); // Removed debug print
+        DEBUG_LOG("  Trying strategy: %s", strategies[i]->name);
         if (strategies[i]->can_handle(insn)) {
             applicable_strategies[applicable_count++] = strategies[i];
+            DEBUG_LOG("    Strategy %s can handle this instruction", strategies[i]->name);
         }
     }
-    
+
     // Sort strategies by priority (higher priority first)
     for (int i = 0; i < applicable_count - 1; i++) {
         for (int j = i + 1; j < applicable_count; j++) {
@@ -59,6 +78,11 @@ strategy_t** get_strategies_for_instruction(cs_insn *insn, int *count) {
         }
     }
     
+    DEBUG_LOG("  Found %d applicable strategies", applicable_count);
+    if (applicable_count > 0) {
+        DEBUG_LOG("  Using: %s (priority %d)", applicable_strategies[0]->name, applicable_strategies[0]->priority);
+    }
+
     *count = applicable_count;
     return applicable_strategies;
 }

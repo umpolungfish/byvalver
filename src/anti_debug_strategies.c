@@ -9,7 +9,8 @@
 // Checks the BeingDebugged flag in the PEB to detect debuggers
 int can_handle_peb_debug_check(cs_insn *insn) {
     // This strategy can replace NOP instructions with PEB-based anti-debug checks
-    return (insn->id == X86_INS_NOP) ? 1 : 0;
+    (void)insn;
+    return 0;  // Disabled
 }
 
 size_t get_size_peb_debug_check(__attribute__((unused)) cs_insn *insn) {
@@ -67,7 +68,8 @@ strategy_t peb_debug_check_strategy = {
 // Checks if a remote debugger is present using Windows API
 int can_handle_remote_debug_check(cs_insn *insn) {
     // This strategy can replace NOP instructions with RemoteDebuggerPresent checks
-    return (insn->id == X86_INS_NOP) ? 1 : 0;
+    (void)insn;
+    return 0;  // Disabled
 }
 
 size_t get_size_remote_debug_check(__attribute__((unused)) cs_insn *insn) {
@@ -102,7 +104,8 @@ strategy_t remote_debug_check_strategy = {
 // Calls OutputDebugString with a random string, then GetLastError.
 // If running under a debugger, GetLastError returns 0. Otherwise, it returns error code.
 int can_handle_output_debug_check(cs_insn *insn) {
-    return (insn->id == X86_INS_NOP) ? 1 : 0;
+    (void)insn;
+    return 0;  // Disabled
 }
 
 size_t get_size_output_debug_check(__attribute__((unused)) cs_insn *insn) {
@@ -128,7 +131,8 @@ strategy_t output_debug_check_strategy = {
 // Measures time differences between operations to detect if code is being analyzed slowly
 int can_handle_timing_check(cs_insn *insn) {
     // This could detect if instructions are being stepped through slowly
-    return (insn->id == X86_INS_NOP) ? 1 : 0;
+    (void)insn;
+    return 0;  // Disabled
 }
 
 size_t get_size_timing_check(__attribute__((unused)) cs_insn *insn) {
@@ -231,7 +235,8 @@ strategy_t timing_check_strategy = {
 // Checks if INT3 instructions behave abnormally (debugger might handle them)
 int can_handle_int3_detection(cs_insn *insn) {
     // Can replace NOPs with INT3 detection code
-    return (insn->id == X86_INS_NOP) ? 1 : 0;
+    (void)insn;
+    return 0;  // Disabled
 }
 
 size_t get_size_int3_detection(__attribute__((unused)) cs_insn *insn) {
@@ -316,7 +321,8 @@ strategy_t int3_detection_strategy = {
 // Checks if the parent process is a known debugger
 int can_handle_parent_check(cs_insn *insn) {
     // This could be implemented by checking the PEB process parameters
-    return (insn->id == X86_INS_NOP) ? 1 : 0;
+    (void)insn;
+    return 0;  // Disabled
 }
 
 size_t get_size_parent_check(__attribute__((unused)) cs_insn *insn) {

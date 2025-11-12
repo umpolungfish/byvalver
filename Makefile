@@ -12,6 +12,11 @@ OBJS = $(patsubst $(SRC_DIR)/%.c, $(BIN_DIR)/%.o, $(SRCS))
 
 LDFLAGS = -lcapstone
 
+# Debug build: make DEBUG=1
+ifdef DEBUG
+CFLAGS += -DDEBUG -g
+endif
+
 all: decoder.h $(BIN_DIR)/$(TARGET)
 
 decoder.bin: decoder.asm
