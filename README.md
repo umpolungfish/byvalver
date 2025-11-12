@@ -39,13 +39,6 @@
 
 ...truly the things of black flak and the nightmare fighters
 
-### 🔄 THE PIPELINE
-
----
-
-<div align="center">
-  <img src="./IMAGES/adapvert.png" alt="Architecture diagram" width="600">
-</div>
 
 ---
 
@@ -438,6 +431,16 @@ make check-deps
 # Create distribution archive
 make dist
 ```
+
+### THE PIPELINE
+
+---
+
+<div align="center">
+  <img src="./IMAGES/adapvert.png" alt="Architecture diagram" width="600">
+</div>
+
+---
 
 ### Adding New Strategies
 
