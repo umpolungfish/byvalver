@@ -552,6 +552,11 @@ void fallback_general_instruction(struct buffer *b, cs_insn *insn) {
                insn->id == X86_INS_AND || insn->id == X86_INS_OR ||
                insn->id == X86_INS_XOR || insn->id == X86_INS_CMP) {
         fallback_arithmetic_reg_imm(b, insn);
+    } else if (insn->id == X86_INS_NOP) {
+        // Handle NOP instructions with null bytes - just do nothing (no-op)
+        // NOP is just a placeholder instruction that does nothing
+        // For memory-based NOPs like "nop dword ptr [eax]", do nothing
+        return;
     } else if (insn->id == X86_INS_CALL &&
                insn->detail->x86.op_count == 1 &&
                insn->detail->x86.operands[0].type == X86_OP_MEM) {
@@ -573,7 +578,7 @@ void fallback_general_instruction(struct buffer *b, cs_insn *insn) {
                insn->detail->x86.operands[0].type == X86_OP_IMM) {
         // Handle PUSH imm32 with null bytes in the immediate value
         uint32_t imm = (uint32_t)insn->detail->x86.operands[0].imm;
-        
+
         // Instead of PUSH imm32, use: MOV EAX, imm32 (null-free) + PUSH EAX
         generate_mov_eax_imm(b, imm);
         uint8_t push_eax[] = {0x50}; // PUSH EAX
@@ -612,16 +617,59 @@ void fallback_general_instruction(struct buffer *b, cs_insn *insn) {
                     if (insn->id == X86_INS_MOV && i == 0) { // Destination is memory
                         // Handle MOV [disp32], reg
                         uint8_t src_reg = insn->detail->x86.operands[1].reg;
-                        uint8_t code[] = {0x89, 0x00}; // MOV [EAX], reg format
-                        code[1] = 0x00 + get_reg_index(src_reg);  // Encode source register
-                        buffer_append(b, code, 2);
+                        uint8_t reg_index = get_reg_index(src_reg);
+                        // Use SIB byte to avoid null when source register is EAX
+                        if (reg_index == 0) {
+                            uint8_t code[] = {0x89, 0x04, 0x00}; // MOV [EAX], EAX using SIB
+                            code[2] = 0x00; // SIB: [EAX + no index * 1]
+                            buffer_append(b, code, 3);
+                        } else {
+                            uint8_t code[] = {0x89, 0x00}; // MOV [EAX], reg format
+                            code[1] = (reg_index << 3) | 0;  // Encode source register
+                            buffer_append(b, code, 2);
+                        }
                         handled = 1;
                     } else if (insn->id == X86_INS_MOV && i == 1) { // Source is memory
                         // Handle MOV reg, [disp32]
                         uint8_t dst_reg = insn->detail->x86.operands[0].reg;
-                        uint8_t code[] = {0x8B, 0x00}; // MOV reg, [EAX] format
-                        code[1] = 0x00 + (get_reg_index(dst_reg) << 3);  // Encode destination register
-                        buffer_append(b, code, 2);
+                        uint8_t reg_index = get_reg_index(dst_reg);
+                        // Use SIB byte to avoid null when destination register is EAX
+                        if (reg_index == 0) {
+                            uint8_t code[] = {0x8B, 0x04, 0x00}; // MOV EAX, [EAX] using SIB
+                            code[2] = 0x00; // SIB: [EAX + no index * 1]
+                            buffer_append(b, code, 3);
+                        } else {
+                            uint8_t code[] = {0x8B, 0x00}; // MOV reg, [EAX] format
+                            code[1] = (reg_index << 3) | 0;  // Encode destination register
+                            buffer_append(b, code, 2);
+                        }
+                        handled = 1;
+                    } else if (insn->id == X86_INS_NOP) {
+                        // Handle memory-based NOPs - just return, no operation needed
+                        handled = 1;
+                        return;
+                    } else if (insn->id == X86_INS_ADD || insn->id == X86_INS_SUB || 
+                               insn->id == X86_INS_AND || insn->id == X86_INS_OR || 
+                               insn->id == X86_INS_XOR || insn->id == X86_INS_CMP) {
+                        // Handle arithmetic operations on memory with null displacements
+                        uint8_t reg = insn->detail->x86.operands[1].reg;
+                        uint8_t reg_index = get_reg_index(reg);
+                        uint8_t opcode;
+                        
+                        switch(insn->id) {
+                            case X86_INS_ADD: opcode = 0x01; break; // 32-bit ADD
+                            case X86_INS_SUB: opcode = 0x29; break; // 32-bit SUB
+                            case X86_INS_AND: opcode = 0x21; break; // 32-bit AND
+                            case X86_INS_OR:  opcode = 0x09; break; // 32-bit OR
+                            case X86_INS_XOR: opcode = 0x31; break; // 32-bit XOR
+                            case X86_INS_CMP: opcode = 0x39; break; // 32-bit CMP
+                            default: opcode = 0x01; break; // Default to ADD
+                        }
+                        
+                        // Use SIB byte to avoid null: [EAX] using SIB byte format
+                        uint8_t code[] = {opcode, 0x04, 0x20}; // op [EAX], reg using SIB
+                        code[2] = 0x20 + (reg_index << 3); // SIB: scale=00 (1x), index=100 (no index), base=000 (EAX)
+                        buffer_append(b, code, 3);
                         handled = 1;
                     }
                     // Add more cases as needed for other instruction types
