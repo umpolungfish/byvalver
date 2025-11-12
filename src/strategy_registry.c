@@ -6,9 +6,9 @@
 
 // Debug mode - compile with -DDEBUG to enable detailed logging
 #ifdef DEBUG
-#define DEBUG_LOG(fmt, ...) fprintf(stderr, "[DEBUG] " fmt "\n", ##__VA_ARGS__)
+  #define DEBUG_LOG(fmt, ...) do { fprintf(stderr, "[DEBUG] " fmt "\n", ##__VA_ARGS__); } while(0)
 #else
-#define DEBUG_LOG(fmt, ...)
+  #define DEBUG_LOG(fmt, ...) do {} while(0)
 #endif
 
 #define MAX_STRATEGIES 100

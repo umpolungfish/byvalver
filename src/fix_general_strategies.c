@@ -5,25 +5,9 @@
 
 // PUSH imm32 strategy - FIXED to be more conservative
 int can_handle_push_imm32(cs_insn *insn) {
-    // Only handle PUSH with immediate operand
-    if (insn->id != X86_INS_PUSH) {
-        return 0;
-    }
-    
-    if (insn->detail->x86.op_count != 1) {
-        return 0;
-    }
-    
-    if (insn->detail->x86.operands[0].type != X86_OP_IMM) {
-        return 0;
-    }
-    
-    // CRITICAL FIX: Only handle if it actually has null bytes
-    if (!has_null_bytes(insn)) {
-        return 0;
-    }
-    
-    return 1;
+    // Temporarily disable this strategy due to null byte issues in testing
+    // This needs more careful implementation
+    return 0; // Disable until fixed
 }
 
 size_t get_size_push_imm32(cs_insn *insn) {
@@ -89,8 +73,9 @@ int can_handle_stack_string(cs_insn *insn) {
         }
     }
     
-    // Only handle if it looks like a string (2+ printable chars)
-    return (likely_char_count >= 2);
+    // Temporarily disable this strategy due to potential null byte issues
+    // This needs more careful implementation
+    return 0; // Disable until fixed
 }
 
 size_t get_size_stack_string(cs_insn *insn) {

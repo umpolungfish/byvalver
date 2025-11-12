@@ -5,7 +5,12 @@
 #include <stdlib.h>
 
 #ifdef DEBUG
-#define DEBUG_LOG(fmt, ...) fprintf(stderr, "[DEBUG] " fmt "\n", ##__VA_ARGS__)
+// C99 compliant debug macro
+#ifdef DEBUG
+  #define DEBUG_LOG(fmt, ...) do { fprintf(stderr, "[DEBUG] " fmt "\n", ##__VA_ARGS__); } while(0)
+#else
+  #define DEBUG_LOG(fmt, ...) do {} while(0)
+#endif
 #define DEBUG_INSN(insn) fprintf(stderr, "[DEBUG] %s %s\n", insn->mnemonic, insn->op_str)
 #else
 #define DEBUG_LOG(fmt, ...)
@@ -419,7 +424,7 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
     cs_free(insn_array, count);
 
     // Final verification
-    DEBUG_LOG("Final verification pass");
+    DEBUG_LOG("Final verification pass", 0);
     int null_count = 0;
     for (size_t i = 0; i < new_shellcode.size; i++) {
         if (new_shellcode.data[i] == 0x00) {
@@ -447,7 +452,7 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
         fprintf(stderr, "\nERROR: Final shellcode contains %d null bytes\n", null_count);
         fprintf(stderr, "Recompile with -DDEBUG for details\n");
     } else {
-        DEBUG_LOG("SUCCESS: No null bytes in final shellcode");
+        DEBUG_LOG("SUCCESS: No null bytes in final shellcode", 0);
     }
 
     cs_close(&handle);
@@ -563,6 +568,16 @@ void fallback_general_instruction(struct buffer *b, cs_insn *insn) {
         generate_mov_eax_imm(b, addr);
         uint8_t jmp_eax[] = {0xFF, 0xE0}; // JMP EAX
         buffer_append(b, jmp_eax, 2);
+    } else if (insn->id == X86_INS_PUSH &&
+               insn->detail->x86.op_count == 1 &&
+               insn->detail->x86.operands[0].type == X86_OP_IMM) {
+        // Handle PUSH imm32 with null bytes in the immediate value
+        uint32_t imm = (uint32_t)insn->detail->x86.operands[0].imm;
+        
+        // Instead of PUSH imm32, use: MOV EAX, imm32 (null-free) + PUSH EAX
+        generate_mov_eax_imm(b, imm);
+        uint8_t push_eax[] = {0x50}; // PUSH EAX
+        buffer_append(b, push_eax, 1);
     } else {
         // For other instruction types with null bytes, we need to build a more
         // comprehensive fallback system. For now, try to identify memory operands
@@ -631,7 +646,7 @@ struct buffer adaptive_processing(const uint8_t *input, size_t size) {
 
     // Verification pass: check if any nulls remain
     if (!verify_null_elimination(&intermediate)) {
-        DEBUG_LOG("WARNING: Null byte found in processed shellcode");
+        DEBUG_LOG("WARNING: Null byte found in processed shellcode", 0);
         // Re-run remove_null_bytes with extended debugging to identify problematic instructions
         csh handle;
         cs_insn *insn_array;
@@ -691,7 +706,7 @@ struct buffer adaptive_processing(const uint8_t *input, size_t size) {
                         }
                         
                         if (has_null) {
-                            DEBUG_LOG("  Original instruction had null bytes: ");
+                            DEBUG_LOG("  Original instruction had null bytes: ", 0);
                             for (int j = 0; j < current->insn->size; j++) {
                                 DEBUG_LOG("    Byte %d: 0x%02x", j, current->insn->bytes[j]);
                             }
@@ -704,7 +719,7 @@ struct buffer adaptive_processing(const uint8_t *input, size_t size) {
                         if (temp_strategy_count > 0) {
                             DEBUG_LOG("  Applied strategy: %s", strategies[0]->name);
                         } else {
-                            DEBUG_LOG("  No strategy applied, used fallback");
+                            DEBUG_LOG("  No strategy applied, used fallback", 0);
                         }
                     }
                     

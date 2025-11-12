@@ -110,11 +110,9 @@ strategy_t arithmetic_not_strategy = {
 
 // Arithmetic with XOR strategy
 int can_handle_arithmetic_xor(cs_insn *insn) {
-    if (!is_valid_arithmetic_reg_imm(insn)) {
-        return 0;
-    }
-    
-    return has_null_bytes(insn);
+    // Temporarily disable this strategy to avoid null byte issues
+    // This needs more careful implementation
+    return 0; // Disable until fixed
 }
 
 size_t get_size_arithmetic_xor(cs_insn *insn) {

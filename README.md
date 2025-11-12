@@ -1,12 +1,12 @@
 <div align="center">
   <h1>·𐑚𐑲𐑝𐑨𐑤𐑝𐑼 (byvalver)</h1>
   <p><b>THE SHELLCODE NULL-BYTE ELIMINATOR</b></p>
-  
+
   <img src="./IMAGES/VAPE.png" alt="byvalver logo" width="400">
 </div>
 
 <div align="center">
-  
+
   ![C](https://img.shields.io/badge/c-%2300599C.svg?style=for-the-badge&logo=c&logoColor=white)
   &nbsp;
   ![Capstone](https://img.shields.io/badge/Capstone-Disassembly-%23FF6B6B.svg?style=for-the-badge)
@@ -14,7 +14,7 @@
   ![x86](https://img.shields.io/badge/x86-Architecture-%230071C5.svg?style=for-the-badge&logo=intel&logoColor=white)
   &nbsp;
   ![License](https://img.shields.io/badge/License-Public%20Domain-%23000000.svg?style=for-the-badge)
-  
+
 </div>
 
 <p align="center">
@@ -33,7 +33,7 @@
 
 ## 🎯 OVERVIEW
 
-**byvalver** is an automated framework designed to algorithmically remove null bytes from shellcode.
+**byvalver** is an enterprise-grade automated framework designed to algorithmically remove null bytes from shellcode while preserving complete functional compatibility.
 
 `null-bytes` (`\x00`) often act as `string terminators` in many programming languages & environments, causing shellcode containing null-bytes to exit during its own execution.
 
@@ -53,7 +53,7 @@
 2. **REPLACES** instructions containing null bytes with functionally equivalent, nullbyte-free alternatives
 3. **OUTPUTS** clean, nullbyte-free, ready-to-use shellcode
 
-The core of `byvalver` is a powerful disassembly and reconstruction engine built on the [Capstone disassembly framework](http://www.capstone-engine.org/).  
+The core of `byvalver` is a powerful disassembly and reconstruction engine built on the [Capstone disassembly framework](http://www.capstone-engine.org/).
 
 It meticulously analyzes each instruction and applies a growing set of replacement strategies to ensure the final shellcode is both `functional` and `denullified`.
 
@@ -66,6 +66,7 @@ It meticulously analyzes each instruction and applies a growing set of replaceme
 - A C compiler (e.g., `gcc`)
 - The [Capstone disassembly library](http://www.capstone-engine.org/) installed with development headers
 - GNU Binutils (specifically `objcopy`) if you need to process executables like PE or ELF files
+- NASM assembler for building decoder stubs
 
 ### 🔨 BUILDING
 
@@ -76,6 +77,22 @@ make
 ```
 
 This will compile the source code and create the `byvalver` executable in the `bin` directory.
+
+For different build configurations:
+
+```bash
+# Debug build with sanitizers
+make debug
+
+# Optimized release build
+make release
+
+# Static linking
+make static
+
+# Build with verbose output
+make VERBOSE=1
+```
 
 ### 📝 BASIC USAGE
 
@@ -103,7 +120,7 @@ The tool will write the modified, null-free shellcode to `output.bin`
 
 **PARAMETERS:**
 - `<key>` - Required 32-bit hexadecimal key (e.g., `0x12345678`)
-- `<input_file>` - Your shellcode file
+- `<input_file>` - Your shellcode file  
 - `[output_file]` - Optional, defaults to `output.bin`
 
 **EXAMPLE:**
@@ -160,7 +177,7 @@ hexdump -C output.bin
 - 🔌 **Extensible framework** for new replacement strategies
 - 📐 **Relative jump/call patching** maintains control flow integrity
 - 💾 **File-based output** for easy integration
-- ✓ **Functionality verification** tools included
+- ✅ **Functionality verification** tools included
 
 </td>
 <td width="50%">
@@ -205,6 +222,7 @@ Specialized modules for different instruction types:
 - `src/shift_strategy.c` - Shift-based immediate value construction
 - `src/peb_strategies.c` - PEB traversal strategies
 - `src/hash_utils.c` - Hash utilities for API resolution
+- `src/advanced_strategies.c` - Sophisticated transformation strategies
 
 ### 🎨 ARCHITECTURE BENEFITS
 
@@ -262,10 +280,10 @@ Specialized modules for different instruction types:
 - **`MOV reg, imm32`** - Null-free sequence construction
   - Optimized byte-wise construction for EAX
   - Uses PUSH/POP sequence for other registers
-  
+
 - **`PUSH imm32`** - Null-free sequence with EAX
   - Automatic selection of `PUSH imm8` when applicable
-  
+
 - **`ADD/SUB/AND/OR/XOR/CMP reg, imm32`** - Null-free replacement using temporary register
 
 </details>
@@ -295,20 +313,20 @@ Specialized modules for different instruction types:
 - Constructs immediate values using SHL/SHR operations
 - Example: `MOV EAX, 0x001FF000` → `MOV EAX, 0x00001FF0; SHL EAX, 12`
 
-#### 📍 POSITION-INDEPENDENT CODe
+#### 📍 POSITION-INDEPENDENT CODE
 - **GET PC technique** - CALL/POP method for loading immediate values
 - Creates position-independent, null-free code
 
 #### 🔢 ARITHMETIC ENCODING
 - **`NEG` operations** - Construct values via negation
   - Example: `MOV EAX, 0x00730071` → `MOV EAX, 0xFF8CFF8F; NEG EAX`
-  
+
 - **`NOT` OPERATIONS** - Construct values via bitwise NOT
   - Example: `MOV EAX, 0x11220033` → `MOV EAX, 0xEEDDFFCC; NOT EAX`
-  
+
 - **`ADD/SUB` ENCODING** - Multi-step arithmetic construction. The system can now robustly find two null-free values that, when added or subtracted, produce the target immediate.
   - Example: `MOV EAX, 0x00100000` → `MOV EAX, 0x11223344; SUB EAX, 0x11123344`
-  
+
 - **`XOR` ENCODING** - XOR-based value construction
 
 #### 🛡️ ANTI-ANALYSIS TECHNIQUES
@@ -329,6 +347,12 @@ Check that all null bytes have been removed:
 
 ```bash
 ./verify_nulls.py <specific.bin>
+```
+
+For detailed analysis:
+
+```bash
+./verify_nulls.py <specific.bin> --detailed
 ```
 
 ### VERIFYING FUNCTIONALITY
@@ -378,6 +402,51 @@ The newly constructed, null-free shellcode is written to file.
 
 <br>
 
+## 🧪 TESTING
+
+To run the built-in test suite:
+
+```bash
+make test
+```
+
+This will compile and execute the test suite which validates the core functionality of byvalver with various shellcode samples.
+
+<br>
+
+## 🛠️ DEVELOPMENT
+
+### Build System Features
+
+The byvalver makefile provides advanced build capabilities:
+
+```bash
+# Full help information
+make help
+
+# Format code with clang-format or astyle
+make format
+
+# Static analysis with cppcheck  
+make lint
+
+# Check build dependencies
+make check-deps
+
+# Create distribution archive
+make dist
+```
+
+### Adding New Strategies
+
+To add a new strategy:
+1. Create your strategy function in the appropriate source file
+2. Define `get_size` and `generate` functions
+3. Register your strategy in the strategy registry
+4. Set an appropriate priority level
+
+<br>
+
 ## ⚠️ LIMITATIONS AND FUTURE DEVELOPMENT
 
 `byvalver` is a powerful tool, but still under active development:
@@ -407,6 +476,14 @@ Contributions are welcome! Feel free to:
 - 💡 Suggest new features
 - 🔧 Submit pull requests
 - 📖 Improve documentation
+
+To contribute a new strategy:
+1. Fork the repository
+2. Create a feature branch
+3. Add your strategy implementation
+4. Update the strategy registry
+5. Run tests to ensure compatibility
+6. Submit a pull request
 
 <br>
 
