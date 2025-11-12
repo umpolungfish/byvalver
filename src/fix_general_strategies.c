@@ -4,7 +4,7 @@
 #include <string.h>
 
 // PUSH imm32 strategy - FIXED to be more conservative
-int can_handle_push_imm32(cs_insn *insn) {
+int can_handle_push_imm32(__attribute__((unused)) cs_insn *insn) {
     // Temporarily disable this strategy due to null byte issues in testing
     // This needs more careful implementation
     return 0; // Disable until fixed

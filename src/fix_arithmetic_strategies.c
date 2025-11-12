@@ -86,7 +86,7 @@ strategy_t arithmetic_neg_strategy = {
 };
 
 // Arithmetic with NOT strategy - FIXED to only handle valid cases
-int can_handle_arithmetic_not(cs_insn *insn) {
+int can_handle_arithmetic_not(__attribute__((unused)) cs_insn *insn) {
     // NOT strategy only makes sense for MOV, not arithmetic operations
     // Removing this strategy from arithmetic operations
     return 0;
@@ -109,7 +109,7 @@ strategy_t arithmetic_not_strategy = {
 };
 
 // Arithmetic with XOR strategy
-int can_handle_arithmetic_xor(cs_insn *insn) {
+int can_handle_arithmetic_xor(__attribute__((unused)) cs_insn *insn) {
     // Temporarily disable this strategy to avoid null byte issues
     // This needs more careful implementation
     return 0; // Disable until fixed
