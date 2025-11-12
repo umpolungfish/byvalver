@@ -208,7 +208,9 @@ def calculate_entropy(data: bytes) -> float:
     entropy = 0.0
     for freq in freq_dict.values():
         probability = freq / len(data)
-        entropy -= probability * (probability.bit_length() - 1)
+        import math
+        if probability > 0:
+            entropy -= probability * math.log2(probability)
     
     return entropy
 
