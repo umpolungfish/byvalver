@@ -31,11 +31,13 @@
 
 <br>
 
-## 🎯 OVERVIEW
+## OVERVIEW
 
-**byvalver** is an enterprise-grade automated framework designed to algorithmically remove null bytes from shellcode while preserving complete functional compatibility.
+**byvalver** is an automated framework designed to algorithmically remove null bytes from shellcode while (nearly) preserving functional compatibility.
 
-`null-bytes` (`\x00`) often act as `string terminators` in many programming languages & environments, causing shellcode containing null-bytes to exit during its own execution.
+`null-bytes` (`\x00`) often act as `string terminators` in programming languages & environments, causing null-byte impregnated shellcode to abort during its own execution... 
+
+...truly the things of black flak and the nightmare fighters
 
 ### 🔄 THE PIPELINE
 
@@ -59,7 +61,7 @@ It meticulously analyzes each instruction and applies a growing set of replaceme
 
 <br>
 
-## 🚀 BUILDING AND USAGE
+## BUILDING AND USAGE
 
 ### PREREQUISITES
 
@@ -68,7 +70,7 @@ It meticulously analyzes each instruction and applies a growing set of replaceme
 - GNU Binutils (specifically `objcopy`) if you need to process executables like PE or ELF files
 - NASM assembler for building decoder stubs
 
-### 🔨 BUILDING
+### BUILDING
 
 To build the project, simply run `make` in the root directory:
 
@@ -94,7 +96,7 @@ make static
 make VERBOSE=1
 ```
 
-### 📝 BASIC USAGE
+### BASIC USAGE
 
 **1. CREATE A SHELLCODE FILE**
 
@@ -108,7 +110,7 @@ Place your raw binary shellcode into a file (e.g., `shellcode.bin`)
 
 The tool will write the modified, null-free shellcode to `output.bin`
 
-### 🔐 XOR ENCODING FEATURE
+### XOR ENCODING FEATURE
 
 `byvalver` includes a powerful XOR encoding feature that allows you to further obfuscate your processed shellcode:
 
@@ -131,7 +133,7 @@ The tool will write the modified, null-free shellcode to `output.bin`
 
 > **NOTE:** The XOR encoding feature prepends a decoder stub to your processed shellcode. The decoder stub (implemented in `decoder.asm`) uses a JMP-CALL-POP technique to retrieve the XOR key and encoded shellcode length, then decodes the shellcode byte-by-byte before execution. This provides an additional layer of obfuscation on top of null-byte removal.
 
-### 🔧 WORKING WITH EXECUTABLES (PE/ELF Files)
+### WORKING WITH EXECUTABLES (PE/ELF Files)
 
 `byvalver` is designed to work with **raw binary shellcode**. For executable formats like PE or ELF, you must first extract the code section.
 
@@ -151,7 +153,7 @@ objcopy -O binary --only-section=.text my_app.exe shellcode.bin
 
 The final, null-free shellcode will be written to `output.bin`
 
-### 👀 INSPECTING THE OUTPUT
+### INSPECTING THE OUTPUT
 
 The `output.bin` file is a raw binary file. To view its contents in hexadecimal format, use:
 
@@ -163,7 +165,7 @@ hexdump -C output.bin
 
 <br>
 
-## ⚡ FEATURES
+## FEATURES
 
 <table>
 <tr>
@@ -171,13 +173,13 @@ hexdump -C output.bin
 
 ### CORE CAPABILITIES
 
-- ✅ **Automated null-byte removal** from raw shellcode
-- 🔍 **Instruction-level analysis** via Capstone disassembly
-- 🧠 **Intelligent replacement** using strategy-based approach
-- 🔌 **Extensible framework** for new replacement strategies
-- 📐 **Relative jump/call patching** maintains control flow integrity
-- 💾 **File-based output** for easy integration
-- ✅ **Functionality verification** tools included
+- **Automated null-byte removal** from raw shellcode
+- **Instruction-level analysis** via Capstone disassembly
+- **Intelligent replacement** using strategy-based approach
+- **Extensible framework** for new replacement strategies
+- **Relative jump/call patching** maintains control flow integrity
+- **File-based output** for easy integration
+- **Functionality verification** tools included
 
 </td>
 <td width="50%">
@@ -197,11 +199,11 @@ When processing even null-free shellcode, byvalver can identify and apply more e
 
 <br>
 
-## 🏗️ MODULAR ARCHITECTURE
+## MODULAR ARCHITECTURE
 
 `byvalver` features a clean, modular architecture seamlessly integrating strategy patterns:
 
-### 📦 CORE COMPONENTS
+### CORE COMPONENTS
 
 | Component | File | Purpose |
 |-----------|------|---------|
@@ -209,7 +211,7 @@ When processing even null-free shellcode, byvalver can identify and apply more e
 | **Utilities** | `src/utils.c` | Helper functions for all strategies |
 | **Strategy Registry** | `src/strategy_registry.c` | Manages strategy collection & selection |
 
-### 🎯 STRATEGY MODULES
+### STRATEGY MODULES
 
 Specialized modules for different instruction types:
 
@@ -224,7 +226,7 @@ Specialized modules for different instruction types:
 - `src/hash_utils.c` - Hash utilities for API resolution
 - `src/advanced_strategies.c` - Sophisticated transformation strategies
 
-### 🎨 ARCHITECTURE BENEFITS
+### ARCHITECTURE BENEFITS
 
 <table>
 <tr>
@@ -251,7 +253,7 @@ Specialized modules for different instruction types:
 
 <br>
 
-## 🎯 REPLACEMENT STRATEGIES
+## REPLACEMENT STRATEGIES
 
 `byvalver` employs a multi-pass architecture with an extensive set of replacement strategies:
 
@@ -305,19 +307,19 @@ Specialized modules for different instruction types:
 <details>
 <summary><b>Click to expand advanced strategies</b></summary>
 
-#### 🔄 REGISTER OPTIMIZATION
+#### REGISTER OPTIMIZATION
 - **`CDQ`** - Efficient EDX zeroing (1 byte vs 2 bytes for `XOR EDX, EDX`)
 - **`MUL`** - Zero both EAX and EDX simultaneously (vs 4 bytes for two XOR operations)
 
-#### ⚡ SHIFT-BASED CONSTRUCTION
+#### SHIFT-BASED CONSTRUCTION
 - Constructs immediate values using SHL/SHR operations
 - Example: `MOV EAX, 0x001FF000` → `MOV EAX, 0x00001FF0; SHL EAX, 12`
 
-#### 📍 POSITION-INDEPENDENT CODE
+#### POSITION-INDEPENDENT CODE
 - **GET PC technique** - CALL/POP method for loading immediate values
 - Creates position-independent, null-free code
 
-#### 🔢 ARITHMETIC ENCODING
+#### ARITHMETIC ENCODING
 - **`NEG` operations** - Construct values via negation
   - Example: `MOV EAX, 0x00730071` → `MOV EAX, 0xFF8CFF8F; NEG EAX`
 
@@ -329,7 +331,7 @@ Specialized modules for different instruction types:
 
 - **`XOR` ENCODING** - XOR-based value construction
 
-#### 🛡️ ANTI-ANALYSIS TECHNIQUES
+#### ANTI-ANALYSIS TECHNIQUES
 - **PEB-based debugger checks** - Examines BeingDebugged flag
 - **Timing-based detection** - Uses RDTSC for execution delay measurement
 - **INT3-based detection** - Identifies debugger presence
@@ -375,7 +377,7 @@ Confirm that the logical operations are preserved:
 
 <br>
 
-## 🔬 CORE CONCEPTS
+## CORE CONCEPTS
 
 The process of removing null bytes without corrupting shellcode is complex. `byvalver` tackles this with a **multi-pass approach**:
 
@@ -402,7 +404,7 @@ The newly constructed, null-free shellcode is written to file.
 
 <br>
 
-## 🧪 TESTING
+## TESTING
 
 To run the built-in test suite:
 
@@ -414,7 +416,7 @@ This will compile and execute the test suite which validates the core functional
 
 <br>
 
-## 🛠️ DEVELOPMENT
+## DEVELOPMENT
 
 ### Build System Features
 
@@ -447,7 +449,7 @@ To add a new strategy:
 
 <br>
 
-## ⚠️ LIMITATIONS AND FUTURE DEVELOPMENT
+## LIMITATIONS AND FUTURE DEVELOPMENT
 
 `byvalver` is a powerful tool, but still under active development:
 
@@ -460,22 +462,17 @@ To add a new strategy:
 
 ### FUTURE ROADMAP
 
-- 🔄 Dynamic jump instruction size adjustment
-- 📚 Expanded instruction coverage
-- 🎯 Enhanced 8-bit and 16-bit register support
-- ⚡ Further optimization of immediate value construction
-- 🧪 Additional verification and testing tools
+- Dynamic jump instruction size adjustment
+- Expanded instruction coverage
+- Enhanced 8-bit and 16-bit register support
+- Further optimization of immediate value construction
+- Additional verification and testing tools
 
 <br>
 
 ## 🤝 CONTRIBUTING
 
-Contributions are welcome! Feel free to:
-
-- 🐛 Report bugs
-- 💡 Suggest new features
-- 🔧 Submit pull requests
-- 📖 Improve documentation
+Contributions are welcome! 
 
 To contribute a new strategy:
 1. Fork the repository
