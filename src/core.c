@@ -620,8 +620,8 @@ void fallback_general_instruction(struct buffer *b, cs_insn *insn) {
                         uint8_t reg_index = get_reg_index(src_reg);
                         // Use SIB byte to avoid null when source register is EAX
                         if (reg_index == 0) {
-                            uint8_t code[] = {0x89, 0x04, 0x00}; // MOV [EAX], EAX using SIB
-                            code[2] = 0x00; // SIB: [EAX + no index * 1]
+                            uint8_t code[] = {0x89, 0x04, 0x20}; // MOV [EAX], EAX using SIB: [EAX] with SIB byte 0x20
+                            // SIB: scale=00 (1x), index=100 (ESP/no index), base=000 (EAX) = [EAX]
                             buffer_append(b, code, 3);
                         } else {
                             uint8_t code[] = {0x89, 0x00}; // MOV [EAX], reg format
@@ -635,8 +635,8 @@ void fallback_general_instruction(struct buffer *b, cs_insn *insn) {
                         uint8_t reg_index = get_reg_index(dst_reg);
                         // Use SIB byte to avoid null when destination register is EAX
                         if (reg_index == 0) {
-                            uint8_t code[] = {0x8B, 0x04, 0x00}; // MOV EAX, [EAX] using SIB
-                            code[2] = 0x00; // SIB: [EAX + no index * 1]
+                            uint8_t code[] = {0x8B, 0x04, 0x20}; // MOV EAX, [EAX] using SIB: [EAX] with SIB byte 0x20
+                            // SIB: scale=00 (1x), index=100 (ESP/no index), base=000 (EAX) = [EAX]
                             buffer_append(b, code, 3);
                         } else {
                             uint8_t code[] = {0x8B, 0x00}; // MOV reg, [EAX] format
@@ -667,8 +667,9 @@ void fallback_general_instruction(struct buffer *b, cs_insn *insn) {
                         }
                         
                         // Use SIB byte to avoid null: [EAX] using SIB byte format
-                        uint8_t code[] = {opcode, 0x04, 0x20}; // op [EAX], reg using SIB
-                        code[2] = 0x20 + (reg_index << 3); // SIB: scale=00 (1x), index=100 (no index), base=000 (EAX)
+                        uint8_t code[] = {opcode, 0x00, 0x20}; // op [EAX], reg using SIB
+                        code[1] = 0x04 | (reg_index << 3); // ModR/M: reg=reg_index, r/m=100 (SIB follows)
+                        code[2] = 0x20; // SIB: scale=00 (1x), index=100 (no index), base=000 (EAX)
                         buffer_append(b, code, 3);
                         handled = 1;
                     }

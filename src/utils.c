@@ -224,10 +224,8 @@ void generate_op_reg_imm(struct buffer *b, cs_insn *insn) {
         uint8_t code[] = {base_opcode, 0xC0 + get_reg_index(reg), (uint8_t)imm};
         buffer_append(b, code, 3);
     } else {
-        // Use 32-bit immediate format
         uint8_t code[] = {0x83, 0xC0 + get_reg_index(reg), 0, 0, 0, 0};
-        code[0] = base_opcode + 1; // Switch to 8-bit immediate
-        code[1] = 0x00; // Encoding for [EAX]
+        code[0] = base_opcode + 0x01; // Switch from 83 to 81 for 32-bit immediate
         memcpy(code + 2, &imm, 4);
         buffer_append(b, code, 6);
     }
@@ -402,11 +400,11 @@ void generate_arith_mem32_imm32(struct buffer *b, cs_insn *insn) {
     // The opcode is 83/8B - but 83 is for 8-bit immediates, 81 is for 32-bit immediates
     // For memory operations like ADD [EAX], imm32, the format is: 81 /0 imm32
     // where ModR/M byte 00 is for [EAX], but that creates null byte
-    // Using SIB byte to avoid null: 81 /0 uses ModR/M=04 with SIB=00
-    uint8_t fixed_code[] = {0x81, 0x04, 0x00, 0, 0, 0, 0};
+    // Using SIB byte to avoid null: 81 /0 uses ModR/M=04 with SIB=20 (scale=00, index=100/ESP, base=000/EAX)
+    uint8_t fixed_code[] = {0x81, 0x04, 0x20, 0, 0, 0, 0};
     fixed_code[0] = base_opcode + 0x01; // Switch from 83 to 81 for 32-bit immediate
     // fixed_code[1] = 0x04; is ModR/M byte that indicates SIB byte follows
-    // fixed_code[2] = 0x00; is SIB byte for [EAX + no index * 1] 
+    // fixed_code[2] = 0x20; is SIB byte for [EAX] (scale=00, index=100/ESP=no index, base=000/EAX)
     memcpy(fixed_code + 3, &imm, 4);
     buffer_append(b, fixed_code, 7);
 }
