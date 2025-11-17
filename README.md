@@ -169,10 +169,12 @@ hexdump -C output.bin
 - **Automated null-byte removal** from raw shellcode
 - **Instruction-level analysis** via Capstone disassembly
 - **Intelligent replacement** using strategy-based approach
+- **40+ transformation strategies** across 20+ specialized modules
 - **Extensible framework** for new replacement strategies
 - **Relative jump/call patching** maintains control flow integrity
 - **File-based output** for easy integration
-- **Functionality verification** tools included
+- **Comprehensive verification** tools included
+- **Clean compilation** - zero warnings in all strategy modules
 
 </td>
 <td width="50%">
@@ -218,6 +220,7 @@ Specialized modules for different instruction types:
 - `src/peb_strategies.c` - PEB traversal strategies
 - `src/hash_utils.c` - Hash utilities for API resolution
 - `src/advanced_strategies.c` - Sophisticated transformation strategies
+- `src/getpc_strategies.c` - Byte-construction strategies for null-byte immediates
 
 ### ARCHITECTURE BENEFITS
 
@@ -309,8 +312,10 @@ Specialized modules for different instruction types:
 - Example: `MOV EAX, 0x001FF000` → `MOV EAX, 0x00001FF0; SHL EAX, 12`
 
 #### POSITION-INDEPENDENT CODE
-- **GET PC technique** - CALL/POP method for loading immediate values
-- Creates position-independent, null-free code
+- **GET PC technique** - Originally intended for CALL/POP method, but implemented as byte-construction strategy
+- The traditional `CALL $+0` approach (`E8 00 00 00 00`) itself contains null bytes in 32-bit x86
+- Solution: Byte-by-byte construction method (see BYTE-BY-BYTE CONSTRUCTION section)
+- Future enhancement: Consider FNSTENV-based GET PC for true position-independent code
 
 #### ARITHMETIC ENCODING
 - **`NEG` operations** - Construct values via negation
@@ -323,6 +328,36 @@ Specialized modules for different instruction types:
   - Example: `MOV EAX, 0x00100000` → `MOV EAX, 0x11223344; SUB EAX, 0x11123344`
 
 - **`XOR` ENCODING** - XOR-based value construction
+
+#### BYTE-BY-BYTE CONSTRUCTION
+- **Null-free immediate construction** - Builds 32-bit values byte-by-byte using shifts and ORs
+  - Avoids all null bytes in instruction encoding
+  - Example: `MOV EAX, 0x00112233` →
+    ```asm
+    XOR EAX, EAX         ; Zero register
+    SHL EAX, 8           ; Shift left
+    OR  AL, 0x11         ; Add MSB
+    SHL EAX, 8           ; Shift left
+    OR  AL, 0x22         ; Add next byte
+    SHL EAX, 8           ; Shift left
+    OR  AL, 0x33         ; Add LSB
+    ```
+  - Optimized for EAX (shorter encoding with `OR AL, imm8`)
+  - Falls back to `OR reg, imm8` for other registers
+  - Priority: 25 (low) - used as fallback when other strategies don't apply
+  - Expansion ratio: ~2-3x for null-heavy immediates
+
+#### SOPHISTICATED NULL-BYTE AVOIDANCE STRATEGIES
+- **ModR/M Byte Null-Bypass Transformations** - For instructions like `dec ebp`, `inc edx`, `mov eax, ebx` where the ModR/M byte contains nulls, uses `MOV TEMP_REG, reg; DEC TEMP_REG; MOV reg, TEMP_REG` approach to avoid null bytes in ModR/M bytes
+- **Register-Preserving Arithmetic Substitutions** - For `dec reg` with null-byte encoding, uses `MOV TEMP_REG, reg; ADD TEMP_REG, -1; MOV reg, TEMP_REG` to avoid ModR/M nulls
+- **Conditional Flag Preservation Techniques** - For `test reg, reg; je label` patterns where individual instructions have null bytes, uses `OR reg, reg` which preserves ZF, SF, PF flags like TEST does
+- **Displacement-Offset Null-Bypass with SIB** - For `mov [offset], reg` where offset contains nulls, uses SIB addressing mode (`MOV EAX, offset; MOV [EAX], reg` with SIB byte to avoid null ModR/M bytes)
+- **Register Availability Analysis** - Analyzes which registers can be safely used as temporaries without interfering with current operations
+- **Bitwise Operations with Null-Free Immediate Values** - For `xor reg, 0x00100000` where immediate contains nulls, uses `MOV EAX, imm; XOR REG, EAX` approach
+- **Conditional Jump Target Preservation** - For `jl 0x00100200` where displacement has nulls, uses register-based indirect jumps
+- **Push/Pop Sequence Optimization** - Optimized `push reg` operations to avoid ModR/M null bytes using temporary registers
+- **Byte-Granularity Null Elimination** - For operations like `xor al, dl` where byte-level operations might introduce nulls, uses full register operations when needed
+- **Sub-Sequence Pattern Recognition** - Recognizes and preserves functional blocks like function prologue patterns (`push ebp; mov ebp, esp; sub esp, 20h`)
 
 #### ANTI-ANALYSIS TECHNIQUES
 - **PEB-based debugger checks** - Examines BeingDebugged flag
@@ -407,6 +442,26 @@ make test
 
 This will compile and execute the test suite which validates the core functionality of byvalver with various shellcode samples.
 
+### STRATEGY-SPECIFIC TESTING
+
+Test individual strategies with custom-generated shellcode:
+
+```bash
+# Generate test shellcode for byte-construction strategy
+python3 .tests/test_getpc.py
+
+# Process with byvalver
+./bin/byvalver .test_bins/getpc_test.bin .test_bins/getpc_test_processed.bin
+
+# Verify null-byte elimination
+python3 ./verify_nulls.py .test_bins/getpc_test_processed.bin
+
+# Check functionality preservation
+python3 ./verify_functionality.py .test_bins/getpc_test.bin .test_bins/getpc_test_processed.bin
+```
+
+The `.tests/` directory contains strategy-specific test generators for targeted validation of individual transformation techniques.
+
 <br>
 
 ## DEVELOPMENT
@@ -445,10 +500,26 @@ make dist
 ### Adding New Strategies
 
 To add a new strategy:
-1. Create your strategy function in the appropriate source file
-2. Define `get_size` and `generate` functions
-3. Register your strategy in the strategy registry
-4. Set an appropriate priority level
+1. Create your strategy module (e.g., `src/new_strategy.c` and `src/new_strategy.h`)
+2. Implement the strategy interface:
+   - `can_handle(cs_insn *insn)` - Determines if strategy applies
+   - `get_size(cs_insn *insn)` - Calculates replacement size
+   - `generate(struct buffer *b, cs_insn *insn)` - Generates null-free code
+3. Define the strategy struct with name and priority
+4. Create registration function `register_new_strategy()`
+5. Add to `src/strategy_registry.c`:
+   - Forward declare registration function
+   - Call in `init_strategies()`
+6. Add source file to `MAIN_SRCS` in Makefile
+7. Test with custom shellcode samples
+
+**Example:** See `src/getpc_strategies.c` for a complete implementation following this pattern.
+
+**Priority Guidelines:**
+- **100+**: Critical optimizations and context-aware transformations
+- **50-99**: Standard null-byte elimination strategies
+- **25-49**: Fallback strategies for edge cases
+- **1-24**: Low-priority experimental techniques
 
 <br>
 
@@ -465,11 +536,14 @@ To add a new strategy:
 
 ### FUTURE ROADMAP
 
+- ✅ **COMPLETED**: Byte-by-byte immediate construction strategy
 - Dynamic jump instruction size adjustment
 - Expanded instruction coverage
 - Enhanced 8-bit and 16-bit register support
 - Further optimization of immediate value construction
+- True GET PC implementation using FNSTENV technique
 - Additional verification and testing tools
+- Per-strategy performance benchmarking
 
 <br>
 

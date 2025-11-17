@@ -32,6 +32,12 @@ void register_shift_strategy(); // Forward declaration
 void register_peb_strategies(); // Forward declaration
 void register_conservative_strategies(); // Forward declaration
 void register_lea_strategies(); // Forward declaration
+void register_enhanced_conservative_mov_strategy(); // Forward declaration
+void register_context_preservation_strategies(); // Forward declaration
+void register_sequence_preservation_strategies(); // Forward declaration
+void register_advanced_transformations(); // Forward declaration
+void init_advanced_transformations(); // Forward declaration
+void register_getpc_strategies(); // Forward declaration
 
 void init_strategies() {
     #ifdef DEBUG
@@ -39,8 +45,14 @@ void init_strategies() {
     #endif
 
     strategy_count = 0;
-    register_lea_strategies();  // Register LEA strategies first (highest priority)
-    register_conservative_strategies();  // Register conservative strategies next
+    register_advanced_transformations();  // Register advanced transformations (highest priority)
+    init_advanced_transformations();      // Initialize the can_handle functions
+    register_sequence_preservation_strategies();  // Register sequence preservation strategies
+    register_context_preservation_strategies();  // Register context preservation strategies
+    register_lea_strategies();  // Register LEA strategies
+    register_enhanced_conservative_mov_strategy();  // Register enhanced conservative strategy
+    register_conservative_strategies();  // Register conservative strategies
+    register_getpc_strategies();  // Register GET PC (CALL/POP) strategies
     register_mov_strategies();  // Register all MOV strategies
     register_arithmetic_strategies();  // Register all arithmetic strategies
     register_memory_strategies();  // Register all memory strategies
