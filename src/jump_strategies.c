@@ -143,15 +143,17 @@ void generate_generic_mem_null_disp(struct buffer *b, cs_insn *insn) {
                     uint8_t src_reg = insn->detail->x86.operands[1].reg;
                     uint8_t reg_index = get_reg_index(src_reg);
                     // Use SIB byte to avoid null in ModR/M: [EAX] using SIB byte format
-                    uint8_t code[] = {0x89, 0x04, 0x20}; // MOV [EAX], reg using SIB: [EAX + no index * 1]
-                    code[2] = 0x20 + (reg_index << 3); // SIB: scale=00 (1x), index=100 (no index), base=000 (EAX)
+                    uint8_t code[] = {0x89, 0x04, 0x20}; // MOV [EAX], reg using SIB: [EAX] with reg in ModR/M
+                    code[1] = 0x04 | (reg_index << 3); // ModR/M: reg=reg_index, r/m=100 (SIB follows)
+                    // SIB: scale=00, index=ESP(100 - special no-index), base=000 (EAX) = [EAX]
                     buffer_append(b, code, 3);
                 } else { // Source is memory [disp32]
                     uint8_t dst_reg = insn->detail->x86.operands[0].reg;
                     uint8_t reg_index = get_reg_index(dst_reg);
                     // Use SIB byte to avoid null in ModR/M: [EAX] using SIB byte format
-                    uint8_t code[] = {0x8B, 0x04, 0x20}; // MOV reg, [EAX] using SIB: [EAX + no index * 1]
-                    code[2] = 0x20 + (reg_index << 3); // SIB: scale=00 (1x), index=100 (no index), base=000 (EAX)
+                    uint8_t code[] = {0x8B, 0x04, 0x20}; // MOV reg, [EAX] using SIB: [EAX] with reg in ModR/M
+                    code[1] = 0x04 | (reg_index << 3); // ModR/M: reg=reg_index, r/m=100 (SIB follows)
+                    // SIB: scale=00, index=ESP(100 - special no-index), base=000 (EAX) = [EAX]
                     buffer_append(b, code, 3);
                 }
             } else if (insn->id == X86_INS_PUSH) {
@@ -165,7 +167,8 @@ void generate_generic_mem_null_disp(struct buffer *b, cs_insn *insn) {
                 uint8_t reg_index = get_reg_index(reg);
                 // Use SIB byte to avoid null: [EAX] using SIB byte format
                 uint8_t code[] = {0x39, 0x04, 0x20}; // CMP [EAX], reg using SIB
-                code[2] = 0x20 + (reg_index << 3); // SIB: scale=00 (1x), index=100 (no index), base=000 (EAX)
+                code[1] = 0x04 | (reg_index << 3); // ModR/M: reg=reg_index, r/m=100 (SIB follows)
+                // SIB: scale=00, index=ESP(100 - special no-index), base=000 (EAX) = [EAX]
                 buffer_append(b, code, 3);
             } else if (insn->id == X86_INS_ADD || insn->id == X86_INS_SUB || 
                        insn->id == X86_INS_AND || insn->id == X86_INS_OR || 
@@ -186,18 +189,19 @@ void generate_generic_mem_null_disp(struct buffer *b, cs_insn *insn) {
                 
                 // Use SIB byte to avoid null: [EAX] using SIB byte format
                 uint8_t code[] = {opcode, 0x04, 0x20}; // op [EAX], reg using SIB
-                code[2] = 0x20 + (reg_index << 3); // SIB: scale=00 (1x), index=100 (no index), base=000 (EAX)
+                code[1] = 0x04 | (reg_index << 3); // ModR/M: reg=reg_index, r/m=100 (SIB follows)
+                // SIB: scale=00, index=ESP(100 - special no-index), base=000 (EAX) = [EAX]
                 buffer_append(b, code, 3);
             } else if (insn->id == X86_INS_NOP) {
                 // NOP with null bytes in displacement - replace with equivalent no-op
                 // Do nothing - just skip the NOP since it's just a no-operation
             } else if (insn->id == X86_INS_INC || insn->id == X86_INS_DEC) {
                 // Handle INC/DEC memory operations with null displacement
-                uint8_t opcode = (insn->id == X86_INS_INC) ? 0xFF : 0xFE; // INC/DEC memory uses FF/FE
+                uint8_t opcode = 0xFF; // INC/DEC memory uses FF
                 // Use SIB byte for memory operation to avoid null bytes
                 uint8_t code[] = {opcode, 0x04, 0x20};
-                if (insn->id == X86_INS_INC) code[1] |= 0x00;  // INC uses /0
-                else code[1] |= 0x08;  // DEC uses /1
+                if (insn->id == X86_INS_INC) code[1] = 0x04 | 0x00;  // INC uses /0: reg=000
+                else code[1] = 0x04 | 0x08;  // DEC uses /1: reg=001
                 code[2] = 0x20; // SIB: scale=00 (1x), index=100 (no index), base=000 (EAX)
                 buffer_append(b, code, 3);
             } else if (insn->id == X86_INS_ADD || insn->id == X86_INS_SUB || 
@@ -222,7 +226,8 @@ void generate_generic_mem_null_disp(struct buffer *b, cs_insn *insn) {
                     
                     // Use SIB byte to avoid null: [EAX] using SIB byte format
                     uint8_t code[] = {opcode, 0x04, 0x20}; // op [EAX], reg using SIB
-                    code[2] = 0x20 + (reg_index << 3); // SIB: scale=00 (1x), index=100 (no index), base=000 (EAX)
+                    code[1] = 0x04 | (reg_index << 3); // ModR/M: reg=reg_index, r/m=100 (SIB follows)
+                    // SIB: scale=00, index=ESP(100 - special no-index), base=000 (EAX) = [EAX]
                     buffer_append(b, code, 3);
                 }
             }

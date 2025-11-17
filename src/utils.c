@@ -270,9 +270,9 @@ void generate_mov_reg_mem_imm(struct buffer *b, cs_insn *insn) {
     // For [EAX] (MMM=000) and reg (RRR), ModR/M = 00 (RRR<<3) 000
     // If reg is EAX, RRR=000, so ModR/M = 00 000 000 = 0x00 (null byte!)
     if (reg == X86_REG_EAX) {
-        // Use SIB byte to avoid null: MOV EAX, [EAX + ECX*1]
-        // This becomes: 8B 04 08 (where 04 is ModR/M with SIB, 08 is SIB for [EAX+ECX*1])
-        uint8_t code[] = {0x8B, 0x04, 0x08}; // MOV EAX, [EAX + ECX*1]
+        // Use SIB byte to avoid null: MOV EAX, [EAX]
+        // This becomes: 8B 04 20 (where 04 is ModR/M with SIB, 20 is SIB for [EAX])
+        uint8_t code[] = {0x8B, 0x04, 0x20}; // MOV EAX, [EAX]
         buffer_append(b, code, 3);
     } else {
         // For other registers, the ModR/M byte is safe
@@ -300,9 +300,9 @@ void generate_lea_reg_mem_disp32(struct buffer *b, cs_insn *insn) {
     // For [EAX] (MMM=000) and dst_reg (RRR), ModR/M = 00 (RRR<<3) 000  
     // If dst_reg is EAX, RRR=000, so ModR/M = 00 000 000 = 0x00 (null byte!)
     if (dst_reg == X86_REG_EAX) {
-        // Use SIB byte to avoid null: LEA EAX, [EAX + ECX*1]
-        // This becomes: 8D 04 08 (where 04 is ModR/M with SIB, 08 is SIB for [EAX+ECX*1])
-        uint8_t code[] = {0x8D, 0x04, 0x08}; // LEA EAX, [EAX + ECX*1]
+        // Use SIB byte to avoid null: LEA EAX, [EAX]
+        // This becomes: 8D 04 20 (where 04 is ModR/M with SIB, 20 is SIB for [EAX])
+        uint8_t code[] = {0x8D, 0x04, 0x20}; // LEA EAX, [EAX]
         buffer_append(b, code, 3);
     } else {
         // For other registers, the ModR/M byte is safe
@@ -331,9 +331,9 @@ void generate_mov_disp32_reg(struct buffer *b, cs_insn *insn) {
     // If src_reg is EAX, RRR=000, so ModR/M = 00 000 000 = 0x00 (null byte!)
     uint8_t src_reg_idx = get_reg_index(src_reg);
     if (src_reg == X86_REG_EAX) {
-        // Use SIB byte to avoid null: MOV [EAX + ECX*1], EAX
-        // This becomes: 89 04 08 (where 04 is ModR/M with SIB, 08 is SIB for [EAX+ECX*1])
-        uint8_t code[] = {0x89, 0x04, 0x08}; // MOV [EAX + ECX*1], EAX
+        // Use SIB byte to avoid null: MOV [EAX], EAX
+        // This becomes: 89 04 20 (where 04 is ModR/M with SIB, 20 is SIB for [EAX])
+        uint8_t code[] = {0x89, 0x04, 0x20}; // MOV [EAX], EAX
         buffer_append(b, code, 3);
     } else {
         // For other registers, the ModR/M byte is safe
@@ -361,9 +361,9 @@ void generate_cmp_mem32_reg(struct buffer *b, cs_insn *insn) {
     // For [EAX] (MMM=000) and reg (RRR), ModR/M = 00 (RRR<<3) 000
     // If reg is EAX, RRR=000, so ModR/M = 00 000 000 = 0x00 (null byte!)
     if (reg == X86_REG_EAX) {
-        // Use SIB byte to avoid null: CMP [EAX + ECX*1], EAX
-        // This becomes: 39 04 08 (where 04 is ModR/M with SIB, 08 is SIB for [EAX+ECX*1])
-        uint8_t code[] = {0x39, 0x04, 0x08}; // CMP [EAX + ECX*1], EAX
+        // Use SIB byte to avoid null: CMP [EAX], EAX
+        // This becomes: 39 04 20 (where 04 is ModR/M with SIB, 20 is SIB for [EAX])
+        uint8_t code[] = {0x39, 0x04, 0x20}; // CMP [EAX], EAX
         buffer_append(b, code, 3);
     } else {
         // For other registers, the ModR/M byte is safe

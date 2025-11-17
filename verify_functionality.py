@@ -166,14 +166,14 @@ def compare_mov_to_arith_sequence(orig_insn: Dict[str, Any], proc_insns: List[Di
         if op['type'] == 2:  # Immediate value
             target_val = op['value']
             break
-    
+
     if target_val is None:
         return False, 0
-    
+
     # Check for simple XOR reg, reg pattern (for zero values)
     if target_val == 0 and len(proc_insns) >= 1:
         first_insn = proc_insns[0]
-        if (first_insn['mnemonic'] == 'xor' and 
+        if (first_insn['mnemonic'] == 'xor' and
             len(first_insn['operands']) == 2 and
             first_insn['operands'][0]['value'] == first_insn['operands'][1]['value']):
             # Register names match the original MOV destination
@@ -184,12 +184,264 @@ def compare_mov_to_arith_sequence(orig_insn: Dict[str, Any], proc_insns: List[Di
                     break
             if orig_dest and first_insn['operands'][0]['value'] == orig_dest:
                 return True, 1
-    
+
+    # Check for MOV EAX, <value>; MOV reg, EAX pattern (common transformation)
+    if len(proc_insns) >= 2:
+        first_insn = proc_insns[0]
+        second_insn = proc_insns[1]
+
+        # MOV EAX, <target_val>; MOV orig_reg, EAX
+        if (first_insn['mnemonic'] == 'mov' and len(first_insn['operands']) == 2 and
+            first_insn['operands'][0]['type'] == 1 and first_insn['operands'][0]['value'] == 'eax' and
+            first_insn['operands'][1]['type'] == 2 and first_insn['operands'][1]['value'] == target_val and
+            second_insn['mnemonic'] == 'mov' and len(second_insn['operands']) == 2 and
+            second_insn['operands'][0]['type'] == 1):
+
+            # Get the original destination register
+            orig_dest = None
+            for op in orig_insn['operands']:
+                if op['type'] == 1:  # Register
+                    orig_dest = op['value']
+                    break
+
+            # Check if the second MOV moves EAX to the original destination register
+            if (orig_dest and second_insn['operands'][0]['value'] == orig_dest and
+                second_insn['operands'][1]['type'] == 1 and second_insn['operands'][1]['value'] == 'eax'):
+                return True, 2  # Matches first 2 processed instructions
+
+    # Check for MOV EAX, <encoded_val>; NOT EAX or NEG EAX; MOV reg, EAX pattern
+    if len(proc_insns) >= 2:
+        first_insn = proc_insns[0]
+        second_insn = proc_insns[1]
+
+        if (first_insn['mnemonic'] == 'mov' and len(first_insn['operands']) == 2 and
+            first_insn['operands'][0]['type'] == 1 and first_insn['operands'][0]['value'] == 'eax' and
+            second_insn['mnemonic'] in ['not', 'neg'] and len(second_insn['operands']) == 1 and
+            second_insn['operands'][0]['type'] == 1 and second_insn['operands'][0]['value'] == 'eax'):
+
+            # Get the original destination register and immediate value
+            orig_dest = None
+            orig_val = None
+            for op in orig_insn['operands']:
+                if op['type'] == 1:  # Register
+                    orig_dest = op['value']
+                elif op['type'] == 2:  # Immediate
+                    orig_val = op['value']
+
+            # Verify that the encoded value and operation result in original target
+            if orig_dest and orig_val:
+                first_immediate = first_insn['operands'][1]['value']
+                # For NOT: orig_val = ~first_immediate
+                if second_insn['mnemonic'] == 'not' and (~first_immediate & 0xFFFFFFFF) == orig_val:
+                    # Now check if there's a third instruction that moves to the original destination
+                    if len(proc_insns) >= 3:
+                        third_insn = proc_insns[2]
+                        if (third_insn['mnemonic'] == 'mov' and len(third_insn['operands']) == 2 and
+                            third_insn['operands'][0]['type'] == 1 and third_insn['operands'][0]['value'] == orig_dest and
+                            third_insn['operands'][1]['type'] == 1 and third_insn['operands'][1]['value'] == 'eax'):
+                            return True, 3
+                        else:
+                            # If original dest reg was EAX, then the NOT EAX already changed EAX, so no 3rd instruction needed
+                            if orig_dest == 'eax':
+                                return True, 2
+                # For NEG: orig_val = -first_immediate (two's complement)
+                elif second_insn['mnemonic'] == 'neg' and ((~first_immediate + 1) & 0xFFFFFFFF) == orig_val:
+                    if len(proc_insns) >= 3:
+                        third_insn = proc_insns[2]
+                        if (third_insn['mnemonic'] == 'mov' and len(third_insn['operands']) == 2 and
+                            third_insn['operands'][0]['type'] == 1 and third_insn['operands'][0]['value'] == orig_dest and
+                            third_insn['operands'][1]['type'] == 1 and third_insn['operands'][1]['value'] == 'eax'):
+                            return True, 3
+                        else:
+                            # If original dest reg was EAX, then the NEG EAX already changed EAX, so no 3rd instruction needed
+                            if orig_dest == 'eax':
+                                return True, 2
+
     # Check for arithmetic sequences that produce the target value
     # Example: MOV EAX, 0x100000 -> XOR EAX, EAX; MOV AH, 0x10; SHL EAX, 16
     # This is complex, so we'll use a simplified version for now
-    
+
     return False, 0
+
+
+def compare_lea_to_mov_sequence(orig_insn: Dict[str, Any], proc_insns: List[Dict[str, Any]]) -> Tuple[bool, int]:
+    """
+    Compare a LEA instruction to a sequence of instructions that achieve the same effect.
+    LEA reg, [disp32] is equivalent to MOV reg, disp32 when there are no registers in the address calculation.
+    """
+    if orig_insn['mnemonic'] != 'lea' or len(proc_insns) < 1:
+        return False, 0
+
+    # Extract the displacement from the LEA instruction
+    displacement = None
+    lea_dest_reg = None
+
+    for op in orig_insn['operands']:
+        if op['type'] == 1:  # Destination register
+            lea_dest_reg = op['value']
+        elif op['type'] == 3:  # Memory operand
+            if 'value' in op and 'disp' in op['value']:  # Check if it's a memory operand with displacement
+                displacement = op['value']['disp']
+
+    if displacement is None or lea_dest_reg is None:
+        return False, 0
+
+    # Case 1: LEA reg, [disp32] -> MOV EAX, disp32; MOV reg, EAX
+    if len(proc_insns) >= 2:
+        first_insn = proc_insns[0]
+        second_insn = proc_insns[1]
+
+        # Check if first instruction is MOV EAX, displacement
+        if (first_insn['mnemonic'] == 'mov' and len(first_insn['operands']) == 2 and
+            first_insn['operands'][0]['type'] == 1 and first_insn['operands'][0]['value'] == 'eax' and
+            first_insn['operands'][1]['type'] == 2 and first_insn['operands'][1]['value'] == displacement):
+
+            # Check if second instruction is MOV lea_dest_reg, EAX
+            if (second_insn['mnemonic'] == 'mov' and len(second_insn['operands']) == 2 and
+                second_insn['operands'][0]['type'] == 1 and second_insn['operands'][0]['value'] == lea_dest_reg and
+                second_insn['operands'][1]['type'] == 1 and second_insn['operands'][1]['value'] == 'eax'):
+                return True, 2
+
+    # Case 2: LEA reg, [disp32] -> MOV reg, disp32 (if the displacement itself has no nulls and was preserved)
+    if len(proc_insns) >= 1:
+        first_insn = proc_insns[0]
+
+        if (first_insn['mnemonic'] == 'mov' and len(first_insn['operands']) == 2 and
+            first_insn['operands'][0]['type'] == 1 and first_insn['operands'][0]['value'] == lea_dest_reg and
+            first_insn['operands'][1]['type'] == 2 and first_insn['operands'][1]['value'] == displacement):
+            return True, 1
+
+    # Case 3: LEA reg, [disp32] -> MOV EAX, <encoded_disp>; NEG EAX; LEA reg, [EAX] (when using negation to avoid nulls)
+    if len(proc_insns) >= 3:
+        first_insn = proc_insns[0]
+        second_insn = proc_insns[1]
+        third_insn = proc_insns[2]
+
+        if (first_insn['mnemonic'] == 'mov' and len(first_insn['operands']) == 2 and
+            first_insn['operands'][0]['type'] == 1 and first_insn['operands'][0]['value'] == 'eax' and
+            second_insn['mnemonic'] == 'neg' and len(second_insn['operands']) == 1 and
+            second_insn['operands'][0]['type'] == 1 and second_insn['operands'][0]['value'] == 'eax' and
+            third_insn['mnemonic'] == 'lea' and len(third_insn['operands']) == 2 and
+            third_insn['operands'][0]['type'] == 1 and third_insn['operands'][0]['value'] == lea_dest_reg and
+            third_insn['operands'][1]['type'] == 3):  # Memory operand
+
+            # Check if the LEA uses EAX in its memory operand
+            third_mem_op = third_insn['operands'][1]
+            if 'value' in third_mem_op and 'base' in third_mem_op['value'] and third_mem_op['value']['base'] == 'eax':
+                # Verify that the sequence produces the expected displacement value
+                encoded_disp = first_insn['operands'][1]['value']
+                # Apply negation: -encoded_disp should equal original displacement
+                negated_value = ((~encoded_disp + 1) & 0xFFFFFFFF)  # Two's complement negation
+                if negated_value == displacement:
+                    return True, 3
+
+    # Case 4: LEA reg, [disp32] -> MOV EAX, <encoded_disp>; NOT EAX; LEA reg, [EAX]
+    if len(proc_insns) >= 3:
+        first_insn = proc_insns[0]
+        second_insn = proc_insns[1]
+        third_insn = proc_insns[2]
+
+        if (first_insn['mnemonic'] == 'mov' and len(first_insn['operands']) == 2 and
+            first_insn['operands'][0]['type'] == 1 and first_insn['operands'][0]['value'] == 'eax' and
+            second_insn['mnemonic'] == 'not' and len(second_insn['operands']) == 1 and
+            second_insn['operands'][0]['type'] == 1 and second_insn['operands'][0]['value'] == 'eax' and
+            third_insn['mnemonic'] == 'lea' and len(third_insn['operands']) == 2 and
+            third_insn['operands'][0]['type'] == 1 and third_insn['operands'][0]['value'] == lea_dest_reg and
+            third_insn['operands'][1]['type'] == 3):  # Memory operand
+
+            # Check if the LEA uses EAX in its memory operand
+            third_mem_op = third_insn['operands'][1]
+            if 'value' in third_mem_op and 'base' in third_mem_op['value'] and third_mem_op['value']['base'] == 'eax':
+                # Verify that the sequence produces the expected displacement value
+                encoded_disp = first_insn['operands'][1]['value']
+                # Apply bitwise NOT: ~encoded_disp should equal original displacement
+                not_value = (~encoded_disp & 0xFFFFFFFF)
+                if not_value == displacement:
+                    return True, 3
+
+    return False, 0
+
+
+def compare_mov_mem_to_seq(orig_insn: Dict[str, Any], proc_insns: List[Dict[str, Any]]) -> Tuple[bool, int]:
+    """
+    Compare a MOV from memory instruction to a sequence that achieves the same effect.
+    MOV reg, [disp32] -> MOV EAX, disp32; MOV reg, [EAX] (to avoid null bytes in displacement)
+    Also handles other transformations like using SIB bytes
+    """
+    if orig_insn['mnemonic'] != 'mov' or len(proc_insns) < 1:
+        return False, 0
+
+    # Check if original is MOV reg, [disp32] type (memory to register)
+    orig_src = None  # Memory operand (source)
+    orig_dst = None  # Destination register
+
+    for op in orig_insn['operands']:
+        if op['type'] == 1:  # Register operand (destination)
+            orig_dst = op['value']
+        elif op['type'] == 3:  # Memory operand (source)
+            if 'value' in op and 'disp' in op['value'] and not op['value'].get('base') and not op['value'].get('index'):
+                # Only handle simple [disp32] addressing, not with base or index registers
+                orig_src = op['value']
+
+    if orig_src and orig_dst:
+        # This is a MOV reg, [disp32] instruction
+        displacement = orig_src['disp']
+
+        # Pattern 1: MOV EAX, disp32; MOV reg, [EAX]
+        if len(proc_insns) >= 2:
+            first_insn = proc_insns[0]
+            second_insn = proc_insns[1]
+
+            # First: MOV EAX, displacement
+            if (first_insn['mnemonic'] == 'mov' and len(first_insn['operands']) == 2 and
+                first_insn['operands'][0]['type'] == 1 and first_insn['operands'][0]['value'] == 'eax' and
+                first_insn['operands'][1]['type'] == 2 and first_insn['operands'][1]['value'] == displacement):
+
+                # Second: MOV orig_dst, [EAX]
+                if (second_insn['mnemonic'] == 'mov' and len(second_insn['operands']) == 2 and
+                    second_insn['operands'][0]['type'] == 1 and second_insn['operands'][0]['value'] == orig_dst and
+                    second_insn['operands'][1]['type'] == 3 and 'value' in second_insn['operands'][1] and
+                    second_insn['operands'][1]['value'].get('base') == 'eax'):
+                    return True, 2
+
+        return False, 0  # This was a memory-to-register MOV but didn't match the pattern
+
+    # Check if original is MOV [disp32], reg (register to memory)
+    orig_dst_mem = None  # Memory operand (destination)
+    orig_src_reg = None  # Source register
+
+    for op in orig_insn['operands']:
+        if op['type'] == 1:  # Register operand (source)
+            orig_src_reg = op['value']
+        elif op['type'] == 3:  # Memory operand (destination)
+            if 'value' in op and 'disp' in op['value'] and not op['value'].get('base') and not op['value'].get('index'):
+                # Only handle simple [disp32] addressing
+                orig_dst_mem = op['value']
+
+    if orig_dst_mem and orig_src_reg:
+        # This is a MOV [disp32], reg instruction
+        displacement = orig_dst_mem['disp']
+
+        # Pattern 1: MOV EAX, disp32; MOV [EAX], reg
+        if len(proc_insns) >= 2:
+            first_insn = proc_insns[0]
+            second_insn = proc_insns[1]
+
+            # First: MOV EAX, displacement
+            if (first_insn['mnemonic'] == 'mov' and len(first_insn['operands']) == 2 and
+                first_insn['operands'][0]['type'] == 1 and first_insn['operands'][0]['value'] == 'eax' and
+                first_insn['operands'][1]['type'] == 2 and first_insn['operands'][1]['value'] == displacement):
+
+                # Second: MOV [EAX], orig_src_reg
+                if (second_insn['mnemonic'] == 'mov' and len(second_insn['operands']) == 2 and
+                    second_insn['operands'][1]['type'] == 1 and second_insn['operands'][1]['value'] == orig_src_reg and
+                    second_insn['operands'][0]['type'] == 3 and 'value' in second_insn['operands'][0] and
+                    second_insn['operands'][0]['value'].get('base') == 'eax'):
+                    return True, 2
+
+        return False, 0  # This was a register-to-memory MOV but didn't match the pattern
+
+    return False, 0  # Not a simple memory access instruction
 
 
 def calculate_entropy(data: bytes) -> float:
@@ -289,7 +541,7 @@ def verify_shellcode_functionality(original_file: str, processed_file: str) -> b
             proc_insn = proc_instructions[proc_idx]
 
             total_compared += 1
-            
+
             # Check if these instructions are semantically equivalent
             if compare_instruction_semantics(orig_insn, proc_insn):
                 matches_found += 1
@@ -309,6 +561,28 @@ def verify_shellcode_functionality(original_file: str, processed_file: str) -> b
                         # Check for multi-instruction equivalence
                         seq_len = proc_lookahead - proc_idx + 1
                         proc_seq = proc_instructions[proc_idx:proc_lookahead+1]
+
+                        # Check for LEA equivalences first
+                        match, consumed = compare_lea_to_mov_sequence(orig_insn, proc_seq)
+                        if match:
+                            matches_found += 1
+                            print(f"  Match found after expansion: {orig_insn['mnemonic']} {orig_insn['op_str']} <-> {seq_len} instructions")
+                            orig_idx += 1
+                            proc_idx = proc_lookahead + 1
+                            found_equivalent = True
+                            break
+
+                        # Check for MOV memory-to-register equivalences
+                        match, consumed = compare_mov_mem_to_seq(orig_insn, proc_seq)
+                        if match:
+                            matches_found += 1
+                            print(f"  Match found after expansion: {orig_insn['mnemonic']} {orig_insn['op_str']} <-> {seq_len} instructions")
+                            orig_idx += 1
+                            proc_idx = proc_lookahead + 1
+                            found_equivalent = True
+                            break
+
+                        # Check for MOV-to-arithmetic equivalences
                         match, consumed = compare_mov_to_arith_sequence(orig_insn, proc_seq)
                         if match:
                             matches_found += 1
@@ -317,7 +591,7 @@ def verify_shellcode_functionality(original_file: str, processed_file: str) -> b
                             proc_idx = proc_lookahead + 1
                             found_equivalent = True
                             break
-                    
+
                     if compare_instruction_semantics(orig_insn, proc_instructions[proc_lookahead]):
                         matches_found += 1
                         print(f"  Match found after expansion: {orig_insn['mnemonic']} {orig_insn['op_str']} <-> multiple instructions")
@@ -325,7 +599,7 @@ def verify_shellcode_functionality(original_file: str, processed_file: str) -> b
                         proc_idx = proc_lookahead + 1
                         found_equivalent = True
                         break
-                    
+
                     proc_lookahead += 1
 
                 if not found_equivalent:

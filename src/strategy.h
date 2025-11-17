@@ -32,6 +32,8 @@ void register_jump_strategies();
 void register_general_strategies();
 void register_anti_debug_strategies();
 void register_peb_strategies();
+void register_conservative_strategies();
+void register_lea_strategies();
 
 // Core strategy functions that will be implemented with the new pattern
 int is_mov_instruction(cs_insn *insn);

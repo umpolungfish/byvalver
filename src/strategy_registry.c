@@ -30,6 +30,8 @@ void register_general_strategies(); // Forward declaration
 void register_anti_debug_strategies(); // Forward declaration
 void register_shift_strategy(); // Forward declaration
 void register_peb_strategies(); // Forward declaration
+void register_conservative_strategies(); // Forward declaration
+void register_lea_strategies(); // Forward declaration
 
 void init_strategies() {
     #ifdef DEBUG
@@ -37,6 +39,8 @@ void init_strategies() {
     #endif
 
     strategy_count = 0;
+    register_lea_strategies();  // Register LEA strategies first (highest priority)
+    register_conservative_strategies();  // Register conservative strategies next
     register_mov_strategies();  // Register all MOV strategies
     register_arithmetic_strategies();  // Register all arithmetic strategies
     register_memory_strategies();  // Register all memory strategies
