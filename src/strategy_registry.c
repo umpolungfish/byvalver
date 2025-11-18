@@ -39,6 +39,7 @@ void register_advanced_transformations(); // Forward declaration
 void init_advanced_transformations(); // Forward declaration
 void register_getpc_strategies(); // Forward declaration
 void register_movzx_strategies(); // Forward declaration
+void register_ror_rol_strategies(); // Forward declaration
 
 void init_strategies() {
     #ifdef DEBUG
@@ -54,6 +55,7 @@ void init_strategies() {
     register_enhanced_conservative_mov_strategy();  // Register enhanced conservative strategy
     register_conservative_strategies();  // Register conservative strategies
     register_movzx_strategies();  // Register MOVZX/MOVSX strategies (priority 75)
+    register_ror_rol_strategies();  // Register ROR/ROL rotation strategies (priority 70)
     register_getpc_strategies();  // Register GET PC (CALL/POP) strategies
     register_mov_strategies();  // Register all MOV strategies
     register_arithmetic_strategies();  // Register all arithmetic strategies

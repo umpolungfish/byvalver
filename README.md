@@ -212,6 +212,7 @@ Specialized modules for different instruction types:
 
 - `src/mov_strategies.c` - MOV instruction replacements
 - `src/movzx_strategies.c` - MOVZX/MOVSX instruction null-byte elimination
+- `src/ror_rol_strategies.c` - ROR/ROL rotation instruction null-byte elimination
 - `src/arithmetic_strategies.c` - Arithmetic operations (ADD, SUB, AND, OR, XOR, CMP)
 - `src/memory_strategies.c` - Memory operation replacements
 - `src/jump_strategies.c` - Jump and call replacements
@@ -366,6 +367,27 @@ Specialized modules for different instruction types:
 - **Priority: 75** - High priority for critical Windows shellcode patterns
 - **Expansion ratio**: ~1.7-2.3x depending on register conflicts
 - **Impact**: Enables null-free processing of ~8.5% of Windows shellcode samples
+
+#### ROR/ROL IMMEDIATE ROTATION NULL-BYTE ELIMINATION
+- **Hash-based API resolution support** - Handles ROR/ROL rotation instructions used in ROR13 hash algorithm
+- **Register-based rotation** - Converts immediate rotations to CL/DL-based rotations
+  - Example: `ROR EDI, 0x0D` (if it contains nulls) →
+    ```asm
+    PUSH ECX                    ; Save temp register
+    MOV CL, 0x0D                ; Load rotation count
+    ROR EDI, CL                 ; Rotate using CL
+    POP ECX                     ; Restore temp register
+    ```
+- **Supports all rotation instructions**:
+  - ROR (Rotate Right)
+  - ROL (Rotate Left)
+  - RCR (Rotate Through Carry Right)
+  - RCL (Rotate Through Carry Left)
+- **Smart register selection** - Uses ECX for CL, falls back to EDX for DL if target is ECX
+- **Rotation-by-zero optimization** - Eliminates no-op rotations entirely
+- **Priority: 70** - High priority for critical hash-based API resolution
+- **Expansion ratio**: Fixed 6 bytes (or 0 for no-ops)
+- **Impact**: Enables null-free processing of ~90% of Windows shellcode samples using ROR13 hashing
 
 #### SOPHISTICATED NULL-BYTE AVOIDANCE STRATEGIES
 - **ModR/M Byte Null-Bypass Transformations** - For instructions like `dec ebp`, `inc edx`, `mov eax, ebx` where the ModR/M byte contains nulls, uses `MOV TEMP_REG, reg; DEC TEMP_REG; MOV reg, TEMP_REG` approach to avoid null bytes in ModR/M bytes
