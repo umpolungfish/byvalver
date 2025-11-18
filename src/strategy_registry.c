@@ -41,6 +41,7 @@ void register_getpc_strategies(); // Forward declaration
 void register_movzx_strategies(); // Forward declaration
 void register_ror_rol_strategies(); // Forward declaration
 void register_indirect_call_strategies(); // Forward declaration
+void register_loop_strategies(); // Forward declaration
 
 void init_strategies() {
     #ifdef DEBUG
@@ -63,6 +64,7 @@ void init_strategies() {
     register_arithmetic_strategies();  // Register all arithmetic strategies
     register_memory_strategies();  // Register all memory strategies
     register_jump_strategies();  // Register all jump strategies
+    register_loop_strategies();  // Register all LOOP family strategies (priority 75-80)
     register_general_strategies();  // Register all general strategies
     // register_anti_debug_strategies();  // DISABLED - causes issues with non-NOP instructions
     register_shift_strategy();  // Register shift-based strategy

@@ -217,6 +217,7 @@ Specialized modules for different instruction types:
 - `src/arithmetic_strategies.c` - Arithmetic operations (ADD, SUB, AND, OR, XOR, CMP)
 - `src/memory_strategies.c` - Memory operation replacements
 - `src/jump_strategies.c` - Jump and call replacements
+- `src/loop_strategies.c` - LOOP family instruction null-byte elimination (LOOP, JECXZ, LOOPE, LOOPNE)
 - `src/general_strategies.c` - General instructions (PUSH, etc.)
 - `src/anti_debug_strategies.c` - Anti-debugging & analysis detection
 - `src/shift_strategy.c` - Shift-based immediate value construction
@@ -298,6 +299,12 @@ Specialized modules for different instruction types:
 - **`CALL imm32`** - Null-free sequence via register
 - **Relative jumps/calls** - Automatic displacement patching
 - **Conditional jumps** - Comprehensive support for all conditional jump types (JE, JNE, JZ, JNZ, JL, JG, JLE, JGE, JB, JAE, etc.)
+- **LOOP family instructions** - Null-byte elimination for LOOP/JECXZ/LOOPE/LOOPNE
+  - `LOOP rel8` → `DEC ECX + JNZ rel8` (2 bytes → 3 bytes)
+  - `JECXZ rel8` → `TEST ECX, ECX + JZ rel8` (2 bytes → 4 bytes)
+  - `LOOPE rel8` → `DEC ECX + JNZ skip + JZ rel8` (2 bytes → 5 bytes)
+  - `LOOPNE rel8` → `DEC ECX + JZ skip + JNZ rel8` (2 bytes → 5 bytes)
+  - Found in 73% of Windows shellcode (ROR13 hash loops, export table enumeration)
 
 </details>
 

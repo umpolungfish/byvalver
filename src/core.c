@@ -75,13 +75,15 @@ int is_relative_jump(cs_insn *insn) {
     }
 
     // For conditional jumps, they are always relative
+    // NOTE: JECXZ/JCXZ and LOOP family are NOT included here because they are
+    // handled by loop_strategies.c via the strategy pattern (transformed to different instructions)
     switch (insn->id) {
         case X86_INS_JAE:
         case X86_INS_JA:
         case X86_INS_JBE:
         case X86_INS_JB:
-        case X86_INS_JCXZ:
-        case X86_INS_JECXZ:
+        // case X86_INS_JCXZ:     // Handled by loop_strategies.c
+        // case X86_INS_JECXZ:    // Handled by loop_strategies.c
         case X86_INS_JE:
         case X86_INS_JGE:
         case X86_INS_JG:
@@ -96,6 +98,10 @@ int is_relative_jump(cs_insn *insn) {
         case X86_INS_JRCXZ:
         case X86_INS_JS:
             return 1;
+        // LOOP family instructions are handled by loop_strategies.c
+        // case X86_INS_LOOP:     // Handled by loop_strategies.c
+        // case X86_INS_LOOPE:    // Handled by loop_strategies.c
+        // case X86_INS_LOOPNE:   // Handled by loop_strategies.c
         default:
             return 0;
     }

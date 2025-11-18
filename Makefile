@@ -27,7 +27,7 @@ FILTERED_SRCS = $(filter-out $(SRC_DIR)/fix_%.c, $(SRCS))
 OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(FILTERED_SRCS))
 
 # Main source files that are part of the official build
-MAIN_SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/core.c $(SRC_DIR)/utils.c $(SRC_DIR)/strategy_registry.c $(SRC_DIR)/context_preservation_strategies.c $(SRC_DIR)/sequence_preservation_strategies.c $(SRC_DIR)/lea_strategies.c $(SRC_DIR)/conservative_strategies.c $(SRC_DIR)/conservative_mov_original.c $(SRC_DIR)/mov_strategies.c $(SRC_DIR)/arithmetic_strategies.c $(SRC_DIR)/memory_strategies.c $(SRC_DIR)/jump_strategies.c $(SRC_DIR)/general_strategies.c $(SRC_DIR)/hash_utils.c $(SRC_DIR)/anti_debug_strategies.c $(SRC_DIR)/shift_strategy.c $(SRC_DIR)/peb_strategies.c $(SRC_DIR)/advanced_transformations.c $(SRC_DIR)/getpc_strategies.c $(SRC_DIR)/movzx_strategies.c $(SRC_DIR)/ror_rol_strategies.c $(SRC_DIR)/indirect_call_strategies.c
+MAIN_SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/core.c $(SRC_DIR)/utils.c $(SRC_DIR)/strategy_registry.c $(SRC_DIR)/context_preservation_strategies.c $(SRC_DIR)/sequence_preservation_strategies.c $(SRC_DIR)/lea_strategies.c $(SRC_DIR)/conservative_strategies.c $(SRC_DIR)/conservative_mov_original.c $(SRC_DIR)/mov_strategies.c $(SRC_DIR)/arithmetic_strategies.c $(SRC_DIR)/memory_strategies.c $(SRC_DIR)/jump_strategies.c $(SRC_DIR)/loop_strategies.c $(SRC_DIR)/general_strategies.c $(SRC_DIR)/hash_utils.c $(SRC_DIR)/anti_debug_strategies.c $(SRC_DIR)/shift_strategy.c $(SRC_DIR)/peb_strategies.c $(SRC_DIR)/advanced_transformations.c $(SRC_DIR)/getpc_strategies.c $(SRC_DIR)/movzx_strategies.c $(SRC_DIR)/ror_rol_strategies.c $(SRC_DIR)/indirect_call_strategies.c
 MAIN_OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(MAIN_SRCS))
 
 # Test source files
