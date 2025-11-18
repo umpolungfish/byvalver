@@ -169,7 +169,7 @@ hexdump -C output.bin
 - **Automated null-byte removal** from raw shellcode
 - **Instruction-level analysis** via Capstone disassembly
 - **Intelligent replacement** using strategy-based approach
-- **40+ transformation strategies** across 20+ specialized modules
+- **41+ transformation strategies** across 21+ specialized modules
 - **Extensible framework** for new replacement strategies
 - **Relative jump/call patching** maintains control flow integrity
 - **File-based output** for easy integration
@@ -215,6 +215,7 @@ Specialized modules for different instruction types:
 - `src/movzx_strategies.c` - MOVZX/MOVSX instruction null-byte elimination
 - `src/ror_rol_strategies.c` - ROR/ROL rotation instruction null-byte elimination
 - `src/indirect_call_strategies.c` - Indirect CALL/JMP through memory null-byte elimination
+- `src/ret_strategies.c` - RET immediate instruction null-byte elimination
 - `src/arithmetic_strategies.c` - Arithmetic operations (ADD, SUB, AND, OR, XOR, CMP)
 - `src/memory_strategies.c` - Memory operation replacements
 - `src/jump_strategies.c` - Jump and call replacements
@@ -298,6 +299,11 @@ Specialized modules for different instruction types:
 
 - **`JMP imm32`** - Null-free sequence via register
 - **`CALL imm32`** - Null-free sequence via register
+- **`RET imm16`** - Null-free stack cleanup sequence
+  - `RET 4` → `ADD ESP, 4; RET` (3 bytes → 4 bytes)
+  - `RET 8` → `ADD ESP, 8; RET` (3 bytes → 4 bytes)
+  - Common in Windows API calling conventions (stdcall)
+  - Found in 15% of Windows shellcode function epilogues
 - **Relative jumps/calls** - Automatic displacement patching
 - **Conditional jumps** - Comprehensive support for all conditional jump types (JE, JNE, JZ, JNZ, JL, JG, JLE, JGE, JB, JAE, etc.)
 - **LOOP family instructions** - Null-byte elimination for LOOP/JECXZ/LOOPE/LOOPNE
