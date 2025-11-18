@@ -213,6 +213,7 @@ Specialized modules for different instruction types:
 - `src/mov_strategies.c` - MOV instruction replacements
 - `src/movzx_strategies.c` - MOVZX/MOVSX instruction null-byte elimination
 - `src/ror_rol_strategies.c` - ROR/ROL rotation instruction null-byte elimination
+- `src/indirect_call_strategies.c` - Indirect CALL/JMP through memory null-byte elimination
 - `src/arithmetic_strategies.c` - Arithmetic operations (ADD, SUB, AND, OR, XOR, CMP)
 - `src/memory_strategies.c` - Memory operation replacements
 - `src/jump_strategies.c` - Jump and call replacements
@@ -388,6 +389,27 @@ Specialized modules for different instruction types:
 - **Priority: 70** - High priority for critical hash-based API resolution
 - **Expansion ratio**: Fixed 6 bytes (or 0 for no-ops)
 - **Impact**: Enables null-free processing of ~90% of Windows shellcode samples using ROR13 hashing
+
+#### INDIRECT CALL/JMP THROUGH MEMORY NULL-BYTE ELIMINATION
+- **Windows IAT call pattern support** - Handles CALL/JMP DWORD PTR [disp32] instructions critical for Windows API resolution via Import Address Table
+- **Dereferencing with SIB addressing** - Properly dereferences memory location and calls/jumps to function pointer
+  - Example: `CALL [0x00401000]` (FF 15 00 10 40 00 - contains nulls) →
+    ```asm
+    MOV EAX, 0x00401000         ; Load address (null-free construction)
+    MOV EAX, [EAX]              ; Dereference using SIB: 8B 04 20
+    CALL EAX                    ; Call function pointer
+    ```
+- **SIB byte technique** - Uses Scale-Index-Base addressing to avoid null in ModR/M byte
+  - Standard `MOV EAX, [EAX]` encodes as `8B 00` (contains null!)
+  - With SIB: `8B 04 20` (completely null-free)
+  - ModR/M: 04 = mod=00, reg=000 (EAX), r/m=100 (SIB follows)
+  - SIB: 20 = scale=00, index=100 (ESP/none), base=000 (EAX)
+- **Supports both variants**:
+  - CALL [disp32] - Indirect function calls via IAT
+  - JMP [disp32] - Indirect jumps through function pointers
+- **Priority: 100** - Highest priority for most critical Windows API resolution pattern
+- **Expansion ratio**: Variable based on address complexity (~2-3x typical)
+- **Impact**: Found 50+ times in real-world Windows shellcode samples, enables null-free IAT-based API calls
 
 #### SOPHISTICATED NULL-BYTE AVOIDANCE STRATEGIES
 - **ModR/M Byte Null-Bypass Transformations** - For instructions like `dec ebp`, `inc edx`, `mov eax, ebx` where the ModR/M byte contains nulls, uses `MOV TEMP_REG, reg; DEC TEMP_REG; MOV reg, TEMP_REG` approach to avoid null bytes in ModR/M bytes

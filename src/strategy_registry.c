@@ -40,6 +40,7 @@ void init_advanced_transformations(); // Forward declaration
 void register_getpc_strategies(); // Forward declaration
 void register_movzx_strategies(); // Forward declaration
 void register_ror_rol_strategies(); // Forward declaration
+void register_indirect_call_strategies(); // Forward declaration
 
 void init_strategies() {
     #ifdef DEBUG
@@ -49,6 +50,7 @@ void init_strategies() {
     strategy_count = 0;
     register_advanced_transformations();  // Register advanced transformations (highest priority)
     init_advanced_transformations();      // Initialize the can_handle functions
+    register_indirect_call_strategies();  // Register indirect CALL/JMP strategies (priority 100)
     register_sequence_preservation_strategies();  // Register sequence preservation strategies
     register_context_preservation_strategies();  // Register context preservation strategies
     register_lea_strategies();  // Register LEA strategies

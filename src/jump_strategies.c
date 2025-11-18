@@ -241,7 +241,7 @@ strategy_t generic_mem_null_disp_strategy = {
     .can_handle = can_handle_generic_mem_null_disp,
     .get_size = get_size_generic_mem_null_disp,
     .generate = generate_generic_mem_null_disp,
-    .priority = 5 // Lower priority than specific strategies
+    .priority = 3 // Lowest priority - use as absolute last resort
 };
 
 void register_jump_strategies() {

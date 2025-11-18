@@ -82,7 +82,7 @@ strategy_t mov_neg_strategy = {
     .can_handle = can_handle_mov_neg,
     .get_size = get_size_mov_neg,
     .generate = generate_mov_neg,
-    .priority = 9
+    .priority = 13
 };
 
 // MOV with NOT strategy - FIXED
@@ -122,7 +122,7 @@ strategy_t mov_not_strategy = {
     .can_handle = can_handle_mov_not,
     .get_size = get_size_mov_not,
     .generate = generate_mov_not,
-    .priority = 9
+    .priority = 12
 };
 
 // MOV with XOR strategy - FIXED
@@ -271,7 +271,7 @@ strategy_t mov_addsub_strategy = {
     .can_handle = can_handle_mov_addsub,
     .get_size = get_size_mov_addsub,
     .generate = generate_mov_addsub,
-    .priority = 6
+    .priority = 11
 };
 
 // MOV with arithmetic equivalent - REMOVED (redundant with addsub)

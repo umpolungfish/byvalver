@@ -13,6 +13,8 @@
 #include <inttypes.h>
 #include "utils.h"
 #include "core.h"
+#include "strategy.h"
+#include "advanced_transformations.h"
 
 /*
  * Strategy: Arithmetic equivalent replacement

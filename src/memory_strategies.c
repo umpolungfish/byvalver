@@ -129,7 +129,7 @@ strategy_t lea_disp32_strategy = {
     .can_handle = can_handle_lea_disp32,
     .get_size = get_size_lea_disp32,
     .generate = generate_lea_disp32,
-    .priority = 8
+    .priority = 10  // Higher priority for LEA-specific handling
 };
 
 void register_memory_strategies() {

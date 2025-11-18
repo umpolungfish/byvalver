@@ -37,22 +37,29 @@ void generate_lea_disp_nulls(struct buffer *b, cs_insn *insn) {
     // Get the displacement from the memory operand
     uint32_t disp = 0;
     uint8_t dst_reg = insn->detail->x86.operands[0].reg;
-    
+
     for (int i = 0; i < insn->detail->x86.op_count; i++) {
         if (insn->detail->x86.operands[i].type == X86_OP_MEM) {
             disp = (uint32_t)insn->detail->x86.operands[i].mem.disp;
             break;
         }
     }
-    
+
     // Load the displacement into EAX using null-free construction
     generate_mov_eax_imm(b, disp);
-    
-    // Move from EAX to the destination register
-    if (dst_reg != X86_REG_EAX) {
-        uint8_t mov_reg_eax[] = {0x89, 0xC0};
-        mov_reg_eax[1] = mov_reg_eax[1] + get_reg_index(dst_reg);
-        buffer_append(b, mov_reg_eax, 2);
+
+    // Use LEA reg, [EAX] to get the address (which is the value in EAX)
+    // The ModR/M byte for LEA r32, [r32] is: MM RRR MMM
+    // For [EAX] (MMM=000) and dst_reg (RRR), ModR/M = 00 (RRR<<3) 000
+    if (dst_reg == X86_REG_EAX) {
+        // Use SIB byte to avoid null: LEA EAX, [EAX]
+        uint8_t code[] = {0x8D, 0x04, 0x20}; // LEA EAX, [EAX] with SIB byte
+        buffer_append(b, code, 3);
+    } else {
+        // For other registers, the ModR/M byte is safe
+        uint8_t code[] = {0x8D, 0x00}; // LEA reg, [EAX] format
+        code[1] = (get_reg_index(dst_reg) << 3) | 0;  // Encode dst_reg in reg field, [EAX] in r/m field
+        buffer_append(b, code, 2);
     }
 }
 
@@ -61,7 +68,7 @@ strategy_t lea_disp_nulls_strategy = {
     .can_handle = can_handle_lea_disp_nulls,
     .get_size = get_size_lea_disp_nulls,
     .generate = generate_lea_disp_nulls,
-    .priority = 13  // Higher priority than other strategies
+    .priority = 8  // Reduced priority to allow more targeted strategies to take precedence
 };
 
 // Register the LEA strategy

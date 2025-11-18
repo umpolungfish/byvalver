@@ -269,5 +269,5 @@ strategy_t shift_based_strategy = {
     .can_handle = shift_based_can_handle,
     .get_size = shift_based_get_size,
     .generate = shift_based_generate,
-    .priority = 65  // Higher than arithmetic substitution, lower than basic strategies
+    .priority = 5  // Lower priority - use this as last resort when other strategies can't handle
 };

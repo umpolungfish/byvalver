@@ -124,7 +124,7 @@ strategy_t conservative_mov_strategy = {
     .can_handle = can_handle_conservative_mov,
     .get_size = get_size_conservative_mov,
     .generate = generate_conservative_mov,
-    .priority = 12  // Higher priority than most other strategies
+    .priority = 15  // Higher priority - prefer conservative approaches that preserve original patterns
 };
 
 // Conservative arithmetic strategy
@@ -174,7 +174,7 @@ strategy_t conservative_arithmetic_strategy = {
     .can_handle = can_handle_conservative_arithmetic,
     .get_size = get_size_conservative_arithmetic,
     .generate = generate_conservative_arithmetic,
-    .priority = 11  // High priority
+    .priority = 14  // High priority - prefer conservative approaches that preserve original patterns
 };
 
 // Register the conservative strategies
