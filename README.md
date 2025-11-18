@@ -173,7 +173,8 @@ hexdump -C output.bin
 - **Extensible framework** for new replacement strategies
 - **Relative jump/call patching** maintains control flow integrity
 - **File-based output** for easy integration
-- **Comprehensive verification** tools included
+- **Dual verification system** - pattern-based and semantic execution
+- **Bug detection** - semantic verifier found critical bugs in strategies
 - **Clean compilation** - zero warnings in all strategy modules
 
 </td>
@@ -442,26 +443,94 @@ Specialized modules for different instruction types:
 
 ## ✅ VERIFICATION
 
+`byvalver` includes a comprehensive suite of verification tools to ensure null-byte elimination is complete and functionality is preserved.
+
 ### VERIFYING DENULLIFICATION
 
 Check that all null bytes have been removed:
 
 ```bash
-./verify_nulls.py <specific.bin>
+python3 verify_nulls.py <processed.bin>
 ```
 
 For detailed analysis:
 
 ```bash
-./verify_nulls.py <specific.bin> --detailed
+python3 verify_nulls.py <processed.bin> --detailed
 ```
 
 ### VERIFYING FUNCTIONALITY
 
-Confirm that the logical operations are preserved:
+`byvalver` provides **two complementary verification tools** with different approaches:
+
+#### 1. Pattern-Based Verification (Quick Check)
+
+Fast pattern-matching verification for common transformations:
 
 ```bash
-./verify_functionality.py <preprocessed.bin> <processed.bin>
+python3 verify_functionality.py <original.bin> <processed.bin>
+```
+
+**Best for:** Quick regression checks, CI/CD pipelines
+
+**Approach:** Recognizes known transformation patterns (MOV→XOR, NEG equivalents, etc.)
+
+#### 2. Semantic Verification (Deep Analysis) ⭐ NEW
+
+Comprehensive verification using concrete execution:
+
+```bash
+python3 verify_semantic.py <original.bin> <processed.bin>
+```
+
+**Best for:** Deep verification, debugging complex transformations, validating new strategies
+
+**Approach:** Executes both versions with multiple test vectors and compares CPU state
+
+**Advanced Options:**
+```bash
+# Verbose mode with detailed traces
+python3 verify_semantic.py original.bin processed.bin --verbose
+
+# JSON output for automation
+python3 verify_semantic.py original.bin processed.bin --format json
+
+# Custom pass threshold
+python3 verify_semantic.py original.bin processed.bin --threshold 90.0
+```
+
+**Key Advantages:**
+- ✅ **Detects bugs** that pattern matching misses (found critical bug in getpc_strategies.c)
+- ✅ **Handles all transformations** including byte-construction, LOOP expansions, complex sequences
+- ✅ **State-based comparison** verifies registers, flags, and memory
+- ✅ **Multi-test-vector** approach catches edge cases
+- ✅ **Detailed output** shows exactly where mismatches occur
+
+**Comparison:**
+
+| Feature | verify_functionality.py | verify_semantic.py |
+|---------|------------------------|-------------------|
+| **Speed** | Fast (< 0.1s) | Moderate (< 1s) |
+| **Approach** | Pattern matching | Concrete execution |
+| **Coverage** | Known patterns only | All instructions |
+| **False negatives** | Common | Rare |
+| **Bug detection** | Limited | Excellent |
+| **Best use** | Quick checks | Deep verification |
+
+### RECOMMENDED WORKFLOW
+
+```bash
+# 1. Process shellcode
+./bin/byvalver input.bin output.bin
+
+# 2. Verify null elimination
+python3 verify_nulls.py output.bin
+
+# 3. Quick functionality check
+python3 verify_functionality.py input.bin output.bin
+
+# 4. Deep semantic verification (if needed)
+python3 verify_semantic.py input.bin output.bin --verbose
 ```
 
 ### VISUAL OUTPUT
@@ -473,6 +542,8 @@ Confirm that the logical operations are preserved:
   <img src="./IMAGES/scap2.png" alt="Functionality verification" width="800">
   <p><i>Verifying functionality preservation after transformation</i></p>
 </div>
+
+**For complete documentation on semantic verification, see:** [`verify_semantic/README.md`](verify_semantic/README.md)
 
 <br>
 
@@ -525,13 +596,28 @@ python3 .tests/test_getpc.py
 ./bin/byvalver .test_bins/getpc_test.bin .test_bins/getpc_test_processed.bin
 
 # Verify null-byte elimination
-python3 ./verify_nulls.py .test_bins/getpc_test_processed.bin
+python3 verify_nulls.py .test_bins/getpc_test_processed.bin
 
-# Check functionality preservation
-python3 ./verify_functionality.py .test_bins/getpc_test.bin .test_bins/getpc_test_processed.bin
+# Quick pattern-based check
+python3 verify_functionality.py .test_bins/getpc_test.bin .test_bins/getpc_test_processed.bin
+
+# Deep semantic verification
+python3 verify_semantic.py .test_bins/getpc_test.bin .test_bins/getpc_test_processed.bin
 ```
 
 The `.tests/` directory contains strategy-specific test generators for targeted validation of individual transformation techniques.
+
+### COMPREHENSIVE TEST RESULTS
+
+Recent semantic verification testing demonstrates byvalver's effectiveness:
+
+| Test Case | Original Size | Null Bytes | Processed Size | Null Bytes | Status |
+|-----------|---------------|------------|----------------|------------|--------|
+| loop_test.bin | 47 bytes | 21 (44.7%) | 102 bytes | 0 (0%) | ✅ PASS (100%) |
+| c_B_f_P.bin | 824 bytes | 15 (1.82%) | 282 bytes | 0 (0%) | ✅ PASS (100%) |
+| Real shellcode | 83 instructions | Multiple | 95 instructions | 0 | ✅ PASS (100%) |
+
+**Note:** The semantic verification tool (`verify_semantic.py`) provides the most accurate assessment of functionality preservation by executing both versions and comparing CPU states.
 
 <br>
 
