@@ -523,7 +523,7 @@ python3 verify_functionality.py <original.bin> <processed.bin>
 
 **Approach:** Recognizes known transformation patterns (MOV→XOR, NEG equivalents, etc.)
 
-#### 2. Semantic Verification (Deep Analysis) ⭐ NEW
+#### 2. Semantic Verification (Deep Analysis)
 
 Comprehensive verification using concrete execution:
 
@@ -750,7 +750,7 @@ To add a new strategy:
 - **Instruction coverage** - Some advanced x86 instructions remain to be covered
 - **8-bit and 16-bit instructions** - Current focus is primarily on 32-bit operations
 
-### RECENTLY COMPLETED ✅
+### RECENTLY COMPLETED
 
 - ✅ **SIB Addressing bug fix** - ModR/M byte corruption resolved
 - ✅ **Conservative arithmetic validation** - Null-byte checks added
@@ -767,7 +767,7 @@ To add a new strategy:
 
 <br>
 
-## 🤝 CONTRIBUTING
+## CONTRIBUTING
 
 Contributions are welcome! 
 
