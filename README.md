@@ -169,7 +169,7 @@ hexdump -C output.bin
 - **Automated null-byte removal** from raw shellcode
 - **Instruction-level analysis** via Capstone disassembly
 - **Intelligent replacement** using strategy-based approach
-- **54+ transformation strategies** across 22+ specialized modules
+- **55+ transformation strategies** across 23+ specialized modules
 - **Extensible framework** for new replacement strategies
 - **Relative jump/call patching** maintains control flow integrity
 - **File-based output** for easy integration
@@ -218,6 +218,7 @@ Specialized modules for different instruction types:
 - `src/ret_strategies.c` - RET immediate instruction null-byte elimination
 - `src/arithmetic_strategies.c` - Arithmetic operations (ADD, SUB, AND, OR, XOR)
 - `src/cmp_strategies.c` - CMP instruction null-byte elimination (memory operands, immediates)
+- `src/xchg_strategies.c` - XCHG instruction null-byte elimination (memory operands with null displacement)
 - `src/memory_strategies.c` - Memory operation replacements
 - `src/jump_strategies.c` - Jump and call replacements
 - `src/loop_strategies.c` - LOOP family instruction null-byte elimination (LOOP, JECXZ, LOOPE, LOOPNE)

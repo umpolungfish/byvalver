@@ -44,6 +44,7 @@ void register_indirect_call_strategies(); // Forward declaration
 void register_loop_strategies(); // Forward declaration
 void register_ret_strategies(); // Forward declaration
 void register_cmp_strategies(); // Forward declaration
+void register_xchg_strategies(); // Forward declaration
 
 void init_strategies() {
     #ifdef DEBUG
@@ -65,6 +66,7 @@ void init_strategies() {
     register_getpc_strategies();  // Register GET PC (CALL/POP) strategies
     register_mov_strategies();  // Register all MOV strategies
     register_arithmetic_strategies();  // Register all arithmetic strategies
+    register_xchg_strategies();  // Register XCHG strategies (priority 60)
     register_memory_strategies();  // Register all memory strategies
     register_cmp_strategies();  // Register CMP strategies (priority 85-88)
     register_jump_strategies();  // Register all jump strategies
