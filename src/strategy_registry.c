@@ -43,6 +43,7 @@ void register_ror_rol_strategies(); // Forward declaration
 void register_indirect_call_strategies(); // Forward declaration
 void register_loop_strategies(); // Forward declaration
 void register_ret_strategies(); // Forward declaration
+void register_cmp_strategies(); // Forward declaration
 
 void init_strategies() {
     #ifdef DEBUG
@@ -65,6 +66,7 @@ void init_strategies() {
     register_mov_strategies();  // Register all MOV strategies
     register_arithmetic_strategies();  // Register all arithmetic strategies
     register_memory_strategies();  // Register all memory strategies
+    register_cmp_strategies();  // Register CMP strategies (priority 85-88)
     register_jump_strategies();  // Register all jump strategies
     register_loop_strategies();  // Register all LOOP family strategies (priority 75-80)
     register_general_strategies();  // Register all general strategies

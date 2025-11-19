@@ -172,6 +172,7 @@ void generate_arithmetic_substitution(struct buffer *b, cs_insn *insn) {
  * Strategy: Conditional Flag Preservation Techniques
  */
 size_t get_flag_preserving_test_size(cs_insn *insn) {
+    (void)insn;  // Unused parameter - part of strategy interface
     // Use OR reg, reg to preserve ZF, SF, PF (same as TEST reg, reg)
     return 2; // OR reg, reg is 2 bytes
 }
@@ -454,6 +455,7 @@ void generate_push_optimized(struct buffer *b, cs_insn *insn) {
  * Strategy: Byte-Granularity Null Elimination
  */
 size_t get_byte_granularity_size(cs_insn *insn) {
+    (void)insn;  // Unused parameter - part of strategy interface
     // For operations like XOR AL, DL where byte operations might introduce nulls
     return 2;  // OR reg, reg (flag preserving) or similar
 }
@@ -571,6 +573,8 @@ void generate_cond_jump_target(struct buffer *b, cs_insn *insn) {
  * Strategy: Register Availability Analysis
  */
 int can_use_temp_register(cs_insn *insn, uint8_t temp_reg) {
+    (void)insn;       // Unused parameter - simplified implementation
+    (void)temp_reg;   // Unused parameter - simplified implementation
     // Check if the temp register is used later in the instruction sequence
     // For now, this is a simplified check
     return 1;  // Assume we can use it
@@ -707,23 +711,23 @@ void generate_cond_jump_target_enhanced(struct buffer *b, cs_insn *insn) {
 
                 // First, we need to get the inverted condition (opposite of original)
                 // We'll use only the primary capstone opcodes
-                x86_insn jcc_op = 0;
+                // Note: jcc_op calculation for future enhancement
                 switch (insn->id) {
-                    case X86_INS_JE:   jcc_op = X86_INS_JNE; break;
-                    case X86_INS_JNE:  jcc_op = X86_INS_JE; break;
-                    case X86_INS_JL:   jcc_op = X86_INS_JGE; break;
-                    case X86_INS_JGE:  jcc_op = X86_INS_JL; break;
-                    case X86_INS_JLE:  jcc_op = X86_INS_JG; break;
-                    case X86_INS_JG:   jcc_op = X86_INS_JLE; break;
-                    case X86_INS_JB:   jcc_op = X86_INS_JAE; break;
-                    case X86_INS_JAE:  jcc_op = X86_INS_JB; break;
-                    case X86_INS_JBE:  jcc_op = X86_INS_JA; break;
-                    case X86_INS_JA:   jcc_op = X86_INS_JBE; break;
-                    case X86_INS_JS:   jcc_op = X86_INS_JNS; break;
-                    case X86_INS_JNS:  jcc_op = X86_INS_JS; break;
-                    case X86_INS_JP:   jcc_op = X86_INS_JNP; break;
-                    case X86_INS_JNP:  jcc_op = X86_INS_JP; break;
-                    default: jcc_op = X86_INS_JMP; // Fallback
+                    case X86_INS_JE:   /* jcc_op = X86_INS_JNE; */ break;
+                    case X86_INS_JNE:  /* jcc_op = X86_INS_JE; */ break;
+                    case X86_INS_JL:   /* jcc_op = X86_INS_JGE; */ break;
+                    case X86_INS_JGE:  /* jcc_op = X86_INS_JL; */ break;
+                    case X86_INS_JLE:  /* jcc_op = X86_INS_JG; */ break;
+                    case X86_INS_JG:   /* jcc_op = X86_INS_JLE; */ break;
+                    case X86_INS_JB:   /* jcc_op = X86_INS_JAE; */ break;
+                    case X86_INS_JAE:  /* jcc_op = X86_INS_JB; */ break;
+                    case X86_INS_JBE:  /* jcc_op = X86_INS_JA; */ break;
+                    case X86_INS_JA:   /* jcc_op = X86_INS_JBE; */ break;
+                    case X86_INS_JS:   /* jcc_op = X86_INS_JNS; */ break;
+                    case X86_INS_JNS:  /* jcc_op = X86_INS_JS; */ break;
+                    case X86_INS_JP:   /* jcc_op = X86_INS_JNP; */ break;
+                    case X86_INS_JNP:  /* jcc_op = X86_INS_JP; */ break;
+                    default: /* jcc_op = X86_INS_JMP; */ break; // Fallback
                 }
 
                 // For this implementation, we'll use a different approach:
