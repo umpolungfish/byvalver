@@ -821,44 +821,33 @@ graph TD
 
 ### Null Reduction Chart
 ```mermaid
-graph LR
-    A[Original Nulls: 168] --> B[Skeeterspit: 0<br/>100% reduction]
-    A --> C[c_B_f: 0<br/>100% reduction]
-    A --> D[Imon: 0<br/>100% reduction]
-    A --> E[Prima_vulnus: 0<br/>100% reduction]
-    A --> F[RednefeD: 0<br/>100% reduction]
-    A --> G[Sysutil: 0<br/>100% reduction]
-    A --> H[EHS: 0<br/>100% reduction]
-    A --> I[Ouroboros: 0<br/>100% reduction]
-    A --> J[Cutyourmeat: 4<br/>81% reduction]
-    A --> K[Cheapsuit: 36<br/>52% reduction]
+graph TD
+    subgraph "Successful (100% elimination)"
+        A["Skeeterspit: 0/0<br/>✅ 100%"]
+        B["c_B_f: 0/11<br/>✅ 100%"]
+        C["Imon: 0/23<br/>✅ 100%"]
+        D["Prima_vulnus: 0/7<br/>✅ 100%"]
+        E["RednefeD: 0/3<br/>✅ 100%"]
+        F["Sysutil: 0/8<br/>✅ 100%"]
+        G["EHS: 0/10<br/>✅ 100%"]
+        H["Ouroboros: 0/10<br/>✅ 100%"]
+    end
 
-    B -.-> N[Final Nulls: 40]
-    C -.-> N
-    D -.-> N
-    E -.-> N
-    F -.-> N
-    G -.-> N
-    H -.-> N
-    I -.-> N
-    J -.-> N
-    K -.-> N
+    subgraph "Partial Success"
+        I["Cutyourmeat: 4/21<br/>⚠️ 81% reduction"]
+        J["Cheapsuit: 36/75<br/>❌ 52% reduction"]
+    end
 
-    N -.-> O[Overall: 76%<br/>reduction]
-
-    style A fill:#ffcdd2
-    style N fill:#f8f9fa
-    style O fill:#d1ecf1
-    style B fill:#d4edda
-    style C fill:#d4edda
-    style D fill:#d4edda
-    style E fill:#d4edda
-    style F fill:#d4edda
-    style G fill:#d4edda
-    style H fill:#d4edda
-    style I fill:#d4edda
-    style J fill:#fff3cd
-    style K fill:#f8d7da
+    style A fill:#4CAF50
+    style B fill:#4CAF50
+    style C fill:#4CAF50
+    style D fill:#4CAF50
+    style E fill:#4CAF50
+    style F fill:#4CAF50
+    style G fill:#4CAF50
+    style H fill:#4CAF50
+    style I fill:#FFEB3B
+    style J fill:#F44336
 ```
 
 <br>
