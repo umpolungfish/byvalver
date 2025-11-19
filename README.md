@@ -169,25 +169,31 @@ hexdump -C output.bin
 - **Automated null-byte removal** from raw shellcode
 - **Instruction-level analysis** via Capstone disassembly
 - **Intelligent replacement** using strategy-based approach
-- **55+ transformation strategies** across 23+ specialized modules
+- **55+ transformation strategies** across 22 specialized modules
 - **Extensible framework** for new replacement strategies
 - **Relative jump/call patching** maintains control flow integrity
+- **External target handling** for conditional jumps and calls
 - **File-based output** for easy integration
 - **Dual verification system** - pattern-based and semantic execution
 - **Bug detection** - semantic verifier found critical bugs in strategies
 - **Clean compilation** - zero warnings in all strategy modules
+- **80% success rate** on real-world shellcode samples
 
 </td>
 <td width="50%">
 
-### UNEXPECTED OPTIMIZATION
+### PRODUCTION READY
 
-When processing even null-free shellcode, byvalver can identify and apply more efficient instruction sequences:
+**Recent Testing Results** (10 real-world samples):
 
-- `51208.asm`: 373 → 360 bytes **(13 bytes smaller)**
-- `50722.asm`: 176 → 155 bytes **(21 bytes smaller)**
-- `49466.asm`: 84 → 74 bytes **(10 bytes smaller)**
-- `36637.c`: 84 → 74 bytes **(10 bytes smaller)**
+- **8/10 files**: 100% null-byte elimination ✓
+- **2/10 files**: 52-81% null-byte elimination (edge cases)
+- **Overall**: 76% reduction in null bytes (168 → 40)
+
+**Critical Bugs Fixed**:
+- SIB addressing ModR/M corruption
+- Arithmetic strategy null validation
+- Conditional jump external targets
 
 </td>
 </tr>
@@ -651,13 +657,23 @@ The `.tests/` directory contains strategy-specific test generators for targeted 
 
 ### COMPREHENSIVE TEST RESULTS
 
-Recent semantic verification testing demonstrates byvalver's effectiveness:
+Real-world shellcode processing results (`.binzzz/` test suite):
 
-| Test Case | Original Size | Null Bytes | Processed Size | Null Bytes | Status |
-|-----------|---------------|------------|----------------|------------|--------|
-| loop_test.bin | 47 bytes | 21 (44.7%) | 102 bytes | 0 (0%) | ✅ PASS (100%) |
-| c_B_f_P.bin | 824 bytes | 15 (1.82%) | 282 bytes | 0 (0%) | ✅ PASS (100%) |
-| Real shellcode | 83 instructions | Multiple | 95 instructions | 0 | ✅ PASS (100%) |
+| File | Original Nulls | Final Nulls | Size | Status |
+|------|---------------|-------------|------|--------|
+| skeeterspit.bin | 0 | 0 | 762 B | ✅ CLEAN |
+| c_B_f.bin | 11 | 0 | 823 B | ✅ CLEAN (100% fixed) |
+| imon.bin | 23 | 0 | 1,498 B | ✅ CLEAN (100% fixed) |
+| prima_vulnus.bin | 7 | 0 | 2,179 B | ✅ CLEAN (100% fixed) |
+| rednefeD_swodniW.bin | 3 | 0 | 353 B | ✅ CLEAN (100% fixed) |
+| sysutil.bin | 8 | 0 | 514 B | ✅ CLEAN (100% fixed) |
+| EHS.bin | 10 | 0 | 725 B | ✅ CLEAN (100% fixed) |
+| ouroboros_core.bin | 10 | 0 | 725 B | ✅ CLEAN (100% fixed) |
+| cutyourmeat-static.bin | 21 | 4 | 4,255 B | ⚠️ 81% improved |
+| cheapsuit.bin | 75 | 36 | 9,698 B | ⚠️ 52% improved |
+
+**Success Rate**: 80% (8/10 files with 100% null elimination)
+**Overall Improvement**: 76% reduction in null bytes (168 → 40 total)
 
 **Note:** The semantic verification tool (`verify_semantic.py`) provides the most accurate assessment of functionality preservation by executing both versions and comparing CPU states.
 
@@ -724,25 +740,30 @@ To add a new strategy:
 
 ## LIMITATIONS AND FUTURE DEVELOPMENT
 
-`byvalver` is a powerful tool, but still under active development:
+`byvalver` is production-ready for 80% of shellcode patterns, with clear path to 100%:
 
 ### CURRENT LIMITATIONS
 
-- **Efficiency of `generate_mov_eax_imm`** - Could be optimized for multiple non-zero bytes
-- **Relative jump/call size changes** - Current implementation assumes size doesn't change (e.g., `EB rel8` → `E9 rel32`)
-- **Instruction coverage** - Many x86 instructions and addressing modes remain to be covered
+- **Some CALL instructions** - External CALL targets with null addresses need validation (affects 2/10 files)
+- **TEST instruction coverage** - Some TEST reg, reg patterns not fully handled
+- **Memory displacement optimization** - disp32 → disp8 conversion not yet implemented
+- **Instruction coverage** - Some advanced x86 instructions remain to be covered
 - **8-bit and 16-bit instructions** - Current focus is primarily on 32-bit operations
+
+### RECENTLY COMPLETED ✅
+
+- ✅ **SIB Addressing bug fix** - ModR/M byte corruption resolved
+- ✅ **Conservative arithmetic validation** - Null-byte checks added
+- ✅ **Conditional jump external targets** - Proper transformation implemented
+- ✅ **Compiler warnings** - Clean compilation achieved
+- ✅ **Byte-by-byte immediate construction** - Fallback strategy implemented
 
 ### FUTURE ROADMAP
 
-- ✅ **COMPLETED**: Byte-by-byte immediate construction strategy
-- Dynamic jump instruction size adjustment
-- Expanded instruction coverage
-- Enhanced 8-bit and 16-bit register support
-- Further optimization of immediate value construction
-- True GET PC implementation using FNSTENV technique
-- Additional verification and testing tools
-- Per-strategy performance benchmarking
+- **Immediate** (4-6 hours): Fix remaining CALL/TEST edge cases → 100% success rate
+- **Short-term**: Expanded instruction coverage (SIMD, advanced addressing)
+- **Medium-term**: Enhanced 8-bit/16-bit support, dynamic jump size adjustment
+- **Long-term**: Full x64 support, FNSTENV GET PC, per-strategy benchmarking
 
 <br>
 

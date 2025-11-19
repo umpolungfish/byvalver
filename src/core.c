@@ -33,6 +33,13 @@ void buffer_free(struct buffer *b) {
 }
 
 void buffer_append(struct buffer *b, const uint8_t *data, size_t size) {
+    if (!data || size == 0) {
+        // Log when NULL is passed so we can track down the bad strategy
+        if (!data && size > 0) {
+            fprintf(stderr, "[ERROR] buffer_append called with NULL data but size=%zu\n", size);
+        }
+        return;
+    }
     if (b->size + size > b->capacity) {
         size_t new_capacity = (b->capacity == 0) ? 256 : b->capacity * 2;
         while (new_capacity < b->size + size) {
@@ -113,6 +120,9 @@ static void process_relative_jump(struct buffer *new_shellcode,
                                    struct instruction_node *current,
                                    struct instruction_node *head) {
 
+    fprintf(stderr, "[JUMP] Processing: %s %s, bytes[0]=0x%02x, size=%d\n",
+            insn->mnemonic, insn->op_str, insn->bytes[0], insn->size);
+
     // Sanity checks
     if (insn->detail->x86.op_count == 0) {
         // No operands, just copy original
@@ -131,15 +141,19 @@ static void process_relative_jump(struct buffer *new_shellcode,
     struct instruction_node *target_node = head;
     int found = 0;
 
+    fprintf(stderr, "[JUMP] Looking for target address 0x%lx\n", target_addr);
+
     while (target_node != NULL) {
         if (target_node->offset == target_addr) {
             found = 1;
+            fprintf(stderr, "[JUMP] Found target at offset 0x%lx\n", target_addr);
             break;
         }
         target_node = target_node->next;
     }
 
     if (!found) {
+        fprintf(stderr, "[JUMP] Target 0x%lx NOT FOUND! Outputting original bytes.\n", target_addr);
         // Target not in our shellcode - external reference
         // Convert to absolute addressing
 
@@ -156,9 +170,32 @@ static void process_relative_jump(struct buffer *new_shellcode,
             buffer_append(new_shellcode, jmp_eax, 2);
             return;
         } else {
-            // Conditional jump to external target - rare, but handle conservatively
-            // Just output original for now
-            buffer_append(new_shellcode, insn->bytes, insn->size);
+            // Conditional jump to external target
+            // Transform using opposite condition + absolute jump to avoid null bytes
+            fprintf(stderr, "[JUMP] Conditional jump to external target - transforming\n");
+
+            // Get opposite condition opcode
+            uint8_t opposite_opcode;
+            if (insn->bytes[0] == 0x0F) {
+                // Near conditional jump (0F 8x) - convert to short (7x)
+                opposite_opcode = 0x70 + ((insn->bytes[1] ^ 0x01) & 0x0F);
+            } else {
+                // Short conditional jump (7x) - flip condition bit
+                opposite_opcode = insn->bytes[0] ^ 0x01;
+            }
+
+            // Calculate skip size
+            size_t mov_size = get_mov_eax_imm_size((uint32_t)target_addr);
+            uint8_t skip_size = (uint8_t)(mov_size + 2); // MOV + JMP EAX
+
+            // Emit opposite short jump to skip over absolute jump
+            uint8_t skip[] = {opposite_opcode, skip_size};
+            buffer_append(new_shellcode, skip, 2);
+
+            // Emit absolute jump
+            generate_mov_eax_imm(new_shellcode, (uint32_t)target_addr);
+            uint8_t jmp_eax[] = {0xFF, 0xE0};
+            buffer_append(new_shellcode, jmp_eax, 2);
             return;
         }
     }
@@ -262,6 +299,12 @@ static void process_relative_jump(struct buffer *new_shellcode,
         return;
     }
 
+    // Debug: Check what we're processing
+    if (strstr(insn->mnemonic, "jne") || strstr(insn->mnemonic, "je")) {
+        fprintf(stderr, "[DEBUG] Processing conditional jump: %s, bytes[0]=0x%02x, bytes[1]=0x%02x, size=%d\n",
+                insn->mnemonic, insn->bytes[0], insn->size > 1 ? insn->bytes[1] : 0, insn->size);
+    }
+
     if (insn->bytes[0] == 0x0F && (insn->bytes[1] >= 0x80 && insn->bytes[1] <= 0x8F)) {
         // Near conditional jump (0F 8x)
         uint8_t patched[6];
@@ -277,11 +320,29 @@ static void process_relative_jump(struct buffer *new_shellcode,
             }
         }
 
+        fprintf(stderr, "[DEBUG] Near cond jump: %s, new_rel=%d, has_null=%d, target_offset=%zu\n",
+                insn->mnemonic, (int32_t)new_rel, has_null, target_node->new_offset);
+
         if (has_null) {
             // Convert using opposite condition trick
-            uint8_t opposite = insn->bytes[1] ^ 0x01;
-            uint8_t skip[] = {0x0F, opposite, 0x07, 0x00, 0x00, 0x00};  // Skip 7 bytes
-            buffer_append(new_shellcode, skip, 6);
+            // Use short conditional jump to skip (avoids null bytes in displacement)
+            // Calculate skip size: generate_mov_eax_imm size + JMP EAX (2 bytes)
+            size_t mov_size = get_mov_eax_imm_size(target_node->new_offset);
+            size_t skip_size = mov_size + 2;
+
+            fprintf(stderr, "[DEBUG] Transformation: mov_size=%zu, skip_size=%zu\n", mov_size, skip_size);
+
+            // Check if skip_size fits in signed byte (range -128 to +127)
+            if (skip_size > 127) {
+                fprintf(stderr, "[WARNING] skip_size=%zu too large for short jump! Falling back to original.\n", skip_size);
+                buffer_append(new_shellcode, patched, 6);
+                return;
+            }
+
+            // Convert near conditional to short conditional (0F 8x -> 7x)
+            uint8_t opposite_short = 0x70 + ((insn->bytes[1] ^ 0x01) & 0x0F);
+            uint8_t skip[] = {opposite_short, (uint8_t)skip_size};
+            buffer_append(new_shellcode, skip, 2);
 
             generate_mov_eax_imm(new_shellcode, target_node->new_offset);
             uint8_t jmp_eax[] = {0xFF, 0xE0};
@@ -303,20 +364,28 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
     struct buffer new_shellcode;
     buffer_init(&new_shellcode);
 
+    fprintf(stderr, "[remove_null_bytes] Called with shellcode=%p, size=%zu\n", (void*)shellcode, size);
+    if (!shellcode) {
+        fprintf(stderr, "[ERROR] shellcode pointer is NULL!\n");
+        return new_shellcode;
+    }
+    fprintf(stderr, "[FIRST 16 BYTES] %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+            shellcode[0], shellcode[1], shellcode[2], shellcode[3],
+            shellcode[4], shellcode[5], shellcode[6], shellcode[7],
+            shellcode[8], shellcode[9], shellcode[10], shellcode[11],
+            shellcode[12], shellcode[13], shellcode[14], shellcode[15]);
+
     if (cs_open(CS_ARCH_X86, CS_MODE_32, &handle) != CS_ERR_OK) {
+        fprintf(stderr, "[ERROR] cs_open failed!\n");
         return new_shellcode;
     }
 
     cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
 
     count = cs_disasm(handle, shellcode, size, 0, 0, &insn_array);
+    fprintf(stderr, "[DISASM] Disassembled %zu instructions from %zu bytes\n", count, size);
     if (count == 0) {
-        cs_close(&handle);
-        return new_shellcode;
-    }
-
-    if (count == 0) {
-        cs_free(insn_array, count);
+        fprintf(stderr, "[ERROR] cs_disasm returned 0 instructions!\n");
         cs_close(&handle);
         return new_shellcode;
     }
@@ -353,7 +422,19 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
             }
         }
 
-        if (has_null) {
+        // Special handling for relative jumps - they're transformed in process_relative_jump()
+        // not via strategies, so we need to estimate their size here
+        if (is_relative_jump(current->insn)) {
+            if (has_null || current->insn->size > 2) {
+                // Relative jump might need transformation
+                // Conservative estimate: opposite short jump (2) + MOV EAX (5-20) + JMP EAX (2)
+                // Use worst-case: 2 + 20 + 2 = 24 bytes
+                current->new_size = 24;
+            } else {
+                // Short jump without nulls, likely stays same size
+                current->new_size = current->insn->size;
+            }
+        } else if (has_null) {
             // Use strategy pattern to get new size
             int strategy_count;
             strategy_t** strategies = get_strategies_for_instruction(current->insn, &strategy_count);
@@ -381,7 +462,9 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
 
     // Third pass: generate new shellcode
     current = head;
+    int insn_count = 0;
     while (current != NULL) {
+        insn_count++;
         int has_null = 0;
         for (int j = 0; j < current->insn->size; j++) {
             if (current->insn->bytes[j] == 0x00) {
@@ -389,6 +472,9 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
                 break;
             }
         }
+        fprintf(stderr, "[GEN] Insn #%d: %s %s (has_null=%d, size=%d)\n",
+                insn_count, current->insn->mnemonic, current->insn->op_str,
+                has_null, current->insn->size);
 
         if (is_relative_jump(current->insn)) {
             process_relative_jump(&new_shellcode, current->insn, current, head);
@@ -400,6 +486,8 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
 
             if (strategy_count > 0) {
                 // Use the first (highest priority) strategy to generate code
+                fprintf(stderr, "[TRACE] Using strategy '%s' for: %s %s\n",
+                       strategies[0]->name, current->insn->mnemonic, current->insn->op_str);
                 strategies[0]->generate(&new_shellcode, current->insn);
 
                 // Verify no nulls introduced

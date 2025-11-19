@@ -132,33 +132,89 @@ int can_handle_conservative_arithmetic(cs_insn *insn) {
     return is_arithmetic_instruction(insn) && has_null_bytes(insn);
 }
 
-size_t get_size_conservative_arithmetic(__attribute__((unused)) cs_insn *insn) {
-    // Conservative approach: try to use the same operation but with different encoding
-    return 6;  // Standard size for arithmetic operations
+size_t get_size_conservative_arithmetic(cs_insn *insn) {
+    uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
+    uint32_t base, offset;
+    int operation;
+
+    if (find_arithmetic_equivalent(imm, &base, &offset, &operation)) {
+        // Check if offset has null bytes
+        int offset_has_null = 0;
+        if (offset > 0xFF) {
+            for (int i = 0; i < 4; i++) {
+                if (((offset >> (i * 8)) & 0xFF) == 0) {
+                    offset_has_null = 1;
+                    break;
+                }
+            }
+        }
+
+        if (offset_has_null) {
+            // Fall back to standard size
+            return 6;
+        }
+
+        size_t mov_size = get_mov_eax_imm_size(base);
+        size_t arith_size = ((int32_t)(int8_t)offset == (int32_t)offset) ? 3 : 5;
+        size_t mov_reg_eax_size = 2;
+        return mov_size + arith_size + mov_reg_eax_size;
+    }
+
+    return 6;  // Standard size for fallback
 }
 
 void generate_conservative_arithmetic(struct buffer *b, cs_insn *insn) {
     uint8_t reg = insn->detail->x86.operands[0].reg;
     uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
-    
+
     // Try to find arithmetic equivalent
     uint32_t base, offset;
     int operation; // 0 for addition, 1 for subtraction
     if (find_arithmetic_equivalent(imm, &base, &offset, &operation)) {
+        // CRITICAL FIX: Check that offset encoding won't have nulls
+        int offset_has_null = 0;
+        if (offset > 0xFF) {  // Must use 32-bit immediate form
+            for (int i = 0; i < 4; i++) {
+                if (((offset >> (i * 8)) & 0xFF) == 0) {
+                    offset_has_null = 1;
+                    break;
+                }
+            }
+        }
+
+        if (offset_has_null) {
+            // Offset has null bytes, can't use this approach - fall back
+            generate_op_reg_imm(b, insn);
+            return;
+        }
+
         // MOV EAX, base
         generate_mov_eax_imm(b, base);
-        
-        // Perform the arithmetic operation using EAX and the original register
-        if (operation == 0) { // Addition
-            uint8_t add_eax_offset[] = {0x05, 0, 0, 0, 0};
-            memcpy(add_eax_offset + 1, &offset, 4);
-            buffer_append(b, add_eax_offset, 5);
-        } else { // Subtraction
-            uint8_t sub_eax_offset[] = {0x2D, 0, 0, 0, 0};
-            memcpy(sub_eax_offset + 1, &offset, 4);
-            buffer_append(b, sub_eax_offset, 5);
+
+        // Perform the arithmetic operation using EAX
+        // Use sign-extended 8-bit form if possible (avoids nulls for small values)
+        if ((int32_t)(int8_t)offset == (int32_t)offset) {
+            // 83 C0/E8 imm8 - ADD/SUB EAX, imm8 (sign-extended)
+            if (operation == 0) {
+                uint8_t add_eax_offset[] = {0x83, 0xC0, (uint8_t)offset};
+                buffer_append(b, add_eax_offset, 3);
+            } else {
+                uint8_t sub_eax_offset[] = {0x83, 0xE8, (uint8_t)offset};
+                buffer_append(b, sub_eax_offset, 3);
+            }
+        } else {
+            // Must use 32-bit immediate form
+            if (operation == 0) { // Addition
+                uint8_t add_eax_offset[] = {0x05, 0, 0, 0, 0};
+                memcpy(add_eax_offset + 1, &offset, 4);
+                buffer_append(b, add_eax_offset, 5);
+            } else { // Subtraction
+                uint8_t sub_eax_offset[] = {0x2D, 0, 0, 0, 0};
+                memcpy(sub_eax_offset + 1, &offset, 4);
+                buffer_append(b, sub_eax_offset, 5);
+            }
         }
-        
+
         // Now move the result to the original register
         uint8_t mov_reg_eax[] = {0x89, 0xC0};
         mov_reg_eax[1] = mov_reg_eax[1] + get_reg_index(reg);

@@ -183,7 +183,7 @@ int can_handle_cmp_byte_mem_imm_null(cs_insn *insn) {
     return 0;
 }
 
-size_t get_size_cmp_byte_mem_imm_null(cs_insn *insn) {
+size_t get_size_cmp_byte_mem_imm_null(__attribute__((unused)) cs_insn *insn) {
     // PUSH temp; XOR temp, temp; CMP [mem], temp_8bit; POP temp
     // PUSH (1) + XOR (2) + CMP byte [reg], reg8 (2-6) + POP (1) = 6-10 bytes
     return 10;
@@ -314,7 +314,7 @@ int can_handle_cmp_mem_reg_null(cs_insn *insn) {
     return 0;
 }
 
-size_t get_size_cmp_mem_reg_null(cs_insn *insn) {
+size_t get_size_cmp_mem_reg_null(__attribute__((unused)) cs_insn *insn) {
     // PUSH temp; LEA temp, [reg+disp]; CMP [temp], reg2; POP temp
     // Or simpler: PUSH temp; MOV temp, base; ADD temp, disp; CMP [temp], reg2; POP temp
     // Conservative estimate: 12 bytes

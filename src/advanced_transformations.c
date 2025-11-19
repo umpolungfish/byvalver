@@ -254,7 +254,7 @@ void generate_sib_addressing(struct buffer *b, cs_insn *insn) {
                 // The SIB byte 0x20 means: scale=0 (00), index=ESP (100), base=EAX (000)
                 // The ModR/M byte 0x04 means: mod=00 (no displacement), r/m=100 (SIB follows)
                 // The reg field is encoded in the middle 3 bits of the ModR/M byte
-                mov_mem_sib[1] = (mov_mem_sib[1] & 0xF8) | (get_reg_index(src_reg) << 3);  // Set reg field to src_reg
+                mov_mem_sib[1] = (mov_mem_sib[1] & 0xC7) | (get_reg_index(src_reg) << 3);  // Set reg field to src_reg (fixed: 0xC7 preserves r/m field)
                 buffer_append(b, mov_mem_sib, 3);
                 return;
             }

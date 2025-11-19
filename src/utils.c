@@ -942,10 +942,18 @@ int find_xor_key(uint32_t target, uint32_t *xor_key) {
 
 // Find arithmetic equivalent (base +/- offset) to construct the target value without null bytes
 int find_arithmetic_equivalent(uint32_t target, uint32_t *base, uint32_t *offset, int *operation) {
-    // Try addition: base + offset = target
-    uint32_t test_offsets[] = {1, 2, 5, 10, 0x100, 0x1000, 0x10000};
+    // Prioritize offsets that won't create null bytes when encoded as 32-bit immediates
+    // Small values like 1, 2, 5, 10 encode as 0x00000001, 0x00000002, etc. which have nulls
+    // Prioritize: null-free 32-bit patterns, sign-extended 8-bit values (0x7F, etc.), then small values
+    uint32_t test_offsets[] = {
+        0x01010101, 0x02020202, 0x05050505, 0x0A0A0A0A,  // Null-free repeating patterns
+        0x7F7F7F7F, 0x7E7E7E7E, 0x7D7D7D7D,              // Sign-extendable patterns
+        0x7F, 0x7E, 0x7D, 0x50, 0x40, 0x30, 0x20, 0x10,  // 8-bit sign-extendable values
+        0x100, 0x1000, 0x10000,                           // Powers of 2
+        1, 2, 5, 10  // Small values (last resort - will be caught by validation)
+    };
     int num_offsets = sizeof(test_offsets) / sizeof(test_offsets[0]);
-    
+
     for (int i = 0; i < num_offsets; i++) {
         if (target >= test_offsets[i]) {  // For addition, target must be >= offset
             uint32_t test_base = target - test_offsets[i];
@@ -956,7 +964,7 @@ int find_arithmetic_equivalent(uint32_t target, uint32_t *base, uint32_t *offset
                 return 1;
             }
         }
-        
+
         // Also try subtraction: base - offset = target
         uint32_t test_base = target + test_offsets[i];
         if (is_null_free(test_base) && is_null_free(test_offsets[i])) {
@@ -966,7 +974,7 @@ int find_arithmetic_equivalent(uint32_t target, uint32_t *base, uint32_t *offset
             return 1;
         }
     }
-    
+
     return 0;  // No valid combination found
 }
 
