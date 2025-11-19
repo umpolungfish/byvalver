@@ -692,7 +692,7 @@ make help
 # Format code with clang-format or astyle
 make format
 
-# Static analysis with cppcheck  
+# Static analysis with cppcheck
 make lint
 
 # Check build dependencies
@@ -738,6 +738,131 @@ To add a new strategy:
 
 <br>
 
+## VISUAL DIAGRAMS
+
+### Architecture Pipeline Diagram
+```mermaid
+graph TD
+    A[Raw Shellcode Input] --> B[Disassembly Pass]
+    B --> C[Capstone Engine]
+    C --> D[Linked List of Instructions]
+    D --> E[Sizing Pass]
+    E --> F[Null Byte Detection]
+    F --> G[Strategy Selection]
+    G --> H[New Size Calculation]
+    H --> I[Offset Calculation Pass]
+    I --> J[New Offset Assignment]
+    J --> K[Generation & Patching Pass]
+    K --> L[Relative Jump Patching]
+    L --> M[Null-Free Generation]
+    M --> N[Output File]
+
+    B -.-> O[Multi-Pass Architecture]
+    E -.-> O
+    I -.-> O
+    K -.-> O
+
+    style A fill:#e1f5fe
+    style N fill:#e8f5e8
+    style O fill:#fff3e0
+    style C fill:#f3e5f5
+    style F fill:#ffebee
+    style G fill:#e3f2fd
+    style L fill:#e8f5e8
+```
+
+### Strategy Taxonomy Tree
+```mermaid
+graph TD
+    A[Strategy Registry] --> B[High Priority Strategies]
+    A --> C[Medium Priority Strategies]
+    A --> D[Low Priority Strategies]
+
+    B --> B1[Indirect CALL/JMP Strategies<br/>Priority: 100]
+    B --> B2[Context Preservation<br/>Priority: 95]
+    B --> B3[CMP Strategies<br/>Priority: 85-88]
+    B --> B4[MOVZX/MOVSX<br/>Priority: 75]
+    B --> B5[ROR/ROL Rotation<br/>Priority: 70]
+
+    C --> C1[MOV Strategies<br/>Priority: 6-13]
+    C --> C2[Arithmetic Strategies<br/>Priority: Various]
+    C --> C3[Memory Strategies<br/>Priority: Various]
+    C --> C4[Jump Strategies<br/>Priority: Various]
+    C --> C5[General Strategies<br/>Priority: Various]
+
+    D --> D1[Shift-Bit Construction<br/>Priority: 25]
+    D --> D2[Byte-by-byte Construction<br/>Priority: 25]
+    D --> D3[Fallback Strategies<br/>Priority: 1-24]
+
+    B1 --> B1a{CALL [disp32], JMP [disp32]}
+    B2 --> B2a{Context Preservation Patterns}
+    B3 --> B3a{CMP reg, imm<br/>CMP [reg+disp], reg<br/>CMP BYTE [reg+disp], imm}
+    B4 --> B4a{MOVZX/MOVSX with null displacement}
+    B5 --> B5a{ROR/ROL reg, imm}
+
+    C1 --> C1a{MOV reg, imm with null bytes}
+    C2 --> C2a{ADD, SUB, AND, OR, XOR with null bytes}
+    C3 --> C3a{Memory operations with null displacement}
+    C4 --> C4a{JMP, CALL, RET with null bytes}
+    C5 --> C5a{PUSH, POP, and other instructions}
+
+    D1 --> D1a{Shift-based immediate construction}
+    D2 --> D2a{Byte-by-byte immediate construction}
+    D3 --> D3a{Generic fallback transformations}
+
+    style A fill:#e3f2fd
+    style B fill:#e8f5e8
+    style C fill:#e0f2f1
+    style D fill:#fff8e1
+    style B1 fill:#ffcdd2
+    style C1 fill:#c8e6c9
+    style D1 fill:#fff9c4
+```
+
+### Null Reduction Chart
+```mermaid
+graph B
+    A[Original Nulls: 168] --> B[Skeeterspit.bin: 0<br/>(100% reduction)]
+    A --> C[c_B_f.bin: 0<br/>(100% reduction)]
+    A --> D[Imon.bin: 0<br/>(100% reduction)]
+    A --> E[Prima_vulnus.bin: 0<br/>(100% reduction)]
+    A --> F[RednefeD_swodniW.bin: 0<br/>(100% reduction)]
+    A --> G[Sysutil.bin: 0<br/>(100% reduction)]
+    A --> H[EHS.bin: 0<br/>(100% reduction)]
+    A --> I[Ouroboros_core.bin: 0<br/>(100% reduction)]
+    A --> J[Cutyourmeat-static.bin: 4<br/>(81% reduction)]
+    A --> K[Cheapsuit.bin: 36<br/>(52% reduction)]
+
+    B -.-> N{Final Nulls: 40}
+    C -.-> N
+    D -.-> N
+    E -.-> N
+    F -.-> N
+    G -.-> N
+    H -.-> N
+    I -.-> N
+    J -.-> N
+    K -.-> N
+
+    N -.-> O{Overall: 76% reduction<br/>(168 → 40 nulls)}
+
+    style A fill:#ffcdd2
+    style N fill:#f8f9fa
+    style O fill:#d1ecf1
+    style B fill:#d4edda
+    style C fill:#d4edda
+    style D fill:#d4edda
+    style E fill:#d4edda
+    style F fill:#d4edda
+    style G fill:#d4edda
+    style H fill:#d4edda
+    style I fill:#d4edda
+    style J fill:#fff3cd
+    style K fill:#f8d7da
+```
+
+<br>
+
 ## LIMITATIONS AND FUTURE DEVELOPMENT
 
 `byvalver` is production-ready for 80% of shellcode patterns, with clear path to 100%:
@@ -769,7 +894,7 @@ To add a new strategy:
 
 ## CONTRIBUTING
 
-Contributions are welcome! 
+Contributions are welcome!
 
 To contribute a new strategy:
 1. Fork the repository
