@@ -54,3 +54,11 @@ shellcode.bin.original
 GEMINI.md
 QWEN.md
 CLAUDE.md
+
+DOCS/GEMINI.md
+DOCS/QWEN.md
+DOCS/CLAUDE.md
+
+.gemini
+.qwen
+.claude

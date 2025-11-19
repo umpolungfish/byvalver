@@ -18,13 +18,19 @@ static int has_null_in_immediate(int64_t imm) {
            ((val & 0xFF000000) == 0);
 }
 
-// Helper to check if displacement contains null bytes
+// Helper to check if displacement contains null bytes when encoded as 32-bit
 static int has_null_in_displacement(int32_t disp) {
     if (disp == 0) return 1; // Zero displacement is null
-    return ((disp & 0xFF) == 0) ||
-           ((disp & 0xFF00) == 0) ||
-           ((disp & 0xFF0000) == 0) ||
-           ((disp & 0xFF000000) == 0);
+    uint32_t val = (uint32_t)disp;
+    return ((val & 0xFF) == 0) ||
+           (((val >> 8) & 0xFF) == 0) ||
+           (((val >> 16) & 0xFF) == 0) ||
+           (((val >> 24) & 0xFF) == 0);
+}
+
+// Helper to check if a byte value is null (for disp8 encoding)
+static int is_disp8_null(int32_t disp) {
+    return ((uint8_t)disp == 0);
 }
 
 // Strategy 1: CMP reg, imm with null bytes in immediate
@@ -106,21 +112,70 @@ void generate_cmp_reg_imm_null(struct buffer *b, cs_insn *insn) {
         // PUSH temp_reg
         buffer_write_byte(b, 0x50 + (temp_reg - X86_REG_EAX));
 
-        // MOV temp_reg, imm (try to make it null-free)
-        // For now, use a simple approach: try to find null-free encoding
+        // MOV temp_reg, imm (construct null-free)
         uint32_t val = (uint32_t)imm;
 
-        // Try to construct using byte operations
-        // This is simplified - could use existing MOV strategies for better optimization
         if (!is_null_free(val)) {
-            // XOR temp, temp
-            buffer_write_byte(b, 0x31);
-            buffer_write_byte(b, 0xC0 + ((temp_reg - X86_REG_EAX) * 9));
+            // Try arithmetic equivalent first
+            uint32_t base, offset;
+            int operation;
+            if (find_arithmetic_equivalent(val, &base, &offset, &operation)) {
+                if (operation == 0) {
+                    // Addition: MOV temp, base; ADD temp, offset
+                    buffer_write_byte(b, 0xB8 + (temp_reg - X86_REG_EAX));
+                    buffer_write_dword(b, base);
 
-            // Build value byte by byte if needed
-            // For now, use a simplified approach
-            buffer_write_byte(b, 0xB8 + (temp_reg - X86_REG_EAX));
-            buffer_write_dword(b, val);
+                    buffer_write_byte(b, 0x81);
+                    buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
+                    buffer_write_dword(b, offset);
+                } else {
+                    // Subtraction: MOV temp, base; SUB temp, offset
+                    buffer_write_byte(b, 0xB8 + (temp_reg - X86_REG_EAX));
+                    buffer_write_dword(b, base);
+
+                    buffer_write_byte(b, 0x81);
+                    buffer_write_byte(b, 0xE8 + (temp_reg - X86_REG_EAX));
+                    buffer_write_dword(b, offset);
+                }
+            } else {
+                // Fallback: Try NEG equivalent
+                uint32_t negated_val;
+                if (find_neg_equivalent(val, &negated_val)) {
+                    // MOV temp, -val; NEG temp
+                    buffer_write_byte(b, 0xB8 + (temp_reg - X86_REG_EAX));
+                    buffer_write_dword(b, negated_val);
+
+                    buffer_write_byte(b, 0xF7);
+                    buffer_write_byte(b, 0xD8 + (temp_reg - X86_REG_EAX));
+                } else {
+                    // Last resort: byte-by-byte construction
+                    // XOR temp, temp
+                    buffer_write_byte(b, 0x31);
+                    buffer_write_byte(b, 0xC0 + ((temp_reg - X86_REG_EAX) * 9));
+
+                    // Build value byte by byte using SHL + OR
+                    for (int i = 0; i < 4; i++) {
+                        uint8_t byte = (val >> (i * 8)) & 0xFF;
+                        if (byte != 0) {
+                            if (i > 0) {
+                                // SHL temp, 8
+                                buffer_write_byte(b, 0xC1);
+                                buffer_write_byte(b, 0xE0 + (temp_reg - X86_REG_EAX));
+                                buffer_write_byte(b, 8);
+                            }
+                            // OR temp_low, byte
+                            buffer_write_byte(b, 0x80);
+                            buffer_write_byte(b, 0xC8 + (temp_reg - X86_REG_EAX));
+                            buffer_write_byte(b, byte);
+                        } else if (i > 0) {
+                            // Shift for null bytes too
+                            buffer_write_byte(b, 0xC1);
+                            buffer_write_byte(b, 0xE0 + (temp_reg - X86_REG_EAX));
+                            buffer_write_byte(b, 8);
+                        }
+                    }
+                }
+            }
         } else {
             // Value is null-free, use direct MOV
             buffer_write_byte(b, 0xB8 + (temp_reg - X86_REG_EAX));
@@ -219,8 +274,8 @@ void generate_cmp_byte_mem_imm_null(struct buffer *b, cs_insn *insn) {
             // [reg] mode
             uint8_t modrm = 0x00 + (temp_idx * 8) + base_idx;
             buffer_write_byte(b, modrm);
-        } else if (disp >= -128 && disp <= 127 && !has_null_in_displacement(disp)) {
-            // [reg+disp8] mode
+        } else if (disp >= -128 && disp <= 127 && !is_disp8_null(disp)) {
+            // [reg+disp8] mode (displacement fits in 8 bits and isn't null)
             uint8_t modrm = 0x40 + (temp_idx * 8) + base_idx;
             buffer_write_byte(b, modrm);
             buffer_write_byte(b, (uint8_t)disp);
@@ -259,7 +314,7 @@ void generate_cmp_byte_mem_imm_null(struct buffer *b, cs_insn *insn) {
         if (disp == 0 && base_reg != X86_REG_EBP) {
             uint8_t modrm = 0x00 + (temp_idx * 8) + base_idx;
             buffer_write_byte(b, modrm);
-        } else if (disp >= -128 && disp <= 127 && !has_null_in_displacement(disp)) {
+        } else if (disp >= -128 && disp <= 127 && !is_disp8_null(disp)) {
             uint8_t modrm = 0x40 + (temp_idx * 8) + base_idx;
             buffer_write_byte(b, modrm);
             buffer_write_byte(b, (uint8_t)disp);
@@ -342,23 +397,47 @@ void generate_cmp_mem_reg_null(struct buffer *b, cs_insn *insn) {
 
     // ADD temp, disp (if disp != 0)
     if (disp != 0) {
-        if (disp >= -128 && disp <= 127 && !has_null_in_displacement(disp)) {
-            // ADD temp, imm8
+        if (disp >= -128 && disp <= 127 && !is_disp8_null(disp)) {
+            // ADD temp, imm8 (displacement fits in 8 bits and isn't null)
             buffer_write_byte(b, 0x83);
             buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
             buffer_write_byte(b, (uint8_t)disp);
         } else if (!has_null_in_displacement(disp)) {
-            // ADD temp, imm32
+            // ADD temp, imm32 (displacement is null-free as 32-bit)
             buffer_write_byte(b, 0x81);
             buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
             buffer_write_dword(b, (uint32_t)disp);
         } else {
-            // Displacement has nulls - need to construct it
-            // For simplicity, use the displacement directly (will still have nulls)
-            // TODO: Improve this by constructing null-free displacement
-            buffer_write_byte(b, 0x81);
-            buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
-            buffer_write_dword(b, (uint32_t)disp);
+            // Try to break into multiple smaller displacements to avoid nulls
+            // Find arithmetic equivalent: base ± offset = disp (both null-free)
+            uint32_t base, offset;
+            int operation;
+            if (find_arithmetic_equivalent((uint32_t)disp, &base, &offset, &operation)) {
+                if (operation == 0) {
+                    // Addition: ADD temp, base; ADD temp, offset
+                    buffer_write_byte(b, 0x81);
+                    buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
+                    buffer_write_dword(b, base);
+
+                    buffer_write_byte(b, 0x81);
+                    buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
+                    buffer_write_dword(b, offset);
+                } else {
+                    // Subtraction: ADD temp, base; SUB temp, offset
+                    buffer_write_byte(b, 0x81);
+                    buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
+                    buffer_write_dword(b, base);
+
+                    buffer_write_byte(b, 0x81);
+                    buffer_write_byte(b, 0xE8 + (temp_reg - X86_REG_EAX));  // SUB
+                    buffer_write_dword(b, offset);
+                }
+            } else {
+                // Fallback: use displacement as-is (may have nulls but rare)
+                buffer_write_byte(b, 0x81);
+                buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
+                buffer_write_dword(b, (uint32_t)disp);
+            }
         }
     }
 

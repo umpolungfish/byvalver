@@ -45,6 +45,8 @@ void register_loop_strategies(); // Forward declaration
 void register_ret_strategies(); // Forward declaration
 void register_cmp_strategies(); // Forward declaration
 void register_xchg_strategies(); // Forward declaration
+void register_bt_strategies(); // Forward declaration
+void register_test_strategies(); // Forward declaration
 
 void init_strategies() {
     #ifdef DEBUG
@@ -69,6 +71,8 @@ void init_strategies() {
     register_xchg_strategies();  // Register XCHG strategies (priority 60)
     register_memory_strategies();  // Register all memory strategies
     register_cmp_strategies();  // Register CMP strategies (priority 85-88)
+    register_test_strategies();  // Register TEST strategies (priority 82)
+    register_bt_strategies();  // Register BT (bit test) strategies (priority 80)
     register_jump_strategies();  // Register all jump strategies
     register_loop_strategies();  // Register all LOOP family strategies (priority 75-80)
     register_general_strategies();  // Register all general strategies
