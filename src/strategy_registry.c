@@ -47,6 +47,12 @@ void register_cmp_strategies(); // Forward declaration
 void register_xchg_strategies(); // Forward declaration
 void register_bt_strategies(); // Forward declaration
 void register_test_strategies(); // Forward declaration
+void register_adc_strategies(); // Forward declaration
+void register_sbb_strategies(); // Forward declaration
+void register_setcc_strategies(); // Forward declaration
+void register_imul_strategies(); // Forward declaration
+void register_fpu_strategies(); // Forward declaration
+void register_sldt_strategies(); // Forward declaration
 
 void init_strategies() {
     #ifdef DEBUG
@@ -68,6 +74,12 @@ void init_strategies() {
     register_getpc_strategies();  // Register GET PC (CALL/POP) strategies
     register_mov_strategies();  // Register all MOV strategies
     register_arithmetic_strategies();  // Register all arithmetic strategies
+    register_adc_strategies();  // Register ADC (Add with Carry) strategies (priority 69-70)
+    register_sbb_strategies();  // Register SBB (Subtract with Borrow) strategies (priority 69-70)
+    register_setcc_strategies();  // Register SETcc (Conditional Set) strategies (priority 70-75)
+    register_imul_strategies();  // Register IMUL (Signed Multiply) strategies (priority 71-72)
+    register_fpu_strategies();  // Register x87 FPU strategies (priority 60)
+    register_sldt_strategies();  // Register SLDT strategies (priority 60)
     register_xchg_strategies();  // Register XCHG strategies (priority 60)
     register_memory_strategies();  // Register all memory strategies
     register_cmp_strategies();  // Register CMP strategies (priority 85-88)
