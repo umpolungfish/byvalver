@@ -53,6 +53,10 @@ void register_setcc_strategies(); // Forward declaration
 void register_imul_strategies(); // Forward declaration
 void register_fpu_strategies(); // Forward declaration
 void register_sldt_strategies(); // Forward declaration
+void register_sldt_replacement_strategy(); // Forward declaration - Priority 95
+void register_retf_strategies(); // Forward declaration - Priority 85
+void register_arpl_strategies(); // Forward declaration - Priority 75
+void register_bound_strategies(); // Forward declaration - Priority 70
 
 void init_strategies() {
     #ifdef DEBUG
@@ -63,6 +67,7 @@ void init_strategies() {
     register_advanced_transformations();  // Register advanced transformations (highest priority)
     init_advanced_transformations();      // Initialize the can_handle functions
     register_indirect_call_strategies();  // Register indirect CALL/JMP strategies (priority 100)
+    register_sldt_replacement_strategy();  // Register SLDT replacement strategy (priority 95)
     register_sequence_preservation_strategies();  // Register sequence preservation strategies
     register_context_preservation_strategies();  // Register context preservation strategies
     register_lea_strategies();  // Register LEA strategies
@@ -70,7 +75,9 @@ void init_strategies() {
     register_conservative_strategies();  // Register conservative strategies
     register_movzx_strategies();  // Register MOVZX/MOVSX strategies (priority 75)
     register_ret_strategies();  // Register RET immediate strategies (priority 78)
+    register_arpl_strategies();  // Register ARPL ModR/M strategies (priority 75)
     register_ror_rol_strategies();  // Register ROR/ROL rotation strategies (priority 70)
+    register_bound_strategies();  // Register BOUND ModR/M strategies (priority 70)
     register_getpc_strategies();  // Register GET PC (CALL/POP) strategies
     register_mov_strategies();  // Register all MOV strategies
     register_arithmetic_strategies();  // Register all arithmetic strategies
@@ -83,6 +90,7 @@ void init_strategies() {
     register_xchg_strategies();  // Register XCHG strategies (priority 60)
     register_memory_strategies();  // Register all memory strategies
     register_cmp_strategies();  // Register CMP strategies (priority 85-88)
+    register_retf_strategies();  // Register RETF immediate strategies (priority 85)
     register_test_strategies();  // Register TEST strategies (priority 82)
     register_bt_strategies();  // Register BT (bit test) strategies (priority 80)
     register_jump_strategies();  // Register all jump strategies
