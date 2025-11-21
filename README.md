@@ -885,7 +885,7 @@ make dist
 ---
 
 <div align="center">
-  <img src="./IMAGES/adapvert.png" alt="Architecture diagram" width="600">
+  <img src="./IMAGES/bp1.png" alt="Architecture diagram" width="600">
 </div>
 
 ---
