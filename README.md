@@ -920,9 +920,7 @@ To add a new strategy:
 
 ### Architecture Pipeline Diagram
 
-<div align="center">
-  <img src="./IMAGES/bp1.png" alt="byvalver pipeline" width="400">
-</div>
+![byvalver pipeline](./IMAGES/bp1.png)
 
 <br>
 
