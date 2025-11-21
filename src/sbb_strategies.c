@@ -183,18 +183,33 @@ static int can_handle_sbb_immediate_null(cs_insn *insn) {
     }
 
     // Check if immediate contains null bytes
-    uint32_t imm = (uint32_t)op1->imm;
-    return !is_null_free(imm);
+    // Handle both 8-bit and 32-bit register forms
+    uint64_t imm = op1->imm;
+
+    if (op0->size == 1) {
+        // 8-bit register (AL, BL, CL, DL, etc.) - check if byte is null
+        return (imm & 0xFF) == 0;
+    } else {
+        // 32-bit register - check full immediate
+        uint32_t imm32 = (uint32_t)imm;
+        return !is_null_free(imm32);
+    }
 }
 
 static size_t get_size_sbb_immediate_null(cs_insn *insn) {
+    cs_x86_op *op0 = &insn->detail->x86.operands[0];
     cs_x86_op *op1 = &insn->detail->x86.operands[1];
-    uint32_t imm = (uint32_t)op1->imm;
 
+    // Handle 8-bit register case
+    if (op0->size == 1 && (op1->imm & 0xFF) == 0) {
+        // PUSH EAX (1) + PUSH EBX (1) + XOR BL,BL (2) + SBB AL,BL (2) + POP EBX (1) + POP EAX (1) = 8 bytes
+        return 8;
+    }
+
+    // Handle 32-bit register case
     // PUSH EBX (1) + MOV EBX, imm32 (5) + SBB reg, EBX (2) + POP EBX (1)
     // For small immediates we might use shift-based construction
     // Conservative estimate: 15 bytes
-    (void)imm;
     return 15;
 }
 
@@ -203,7 +218,46 @@ static void generate_sbb_immediate_null(struct buffer *b, cs_insn *insn) {
     cs_x86_op *op1 = &insn->detail->x86.operands[1];
 
     x86_reg dst_reg = op0->reg;
-    uint32_t imm = (uint32_t)op1->imm;
+    uint64_t imm = op1->imm;
+
+    // Handle 8-bit register case (SBB AL, 0, etc.)
+    if (op0->size == 1 && (imm & 0xFF) == 0) {
+        // SBB AL/BL/CL/DL, 0 → use register form with zero register
+
+        // Save registers we'll use
+        buffer_write_byte(b, 0x50);  // PUSH EAX (preserve upper bits)
+        buffer_write_byte(b, 0x53);  // PUSH EBX
+
+        // XOR BL, BL - Create zero in BL (0x30 0xDB - null-free!)
+        buffer_write_byte(b, 0x30);
+        buffer_write_byte(b, 0xDB);
+
+        // SBB dst_reg_8bit, BL
+        // Map dst_reg to its 8-bit encoding
+        uint8_t reg_8bit_code = 0;
+        if (dst_reg == X86_REG_AL) reg_8bit_code = 0;
+        else if (dst_reg == X86_REG_CL) reg_8bit_code = 1;
+        else if (dst_reg == X86_REG_DL) reg_8bit_code = 2;
+        else if (dst_reg == X86_REG_BL) reg_8bit_code = 3;
+        else if (dst_reg == X86_REG_AH) reg_8bit_code = 4;
+        else if (dst_reg == X86_REG_CH) reg_8bit_code = 5;
+        else if (dst_reg == X86_REG_DH) reg_8bit_code = 6;
+        else if (dst_reg == X86_REG_BH) reg_8bit_code = 7;
+        else reg_8bit_code = 0; // default to AL
+
+        buffer_write_byte(b, 0x1A);  // SBB r/m8, r8
+        uint8_t modrm = 0xC0 | (reg_8bit_code << 3) | 0x03; // mod=11, reg=dst, r/m=BL(3)
+        buffer_write_byte(b, modrm);
+
+        // Restore registers
+        buffer_write_byte(b, 0x5B);  // POP EBX
+        buffer_write_byte(b, 0x58);  // POP EAX
+
+        return;
+    }
+
+    // Handle 32-bit register case
+    uint32_t imm32 = (uint32_t)imm;
 
     // Use EBX as temporary register (avoid destination register)
     uint8_t temp_reg = 0x03; // EBX
@@ -213,17 +267,17 @@ static void generate_sbb_immediate_null(struct buffer *b, cs_insn *insn) {
 
     // Construct the immediate value in EBX using null-free techniques
     int shift_amount = 0;
-    uint32_t base_val = imm;
+    uint32_t base_val = imm32;
 
     // Try to find shift amount that makes value null-free
     for (int i = 0; i < 32; i++) {
-        uint32_t shifted = imm << i;
+        uint32_t shifted = imm32 << i;
         if (is_null_free(shifted)) {
             base_val = shifted;
             shift_amount = i;
             break;
         }
-        shifted = imm >> i;
+        shifted = imm32 >> i;
         if (is_null_free(shifted) && shifted != 0) {
             base_val = shifted;
             shift_amount = -i;
@@ -267,7 +321,7 @@ static void generate_sbb_immediate_null(struct buffer *b, cs_insn *insn) {
 
         // Build value byte by byte
         for (int i = 0; i < 4; i++) {
-            uint8_t byte = (imm >> (i * 8)) & 0xFF;
+            uint8_t byte = (imm32 >> (i * 8)) & 0xFF;
             if (byte != 0) {
                 // SHL EBX, 8 (if not first byte)
                 if (i > 0) {

@@ -307,10 +307,217 @@ strategy_t adc_immediate_null_free_strategy = {
 };
 
 // ============================================================================
+// STRATEGY 3: ADC SIB+disp32 Null-Byte Bypass
+// ============================================================================
+// Handles: ADC with complex SIB addressing where disp32 contains nulls
+// Example: ADC EAX, [EBX*8 + 0x1A] where disp32 = 0x0000001A (3 null bytes)
+//
+// Transformation:
+//   Original: ADC EAX, [EBX*8 + 0x1A]  ; [13 04 DD 1A 00 00 00]
+//   Transformed:
+//     PUSH ECX                          ; Save temp
+//     MOV ECX, EBX                     ; Copy index
+//     SHL ECX, 3                       ; ECX = EBX * 8
+//     PUSH EDX                          ; Save another temp
+//     MOV EDX, <null-free 0x1A>        ; Construct displacement
+//     ADD ECX, EDX                     ; ECX = EBX*8 + 0x1A
+//     ADC EAX, [ECX]                   ; Use simple addressing
+//     POP EDX
+//     POP ECX
+
+static int can_handle_adc_sib_disp32_null(cs_insn *insn) {
+    if (insn->id != X86_INS_ADC) {
+        return 0;
+    }
+
+    if (!has_null_bytes(insn)) {
+        return 0;
+    }
+
+    if (insn->detail->x86.op_count != 2) {
+        return 0;
+    }
+
+    // Find memory operand
+    cs_x86_op *mem_op = NULL;
+    if (insn->detail->x86.operands[0].type == X86_OP_MEM) {
+        mem_op = &insn->detail->x86.operands[0];
+    } else if (insn->detail->x86.operands[1].type == X86_OP_MEM) {
+        mem_op = &insn->detail->x86.operands[1];
+    } else {
+        return 0;
+    }
+
+    // Check for SIB addressing with displacement containing nulls
+    if (mem_op->mem.index != X86_REG_INVALID) {
+        // Has index register (SIB present)
+        int64_t disp = mem_op->mem.disp;
+        if (disp != 0) {
+            uint32_t disp_u32 = (uint32_t)disp;
+            if (!is_null_free(disp_u32)) {
+                return 1;  // SIB with null-containing disp32
+            }
+        }
+    }
+
+    return 0;
+}
+
+static size_t get_size_adc_sib_disp32_null(cs_insn *insn) {
+    (void)insn;
+    // PUSH ECX (1) + MOV ECX, index (2) + SHL ECX, scale (3) +
+    // PUSH EDX (1) + MOV EDX, disp (5-15) + ADD ECX, EDX (2) +
+    // ADC reg, [ECX] (2) + POP EDX (1) + POP ECX (1)
+    // Conservative estimate: 30 bytes
+    return 30;
+}
+
+static void generate_adc_sib_disp32_null(struct buffer *b, cs_insn *insn) {
+    cs_x86_op *op0 = &insn->detail->x86.operands[0];
+    cs_x86_op *op1 = &insn->detail->x86.operands[1];
+
+    // Determine which operand is register and which is memory
+    x86_reg reg_operand;
+    cs_x86_op *mem_op;
+    int reg_is_dest;
+
+    if (op0->type == X86_OP_REG && op1->type == X86_OP_MEM) {
+        // ADC reg, [mem]
+        reg_operand = op0->reg;
+        mem_op = op1;
+        reg_is_dest = 1;
+    } else {
+        // ADC [mem], reg
+        reg_operand = op1->reg;
+        mem_op = op0;
+        reg_is_dest = 0;
+    }
+
+    x86_reg index = mem_op->mem.index;
+    int scale = mem_op->mem.scale;
+    int64_t disp = mem_op->mem.disp;
+    uint32_t disp_u32 = (uint32_t)disp;
+
+    // PUSH ECX
+    buffer_write_byte(b, 0x51);
+
+    // MOV ECX, index
+    buffer_write_byte(b, 0x89);
+    uint8_t index_code = (index - X86_REG_EAX) & 0x07;
+    uint8_t modrm = 0xC1 | (index_code << 3);  // MOV ECX, index
+    buffer_write_byte(b, modrm);
+
+    // SHL ECX, scale_bits (if scale > 1)
+    if (scale > 1) {
+        int scale_bits = 0;
+        if (scale == 2) scale_bits = 1;
+        else if (scale == 4) scale_bits = 2;
+        else if (scale == 8) scale_bits = 3;
+
+        if (scale_bits == 1) {
+            // SHL ECX, 1
+            buffer_write_byte(b, 0xD1);
+            buffer_write_byte(b, 0xE1);
+        } else {
+            // SHL ECX, scale_bits
+            buffer_write_byte(b, 0xC1);
+            buffer_write_byte(b, 0xE1);
+            buffer_write_byte(b, (uint8_t)scale_bits);
+        }
+    }
+
+    // PUSH EDX
+    buffer_write_byte(b, 0x52);
+
+    // Construct displacement in EDX using null-free method
+    // Try shift-based construction first
+    int found_shift = 0;
+    for (int i = 0; i < 24; i++) {
+        uint32_t shifted = disp_u32 << i;
+        if (is_null_free(shifted)) {
+            // MOV EDX, shifted
+            buffer_write_byte(b, 0xBA);  // MOV EDX, imm32
+            buffer_write_dword(b, shifted);
+
+            // SHR EDX, i
+            if (i == 1) {
+                buffer_write_byte(b, 0xD1);
+                buffer_write_byte(b, 0xEA);  // SHR EDX, 1
+            } else if (i > 1) {
+                buffer_write_byte(b, 0xC1);
+                buffer_write_byte(b, 0xEA);
+                buffer_write_byte(b, (uint8_t)i);
+            }
+            found_shift = 1;
+            break;
+        }
+    }
+
+    if (!found_shift) {
+        // Fallback: byte-by-byte construction
+        // XOR EDX, EDX
+        buffer_write_byte(b, 0x31);
+        buffer_write_byte(b, 0xD2);
+
+        // Build value byte by byte from MSB to LSB
+        for (int i = 3; i >= 0; i--) {
+            uint8_t byte = (disp_u32 >> (i * 8)) & 0xFF;
+            if (byte != 0) {
+                if (i < 3) {
+                    // SHL EDX, 8
+                    buffer_write_byte(b, 0xC1);
+                    buffer_write_byte(b, 0xE2);
+                    buffer_write_byte(b, 0x08);
+                }
+                // OR DL, byte
+                buffer_write_byte(b, 0x80);
+                buffer_write_byte(b, 0xCA);
+                buffer_write_byte(b, byte);
+            }
+        }
+    }
+
+    // ADD ECX, EDX
+    buffer_write_byte(b, 0x01);
+    buffer_write_byte(b, 0xD1);
+
+    // ADC with [ECX]
+    if (reg_is_dest) {
+        // ADC reg, [ECX]
+        buffer_write_byte(b, 0x13);  // ADC r32, r/m32
+        uint8_t reg_code = (reg_operand - X86_REG_EAX) & 0x07;
+        modrm = 0x01 | (reg_code << 3);  // [ECX], reg
+        buffer_write_byte(b, modrm);
+    } else {
+        // ADC [ECX], reg
+        buffer_write_byte(b, 0x11);  // ADC r/m32, r32
+        uint8_t reg_code = (reg_operand - X86_REG_EAX) & 0x07;
+        modrm = 0x01 | (reg_code << 3);  // [ECX], reg
+        buffer_write_byte(b, modrm);
+    }
+
+    // POP EDX
+    buffer_write_byte(b, 0x5A);
+
+    // POP ECX
+    buffer_write_byte(b, 0x59);
+}
+
+strategy_t adc_sib_disp32_null_strategy = {
+    .name = "adc_sib_disp32_null",
+    .can_handle = can_handle_adc_sib_disp32_null,
+    .get_size = get_size_adc_sib_disp32_null,
+    .generate = generate_adc_sib_disp32_null,
+    .priority = 72  // Higher than immediate strategy (69) and ModR/M (70)
+};
+
+// ============================================================================
 // Registration Function
 // ============================================================================
 
 void register_adc_strategies() {
-    register_strategy(&adc_modrm_null_bypass_strategy);
-    register_strategy(&adc_immediate_null_free_strategy);
+    // Register in priority order (highest first)
+    register_strategy(&adc_sib_disp32_null_strategy);  // Priority 72
+    register_strategy(&adc_modrm_null_bypass_strategy);  // Priority 70
+    register_strategy(&adc_immediate_null_free_strategy);  // Priority 69
 }

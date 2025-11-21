@@ -71,7 +71,105 @@ strategy_t lea_disp_nulls_strategy = {
     .priority = 8  // Reduced priority to allow more targeted strategies to take precedence
 };
 
-// Register the LEA strategy
+// ============================================================================
+// LEA Null ModR/M Strategy
+// ============================================================================
+// Handles: LEA reg, [EAX] where ModR/M byte is 0x00
+// Example: LEA EAX, [EAX] → 0x8D 0x00 (contains null!)
+//
+// Transformation:
+//   Original: LEA EAX, [EAX]  ; 0x8D 0x00
+//   Transformed:
+//     PUSH EBX                 ; Save temp
+//     MOV EBX, EAX            ; Copy address
+//     LEA dst, [EBX]          ; Use [EBX] (ModR/M = 0x03)
+//     POP EBX                 ; Restore
+
+int can_handle_lea_null_modrm(cs_insn *insn) {
+    if (insn->id != X86_INS_LEA) {
+        return 0;
+    }
+
+    if (!has_null_bytes(insn)) {
+        return 0;
+    }
+
+    if (insn->detail->x86.op_count != 2) {
+        return 0;
+    }
+
+    cs_x86_op *op0 = &insn->detail->x86.operands[0];
+    cs_x86_op *op1 = &insn->detail->x86.operands[1];
+
+    if (op0->type != X86_OP_REG || op1->type != X86_OP_MEM) {
+        return 0;
+    }
+
+    // Check for [EAX] pattern (ModR/M 0x00)
+    if (op1->mem.base == X86_REG_EAX &&
+        op1->mem.index == X86_REG_INVALID &&
+        op1->mem.disp == 0) {
+        return 1;
+    }
+
+    return 0;
+}
+
+size_t get_size_lea_null_modrm(cs_insn *insn) {
+    cs_x86_op *op0 = &insn->detail->x86.operands[0];
+    x86_reg dst = op0->reg;
+
+    if (dst == X86_REG_EAX) {
+        // LEA EAX, [EAX] is essentially a NOP
+        // Replace with 2-byte NOP: MOV EAX, EAX
+        return 2;
+    } else {
+        // PUSH EBX (1) + MOV EBX, EAX (2) + LEA dst, [EBX] (2) + POP EBX (1) = 6 bytes
+        return 6;
+    }
+
+    (void)insn;
+}
+
+void generate_lea_null_modrm(struct buffer *b, cs_insn *insn) {
+    cs_x86_op *op0 = &insn->detail->x86.operands[0];
+    x86_reg dst = op0->reg;
+
+    if (dst == X86_REG_EAX) {
+        // LEA EAX, [EAX] is a NOP (loads EAX's value into EAX)
+        // Replace with 2-byte NOP: MOV EAX, EAX (0x89 0xC0)
+        buffer_write_byte(b, 0x89);
+        buffer_write_byte(b, 0xC0);
+        return;
+    }
+
+    // PUSH EBX
+    buffer_write_byte(b, 0x53);
+
+    // MOV EBX, EAX
+    buffer_write_byte(b, 0x89);
+    buffer_write_byte(b, 0xC3);
+
+    // LEA dst, [EBX]
+    buffer_write_byte(b, 0x8D);  // LEA opcode
+    uint8_t dst_code = (dst - X86_REG_EAX) & 0x07;
+    uint8_t modrm = (dst_code << 3) | 0x03;  // mod=00, reg=dst, r/m=011 (EBX)
+    buffer_write_byte(b, modrm);
+
+    // POP EBX
+    buffer_write_byte(b, 0x5B);
+}
+
+strategy_t lea_null_modrm_strategy = {
+    .name = "lea_null_modrm",
+    .can_handle = can_handle_lea_null_modrm,
+    .get_size = get_size_lea_null_modrm,
+    .generate = generate_lea_null_modrm,
+    .priority = 65  // Higher than displacement strategy
+};
+
+// Register the LEA strategies
 void register_lea_strategies() {
-    register_strategy(&lea_disp_nulls_strategy);
+    register_strategy(&lea_null_modrm_strategy);  // Priority 65
+    register_strategy(&lea_disp_nulls_strategy);  // Priority 8
 }

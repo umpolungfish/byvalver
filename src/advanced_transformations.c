@@ -359,34 +359,44 @@ void generate_xor_null_free(struct buffer *b, cs_insn *insn) {
             }
         }
     } else {
-        // Immediate contains nulls, use MOV to temporary approach
+        // Immediate contains nulls, use MOV to temporary approach with null-free construction
         if (reg == X86_REG_EAX) {
-            // Use another register as temporary
-            uint8_t temp_reg = X86_REG_ECX;
-            
-            // PUSH temp_reg
-            uint8_t push_temp = 0x50 + get_reg_index(temp_reg);
-            buffer_append(b, &push_temp, 1);
-            
-            // MOV temp_reg, imm
-            generate_mov_reg_imm(b, insn);
-            
-            // XOR EAX, temp_reg
-            uint8_t xor_eax_temp[] = {0x31, 0xC0};
-            xor_eax_temp[1] = xor_eax_temp[1] + (0 << 3) + get_reg_index(temp_reg);  // EAX in reg field, temp in r/m
-            buffer_append(b, xor_eax_temp, 2);
-            
-            // POP temp_reg
-            uint8_t pop_temp = 0x58 + get_reg_index(temp_reg);
-            buffer_append(b, &pop_temp, 1);
+            // Use ECX as temporary register
+            // PUSH ECX
+            buffer_write_byte(b, 0x51);
+
+            // MOV ECX, imm (using null-free construction)
+            generate_mov_eax_imm(b, imm);  // Generate in EAX first
+
+            // MOV ECX, EAX (transfer to temp register)
+            buffer_write_byte(b, 0x89);
+            buffer_write_byte(b, 0xC1);  // MOV ECX, EAX
+
+            // POP EAX (restore original EAX)
+            buffer_write_byte(b, 0x58);
+
+            // XOR EAX, ECX
+            buffer_write_byte(b, 0x31);
+            buffer_write_byte(b, 0xC8);  // XOR EAX, ECX
+
+            // POP ECX (restore ECX)
+            buffer_write_byte(b, 0x59);
         } else {
-            // MOV EAX, imm
+            // For non-EAX registers, use EAX as temporary
+            // PUSH EAX
+            buffer_write_byte(b, 0x50);
+
+            // MOV EAX, imm (using null-free construction)
             generate_mov_eax_imm(b, imm);
-            
+
             // XOR reg, EAX
-            uint8_t xor_reg_eax[] = {0x31, 0xC0};
-            xor_reg_eax[1] = xor_reg_eax[1] + (get_reg_index(reg) << 3) + 0;  // reg in reg field, EAX in r/m field
-            buffer_append(b, xor_reg_eax, 2);
+            buffer_write_byte(b, 0x31);
+            uint8_t reg_code = get_reg_index(reg) & 0x07;
+            uint8_t modrm = 0xC0 | (0 << 3) | reg_code;  // EAX in reg field, target reg in r/m field
+            buffer_write_byte(b, modrm);
+
+            // POP EAX
+            buffer_write_byte(b, 0x58);
         }
     }
 }
