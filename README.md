@@ -879,15 +879,6 @@ make check-deps
 # Create distribution archive
 make dist
 ```
-
-### THE PIPELINE
-
----
-
-<div align="center">
-  <img src="./IMAGES/bp1.png" alt="Architecture diagram" width="600">
-</div>
-
 ---
 
 ### Adding New Strategies
