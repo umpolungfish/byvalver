@@ -169,7 +169,7 @@ hexdump -C output.bin
 - **Automated null-byte removal** from raw shellcode
 - **Instruction-level analysis** via Capstone disassembly
 - **Intelligent replacement** using strategy-based approach
-- **69+ transformation strategies** across 32 specialized modules
+- **71+ transformation strategies** across 34 specialized modules
 - **Extensible framework** for new replacement strategies
 - **Relative jump/call patching** maintains control flow integrity
 - **External target handling** for conditional jumps and calls
@@ -259,23 +259,23 @@ Specialized modules for different instruction types:
 
 <table>
 <tr>
-<td>🔧 <b>Maintainability</b></td>
+<td>🔧 <b>MAINTAINABILITY</b></td>
 <td>Clear separation of concerns</td>
 </tr>
 <tr>
-<td>📈 <b>Extensibility</b></td>
+<td>📈 <b>EXTENSIBILITY</b></td>
 <td>Easy to add new strategies</td>
 </tr>
 <tr>
-<td>✅ <b>Testability</b></td>
+<td>✅ <b>TESTABILITY</b></td>
 <td>Individual module testing</td>
 </tr>
 <tr>
-<td>🚀 <b>Scalability</b></td>
+<td>🚀 <b>SCALABILITY</b></td>
 <td>Supports growing strategy count</td>
 </tr>
 <tr>
-<td>🧹 <b>Clean Build</b></td>
+<td>🧹 <b>CLEAN BUILD</b></td>
 <td>All warnings eliminated</td>
 </tr>
 </table>

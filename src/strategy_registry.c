@@ -19,6 +19,8 @@ static int strategy_count = 0;
 void register_strategy(strategy_t *strategy) {
     if (strategy_count < MAX_STRATEGIES) {
         strategies[strategy_count++] = strategy;
+    } else {
+        fprintf(stderr, "[ERROR] Strategy registry full! Maximum of %d strategies supported.\n", MAX_STRATEGIES);
     }
 }
 
@@ -57,6 +59,9 @@ void register_sldt_replacement_strategy(); // Forward declaration - Priority 95
 void register_retf_strategies(); // Forward declaration - Priority 85
 void register_arpl_strategies(); // Forward declaration - Priority 75
 void register_bound_strategies(); // Forward declaration - Priority 70
+void register_byte_construct_strategy(); // Forward declaration - Byte construction strategy
+void register_conditional_jump_offset_strategies(); // Forward declaration - Priority 150
+void register_cmp_memory_disp_null_strategy(); // Forward declaration - Priority 55
 
 void init_strategies() {
     #ifdef DEBUG
@@ -78,6 +83,7 @@ void init_strategies() {
     register_arpl_strategies();  // Register ARPL ModR/M strategies (priority 75)
     register_ror_rol_strategies();  // Register ROR/ROL rotation strategies (priority 70)
     register_bound_strategies();  // Register BOUND ModR/M strategies (priority 70)
+    register_conditional_jump_offset_strategies();  // Register conditional jump null-offset strategies (priority 150)
     register_getpc_strategies();  // Register GET PC (CALL/POP) strategies
     register_mov_strategies();  // Register all MOV strategies
     register_arithmetic_strategies();  // Register all arithmetic strategies
@@ -88,6 +94,7 @@ void init_strategies() {
     register_fpu_strategies();  // Register x87 FPU strategies (priority 60)
     register_sldt_strategies();  // Register SLDT strategies (priority 60)
     register_xchg_strategies();  // Register XCHG strategies (priority 60)
+    register_cmp_memory_disp_null_strategy();  // Register CMP memory displacement null strategies (priority 55)
     register_memory_strategies();  // Register all memory strategies
     register_cmp_strategies();  // Register CMP strategies (priority 85-88)
     register_retf_strategies();  // Register RETF immediate strategies (priority 85)
@@ -96,6 +103,7 @@ void init_strategies() {
     register_jump_strategies();  // Register all jump strategies
     register_loop_strategies();  // Register all LOOP family strategies (priority 75-80)
     register_general_strategies();  // Register all general strategies
+    register_byte_construct_strategy(); // Register byte construction strategy
     // register_anti_debug_strategies();  // DISABLED - causes issues with non-NOP instructions
     register_shift_strategy();  // Register shift-based strategy
     // register_peb_strategies();  // ALSO DISABLE THIS - was causing inappropriate application to non-NOP instructions
