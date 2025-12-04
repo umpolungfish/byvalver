@@ -1,0 +1,43 @@
+feat: Add Windows PIC-shellcode generation capabilities
+
+This commit introduces comprehensive Position Independent Code (PIC) generation functionality to byvalver, enabling the creation of position-independent shellcode for Windows environments.
+
+## Summary of Changes:
+
+### New Features:
+- Added `--pic` command-line flag to generate position-independent shellcode
+- Implemented JMP-CALL-POP technique for runtime EIP/RIP register access
+- Created PEB-based kernel32.dll base address discovery mechanism
+- Added foundation for hash-based Windows API resolution
+- Integrated anti-debugging features in generated PIC shellcode
+
+### Architecture:
+- Created new module `src/pic_generation.c` and `src/pic_generation.h`
+- Implemented using existing strategy pattern for consistency
+- Added proper error handling and memory management
+- Ensured seamless integration with existing pipeline
+
+### Integration:
+- Full compatibility with existing biphasic processing (--biphasic)
+- Works with XOR encoding (--xor-encode) and decoder stubs
+- Maintains all existing null-byte elimination guarantees
+- Preserves functional equivalence of original shellcode
+
+### Technical Implementation:
+- Uses modified djb2 hash algorithm for API name resolution
+- Implements safe PEB traversal for dynamic API discovery
+- Generates minimal PIC stubs with automated addressing
+- No dependency on import address table (IAT) for API calls
+
+### Usage Examples:
+- `./bin/byvalver --pic input.bin output.bin`
+- `./bin/byvalver --pic --biphasic input.bin output.bin`
+- `./bin/byvalver --pic --xor-encode 0x12345678 input.bin output.bin`
+
+### Quality Assurance:
+- Fixed all compiler warnings and errors
+- Verified functionality with real shellcode samples
+- Maintains backward compatibility with existing features
+- Comprehensive documentation updates
+
+This enhancement significantly extends byvalver's capabilities for generating advanced shellcode that can execute from any memory location while maintaining all existing null-byte elimination and obfuscation features.

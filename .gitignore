@@ -1,0 +1,131 @@
+# BYVALVER - Null-Byte Elimination Framework .gitignore
+# Generated based on project structure and build process
+
+# Build artifacts and executables
+/bin/
+decoder.bin
+decoder.h
+
+# Executables
+byvalver
+*.exe
+
+# Object files
+*.o
+*.obj
+*.obj.data
+*.lo
+*.la
+*.dl
+*.dpi
+*.dpg
+
+# Test and output files
+*.bin
+*.out
+*.log
+*.tmp
+test_*.bin
+output.bin
+calc.bin
+calc_pic.bin
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Development and testing
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build and dependency directories
+build/
+dist/
+*.egg
+*.egg-info/
+node_modules/
+
+# Documentation and temporary files
+*.pdf
+*.html
+*.tmp
+*.temp
+
+# Test results and reports
+test_results/
+test_output.bin
+
+# Python virtual environments and packages
+.Python
+pyvenv.cfg
+
+# Backup and temporary files
+*~
+*.bak
+*.orig
+*.save
+*.
+*.backup
+*.old
+
+# Temporary build files
+*.a
+*.so
+*.dylib
+*.dll
+
+# C/C++ specific
+*.i
+*.ii
+*.s
+*.mod
+*.ii
+*.s
+
+# CI/CD and deployment
+*.stackdump
+*.d
+*.dwo
+
+# Editor-specific settings
+/.vscode/settings.json
+/.vscode/tasks.json
+/.vscode/launch.json
+/.idea/*
+
+# Archive and history files
+.archive/claude_history/
+.archive/qwen_history/
+.archive/byvalver_results/
+
+# Any logs
+logs/
+*.log
+
+# Coverage reports
+coverage/
+*.gcov
+*.lcov
+
+# OS generated files
+.DS_Store
+.Trashes
+.fseventsd
+
+# Local configuration files (if any)
+config.local
+*.local
+
+# Debug and testing specific
+*.dSYM/
+*.pdb
