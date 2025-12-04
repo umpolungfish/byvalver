@@ -6,10 +6,10 @@
 
 // Transformation strategy for MOV reg32, [reg32] instructions that contain null bytes
 // Example: mov eax, [eax] (0x8B 0x00) -> transformed to null-byte-free sequence
-strategy_t transform_mov_reg_mem_self;
+extern strategy_t transform_mov_reg_mem_self;
 
 // Transformation strategy for ADD [mem], reg8 instructions that contain null bytes
 // Example: add [eax], al (0x00 0x00) -> transformed to null-byte-free sequence
-strategy_t transform_add_mem_reg8;
+extern strategy_t transform_add_mem_reg8;
 
 #endif // NEW_STRATEGIES_H

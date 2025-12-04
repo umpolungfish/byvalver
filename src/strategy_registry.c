@@ -109,11 +109,11 @@ void init_strategies() {
     init_advanced_transformations();      // Initialize the can_handle functions
     register_indirect_call_strategies();  // Register indirect CALL/JMP strategies (priority 100)
     register_sldt_replacement_strategy();  // Register SLDT replacement strategy (priority 95)
-    register_push_immediate_strategies();  // Register PUSH immediate null elimination strategies (priority 75)
-    register_lea_displacement_strategies();  // Register LEA displacement null elimination strategies (priority 80)
+    // DISABLED - BROKEN: register_push_immediate_strategies();  // INTRODUCES nulls instead of eliminating them!
+    // DISABLED - NEW in 1d8cff3: register_lea_displacement_strategies();  // Register LEA displacement null elimination strategies (priority 80)
     register_sequence_preservation_strategies();  // Register sequence preservation strategies
     register_context_preservation_strategies();  // Register context preservation strategies
-    register_string_instruction_strategies();  // Register string instruction null construction strategies (priority 45)
+    // DISABLED - NEW in 1d8cff3: register_string_instruction_strategies();  // Register string instruction null construction strategies (priority 45)
     register_lea_strategies();  // Register LEA strategies
     //     register_enhanced_conservative_mov_strategy();  // Register enhanced conservative strategy
     register_conservative_strategies();  // Register conservative strategies
@@ -126,9 +126,9 @@ void init_strategies() {
     register_conditional_jump_offset_strategies();  // Register conditional jump null-offset strategies (priority 150)
     register_getpc_strategies();  // Register GET PC (CALL/POP) strategies
     register_mov_strategies();  // Register all MOV strategies
-    register_xor_zero_reg_strategies();  // Register XOR register zeroing strategies (priority 100)
+    // DISABLED - NEW in 1d8cff3: register_xor_zero_reg_strategies();  // Register XOR register zeroing strategies (priority 100)
     register_arithmetic_strategies();  // Register all arithmetic strategies
-    register_arithmetic_const_generation_strategies();  // Register arithmetic/bitwise constant generation strategies (priority 75)
+    // DISABLED - NEW in 1d8cff3: register_arithmetic_const_generation_strategies();  // Register arithmetic/bitwise constant generation strategies (priority 75)
     register_adc_strategies();  // Register ADC (Add with Carry) strategies (priority 69-70)
     register_sbb_strategies();  // Register SBB (Subtract with Borrow) strategies (priority 69-70)
     register_setcc_strategies();  // Register SETcc (Conditional Set) strategies (priority 70-75)
@@ -136,18 +136,18 @@ void init_strategies() {
     register_fpu_strategies();  // Register x87 FPU strategies (priority 60)
     register_sldt_strategies();  // Register SLDT strategies (priority 60)
     register_xchg_strategies();  // Register XCHG strategies (priority 60)
-    register_xchg_immediate_loading_strategies();  // Register XCHG immediate loading strategies (priority 60)
+    // DISABLED - NEW in 1d8cff3: register_xchg_immediate_loading_strategies();  // Register XCHG immediate loading strategies (priority 60)
     register_cmp_memory_disp_null_strategy();  // Register CMP memory displacement null strategies (priority 55)
     register_memory_strategies();  // Register all memory strategies
     register_cmp_strategies();  // Register CMP strategies (priority 85-88)
-    register_stack_string_const_strategies();  // Register stack-based string/constant construction strategies (priority 85)
+    // DISABLED - NEW in 1d8cff3: register_stack_string_const_strategies();  // Register stack-based string/constant construction strategies (priority 85)
     register_retf_strategies();  // Register RETF immediate strategies (priority 85)
     // register_custom_hash_strategies(); // DISABLED - broken implementation that introduces nulls instead of removing them
     register_memory_displacement_strategies(); // Register memory displacement null handling strategies (priority 82-85)
     // register_api_hashing_strategies(); // DISABLED - doesn't properly handle memory operands in CMP instructions
     // register_test_strategies(); // EXCLUDED FROM BUILD  // Register TEST strategies (priority 82)
     register_bt_strategies();  // Register BT (bit test) strategies (priority 80)
-    register_conditional_flag_strategies();  // Register conditional flag manipulation strategies (priority 90)
+    // DISABLED - NEW in 1d8cff3: register_conditional_flag_strategies();  // Register conditional flag manipulation strategies (priority 90)
     register_jump_strategies();  // Register all jump strategies
     register_loop_strategies();  // Register all LOOP family strategies (priority 75-80)
     register_general_strategies();  // Register all general strategies
@@ -165,17 +165,17 @@ void init_strategies() {
     register_relative_jump_strategies(); // Register relative CALL/JMP displacement strategies (priority 85)
     register_large_immediate_strategies(); // Register large immediate value optimization strategies (priority 85)
     // register_ror13_hash_strategies(); // DISABLED - tries to handle memory operands as registers, causing errors
-    register_rep_stosb_strategies(); // Register REP STOSB memory initialization strategies (priority 92)
-    register_salc_strategies(); // Register SALC AL zeroing optimization strategies (priority 91)
-    register_xchg_preservation_strategies(); // Register PUSH immediate optimization strategies (priority 86)
-    register_stack_string_strategies(); // Register stack-based string construction strategies (priority 85)
-    register_salc_rep_stosb_strategies(); // Register SALC + REP STOSB strategies (priority 65)
-    register_syscall_strategies(); // Register Windows syscall direct invocation strategies (priority 95)
+    register_rep_stosb_strategies(); // Register REP STOSB memory initialization strategies (priority 92) - was in 03bbf99
+    register_salc_strategies(); // Register SALC AL zeroing optimization strategies (priority 91) - was in 03bbf99
+    register_xchg_preservation_strategies(); // Register PUSH immediate optimization strategies (priority 86) - was in 03bbf99
+    register_stack_string_strategies(); // Register stack-based string construction strategies (priority 85) - was in 03bbf99
+    // DISABLED - NEW in 1d8cff3: register_salc_rep_stosb_strategies(); // Register SALC + REP STOSB strategies (priority 65)
+    register_syscall_strategies(); // Register Windows syscall direct invocation strategies (priority 95) - was in 03bbf99
     register_unicode_string_strategies(); // Register Unicode (UTF-16) string handling strategies (priority 74-78)
     register_byte_construct_strategy(); // Register byte construction strategy
     // register_anti_debug_strategies();  // DISABLED - causes issues with non-NOP instructions
     register_shift_strategy();  // Register shift-based strategy
-    register_peb_api_hashing_strategies();  // Register PEB API hashing strategies (priority 95)
+    // DISABLED - NEW in 1d8cff3: register_peb_api_hashing_strategies();  // Register PEB API hashing strategies (priority 95)
     // register_peb_strategies();  // ALSO DISABLE THIS - was causing inappropriate application to non-NOP instructions
     register_new_strategies(); // Register new strategies for specific null-byte patterns
 
@@ -371,6 +371,7 @@ void register_syscall_number_strategies() {
 
 // Register the new strategies
 void register_new_strategies() {
+    // Re-enabled with low priority to handle specific patterns
     register_strategy(&transform_mov_reg_mem_self);
     register_strategy(&transform_add_mem_reg8);
 }

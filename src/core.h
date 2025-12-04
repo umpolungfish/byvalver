@@ -34,6 +34,7 @@ int verify_null_elimination(struct buffer *processed);
 void fallback_general_instruction(struct buffer *b, cs_insn *insn);
 void fallback_mov_reg_imm(struct buffer *b, cs_insn *insn);
 void fallback_arithmetic_reg_imm(struct buffer *b, cs_insn *insn);
+void fallback_memory_operation(struct buffer *b, cs_insn *insn);
 struct buffer adaptive_processing(const uint8_t *input, size_t size);
 
 #endif

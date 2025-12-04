@@ -32,7 +32,8 @@ byvalver_config_t* config_create_default(void) {
     config->validate_output = 0;
     config->help_requested = 0;
     config->version_requested = 0;
-    
+    config->output_file_specified_via_flag = 0;
+
     return config;
 }
 
@@ -187,6 +188,7 @@ int parse_arguments(int argc, char *argv[], byvalver_config_t *config) {
                 
             case 'o':
                 config->output_file = optarg;
+                config->output_file_specified_via_flag = 1;
                 break;
                 
             case 0: // Long options without short equivalents
@@ -299,13 +301,13 @@ int parse_arguments(int argc, char *argv[], byvalver_config_t *config) {
     }
     
     if (remaining_args >= 2) {
-        config->output_file = argv[optind + 1];
-        
-        // If output file was also specified with -o, that's an error
-        if (config->output_file && optind + 1 < argc) {
+        // If output file was already specified with -o flag, that's an error
+        if (config->output_file_specified_via_flag) {
             fprintf(stderr, "Error: Output file specified twice (with -o and as positional argument)\n");
             return EXIT_INVALID_ARGUMENTS;
         }
+        // Otherwise, use the positional argument as output file
+        config->output_file = argv[optind + 1];
     }
     
     if (remaining_args > 2) {

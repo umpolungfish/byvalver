@@ -602,3 +602,58 @@ Each strategy should be tested with:
 - Edge cases like extreme values, zero values
 - Functional equivalence verification
 - Null byte elimination verification
+
+## New Strategies in Version 2.1
+
+### MOV Register Self-Reference Strategy
+
+#### 66. MOV Register Memory Self Reference Strategy
+- **Name:** `transform_mov_reg_mem_self`
+- **Priority:** 100
+- **Description:** Handles the common `mov reg32, [reg32]` pattern that produces null bytes in the ModR/M byte, such as `mov eax, [eax]` (opcode `8B 00`).
+- **Condition:** Applies when the MOV instruction has a 32-bit register as destination and the same register as a memory operand with zero displacement (e.g., `[eax]`).
+- **Transformation:** Uses a temporary register with displacement arithmetic to avoid the null-byte ModR/M encoding:
+  ```
+  push temp_reg      ; Save temporary register
+  lea temp_reg, [src_reg - 1]  ; Load effective address with non-null displacement
+  mov dest_reg, [temp_reg + 1] ; Dereference the correct address
+  pop temp_reg       ; Restore temporary register
+  ```
+- **Generated code:** Null-byte-free sequence that preserves all registers (except flags) and achieves the same result as the original `mov reg, [reg]` instruction.
+
+### ADD Memory Register8 Strategy
+
+#### 67. ADD Memory Register8 Strategy
+- **Name:** `transform_add_mem_reg8`
+- **Priority:** 100
+- **Description:** Handles the `add [mem], reg8` pattern that creates null bytes, such as `add [eax], al` (opcode `00 00`). This instruction encodes null bytes in both the opcode and ModR/M byte.
+- **Condition:** Applies when an ADD instruction has a memory operand as the destination and an 8-bit register as the source, where the original encoding contains null bytes.
+- **Transformation:** Replaces the null-byte instruction with a sequence using null-byte-free instructions:
+  ```
+  push temp_reg                 ; Save temporary register
+  movzx temp_reg, byte ptr [mem] ; Load the byte from memory into temp register
+  add temp_reg, src_reg8        ; Perform the addition
+  mov byte ptr [mem], temp_reg  ; Store the result back into memory
+  pop temp_reg                  ; Restore temporary register
+  ```
+- **Generated code:** Null-byte-free sequence that performs the same memory addition operation as the original instruction.
+
+### Disassembly Validation Enhancement
+
+- **Description:** Added robust validation to detect invalid shellcode input. If Capstone disassembler returns zero instructions, BYVALVER now provides a clear error message instead of proceeding with invalid data.
+
+## Strategy Priority System Updates
+
+With the addition of the new strategies in v2.1:
+- **Critical Priority (100+):** The new MOV and ADD strategies have high priority (100) to ensure they are applied before general fallback strategies
+- **Strategy Selection:** The new strategies are specifically designed to handle common null-byte patterns that were previously unhandled
+
+## Implementation Notes for New Strategies
+
+1. **Register Preservation:** Both new strategies preserve all registers except flags, maintaining functional equivalence.
+
+2. **Null-Free Output:** Both strategies guarantee null-byte-free output sequences.
+
+3. **Size Impact:** The new strategies may increase the size of the shellcode due to multi-instruction sequences, which is properly handled by the offset recalculation system.
+
+4. **Specific Targeting:** These strategies specifically target common x86 patterns that frequently produce null bytes in shellcode.

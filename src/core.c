@@ -1,6 +1,5 @@
 #include "core.h"
 #include "utils.h"
-#include "new_strategies.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -669,7 +668,21 @@ void fallback_general_instruction(struct buffer *b, cs_insn *insn) {
     } else if (insn->id == X86_INS_ADD || insn->id == X86_INS_SUB ||
                insn->id == X86_INS_AND || insn->id == X86_INS_OR ||
                insn->id == X86_INS_XOR || insn->id == X86_INS_CMP) {
-        fallback_arithmetic_reg_imm(b, insn);
+        // Check if this is a memory operation that might have null bytes in ModR/M
+        int mem_operand_with_nulls = 0;
+        for (int i = 0; i < insn->detail->x86.op_count; i++) {
+            if (insn->detail->x86.operands[i].type == X86_OP_MEM) {
+                mem_operand_with_nulls = 1;
+                break;
+            }
+        }
+
+        if (mem_operand_with_nulls) {
+            // Handle memory operations with potential null bytes in ModR/M
+            fallback_memory_operation(b, insn);
+        } else {
+            fallback_arithmetic_reg_imm(b, insn);
+        }
     } else if (insn->id == X86_INS_NOP) {
         // Handle NOP instructions with null bytes - just do nothing (no-op)
         // NOP is just a placeholder instruction that does nothing
@@ -805,6 +818,94 @@ void fallback_general_instruction(struct buffer *b, cs_insn *insn) {
             fprintf(stderr, "  This instruction may still contain null bytes\n");
             buffer_append(b, insn->bytes, insn->size);
         }
+    }
+}
+
+// Fallback function to handle memory operations that may have null bytes in ModR/M
+void fallback_memory_operation(struct buffer *b, cs_insn *insn) {
+    // Handle memory operations like ADD [mem], reg where [mem] has null bytes in ModR/M
+    if (insn->id == X86_INS_ADD || insn->id == X86_INS_SUB ||
+        insn->id == X86_INS_AND || insn->id == X86_INS_OR ||
+        insn->id == X86_INS_XOR || insn->id == X86_INS_CMP) {
+
+        // For operations like: ADD [mem_location], reg
+        // If mem has direct register access (like [EAX]), it creates null bytes
+        // We transform to: MOV temp_reg, [mem_location] -> op temp_reg, src_reg -> MOV [mem_location], temp_reg
+
+        // Use ECX as temporary register (avoid conflicts with EAX usage)
+        uint8_t temp_reg = X86_REG_ECX;
+        uint8_t dest_mem_reg = X86_REG_INVALID;
+        uint8_t src_reg = X86_REG_INVALID;
+
+        // Identify memory operand and register operand
+        for (int i = 0; i < insn->detail->x86.op_count; i++) {
+            if (insn->detail->x86.operands[i].type == X86_OP_MEM) {
+                dest_mem_reg = insn->detail->x86.operands[i].mem.base;
+            } else if (insn->detail->x86.operands[i].type == X86_OP_REG) {
+                src_reg = insn->detail->x86.operands[i].reg;
+            }
+        }
+
+        if (dest_mem_reg != X86_REG_INVALID && src_reg != X86_REG_INVALID) {
+            // If temp register conflicts with used registers, use different approach
+            if (temp_reg == dest_mem_reg || temp_reg == src_reg) {
+                temp_reg = X86_REG_EDX;  // Use EDX instead
+                if (temp_reg == dest_mem_reg || temp_reg == src_reg) {
+                    temp_reg = X86_REG_EBX;  // Use EBX as last resort
+                }
+            }
+
+            uint8_t temp_reg_idx = get_reg_index(temp_reg);
+            uint8_t src_reg_idx = get_reg_index(src_reg);
+            uint8_t dest_mem_idx = get_reg_index(dest_mem_reg);
+
+            // PUSH temp_reg (save register state)
+            uint8_t push_temp[] = {0x50 + temp_reg_idx};
+            buffer_append(b, push_temp, 1);
+
+            // MOV temp_reg, [mem_location] - might need SIB addressing to avoid nulls
+            if (dest_mem_reg == X86_REG_EAX) {
+                // Use SIB byte to avoid null: MOV temp_reg, [EAX] = 0x8B 0x04 0x20 + temp_reg_idx
+                uint8_t mov_temp_eax[] = {0x8B, 0x04, 0x20 + (temp_reg_idx << 3)}; // SIB: scale=0, index=ESP(100), base=EAX(000)
+                buffer_append(b, mov_temp_eax, 3);
+            } else {
+                uint8_t mov_temp_mem[] = {0x8B, 0x00 + (temp_reg_idx << 3) + dest_mem_idx};
+                buffer_append(b, mov_temp_mem, 2);
+            }
+
+            // Perform the operation: op temp_reg, src_reg
+            uint8_t op_code;
+            switch(insn->id) {
+                case X86_INS_ADD: op_code = 0x01; break;
+                case X86_INS_SUB: op_code = 0x29; break;
+                case X86_INS_AND: op_code = 0x21; break;
+                case X86_INS_OR:  op_code = 0x09; break;
+                case X86_INS_XOR: op_code = 0x31; break;
+                case X86_INS_CMP: op_code = 0x39; break;
+                default: op_code = 0x01; break;  // default to ADD
+            }
+
+            uint8_t op_instr[] = {op_code, 0xC0};
+            op_instr[1] = op_instr[1] + (temp_reg_idx << 3) + src_reg_idx;
+            buffer_append(b, op_instr, 2);
+
+            // MOV [mem_location], temp_reg - might need SIB addressing to avoid nulls
+            if (dest_mem_reg == X86_REG_EAX) {
+                // Use SIB byte to avoid null: MOV [EAX], temp_reg = 0x89 0x04 0x20 + temp_reg_idx
+                uint8_t mov_eax_temp[] = {0x89, 0x04, 0x20 + (temp_reg_idx << 3)}; // SIB: scale=0, index=ESP(100), base=EAX(000)
+                buffer_append(b, mov_eax_temp, 3);
+            } else {
+                uint8_t mov_mem_temp[] = {0x89, 0x00 + (temp_reg_idx << 3) + dest_mem_idx};
+                buffer_append(b, mov_mem_temp, 2);
+            }
+
+            // POP temp_reg (restore register state)
+            uint8_t pop_temp[] = {0x58 + temp_reg_idx};
+            buffer_append(b, pop_temp, 1);
+        }
+    } else {
+        // For other memory operations, just copy original (this shouldn't happen)
+        buffer_append(b, insn->bytes, insn->size);
     }
 }
 

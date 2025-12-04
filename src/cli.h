@@ -52,6 +52,7 @@ typedef struct {
     // Internal flags
     int help_requested;
     int version_requested;
+    int output_file_specified_via_flag;  // Whether -o/--output was used
 } byvalver_config_t;
 
 // Function declarations

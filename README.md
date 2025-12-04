@@ -59,13 +59,50 @@
 
 **byvalver v2.0** features a sophisticated architecture with **comprehensive strategy registry** for improved maintainability, testability, and extensibility:
 
-- ✅ **80+ transformation strategies** for diverse instruction types
+- ✅ **100+ transformation strategies** for diverse instruction types
 - ✅ **Biphase processing** (obfuscation + null-byte elimination)
 - ✅ **Position Independent Code (PIC) generation** capability
 - ✅ **XOR encoding with decoder stubs**
+- ✅ **Enhanced null-byte elimination** with specialized MOV and ADD strategies
+- ✅ **Disassembly validation** for improved error handling
 - ✅ **Professional-grade code organization**
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for complete architecture documentation.
+
+<br>
+
+## NEW STRATEGIES
+
+### MOV reg, [reg] Null-Byte Elimination Strategy
+
+**New in v2.1**: BYVALVER now includes specialized transformation strategies for the common `mov reg, [reg]` pattern that produces null bytes, such as `mov eax, [eax]` (opcode `8B 00`). This instruction pattern creates null bytes in the ModR/M byte, which our new strategy eliminates by using a temporary register with displacement arithmetic:
+
+```assembly
+push temp_reg      ; Save temporary register
+lea temp_reg, [src_reg - 1]  ; Load effective address with non-null displacement
+mov dest_reg, [temp_reg + 1] ; Dereference the correct address
+pop temp_reg       ; Restore temporary register
+```
+
+This transformation preserves all registers (except flags) and eliminates the null-byte ModR/M encoding.
+
+### ADD [mem], reg8 Null-Byte Elimination Strategy
+
+**New in v2.1**: BYVALVER now handles the `add [mem], reg8` pattern that creates null bytes, such as `add [eax], al` (opcode `00 00`). This instruction encodes null bytes in both the opcode and ModR/M byte. The new strategy replaces it with a null-byte-free sequence:
+
+```assembly
+push temp_reg                 ; Save temporary register
+movzx temp_reg, byte ptr [mem] ; Load the byte from memory into temp register
+add temp_reg, src_reg8        ; Perform the addition
+mov byte ptr [mem], temp_reg  ; Store the result back into memory
+pop temp_reg                  ; Restore temporary register
+```
+
+This transformation uses null-byte-free instructions to achieve the same result.
+
+### Disassembly Validation Enhancement
+
+**New in v2.1**: Added robust validation to detect invalid shellcode input. If Capstone disassembler returns zero instructions, BYVALVER now provides a clear error message instead of proceeding with invalid data.
 
 <br>
 

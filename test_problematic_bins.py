@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Comprehensive test script to run byvalver on all .bin files in BIG_BIN directory
-and collect detailed statistics and results for non-biphasic mode only.
+Comprehensive test script to run byvalver on problematic .bin files
+that had null bytes remaining in previous tests.
 """
 
 import subprocess
@@ -13,18 +13,18 @@ from datetime import datetime
 import tempfile
 
 # Configuration
-BIG_BIN_DIR = os.path.expanduser("~/RUBBISH/BIG_BIN")
+BIG_BIN_DIR = os.path.expanduser("~/RUBBISH/PROBLEMATIC_BINS")
 BYVALVER_BIN = "./bin/byvalver"
 OUTPUT_DIR = "./test_results"
-RESULTS_FILE = f"{OUTPUT_DIR}/byvalver_bins_assessment_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-SUMMARY_FILE = f"{OUTPUT_DIR}/bins_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+RESULTS_FILE = f"{OUTPUT_DIR}/problematic_bins_assessment_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+SUMMARY_FILE = f"{OUTPUT_DIR}/problematic_bins_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 
 def ensure_output_dir():
     """Create output directory if it doesn't exist."""
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 
 def get_bin_files():
-    """Get all .bin files from BIG_BIN directory."""
+    """Get all .bin files from PROBLEMATIC_BINS directory."""
     bin_files = []
     for file in sorted(os.listdir(BIG_BIN_DIR)):
         if file.endswith('.bin'):
@@ -159,7 +159,7 @@ def parse_byvalver_output(output, error):
 def main():
     """Main test execution."""
     print("=" * 80)
-    print("BYVALVER .BIN FILES COMPREHENSIVE ASSESSMENT")
+    print("BYVALVER PROBLEMATIC BINS COMPREHENSIVE ASSESSMENT")
     print("Testing non-biphasic mode only")
     print("=" * 80)
     print()
@@ -299,7 +299,7 @@ def main():
     # Generate summary report
     summary = []
     summary.append("=" * 80)
-    summary.append("BYVALVER .BIN FILES ASSESSMENT SUMMARY")
+    summary.append("BYVALVER PROBLEMATIC BINS ASSESSMENT SUMMARY")
     summary.append("Testing non-biphasic mode only")
     summary.append("=" * 80)
     summary.append("")
