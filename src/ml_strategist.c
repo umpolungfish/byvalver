@@ -36,6 +36,10 @@ static simple_neural_network_t* g_loaded_model = NULL;
 static int g_ml_initialized = 0;
 static ml_metrics_tracker_t* g_ml_metrics = NULL;
 
+// Track the last predicted strategy for verification
+static strategy_t* g_last_predicted_strategy = NULL;
+static double g_last_prediction_confidence = 0.0;
+
 /**
  * @brief Initialize the ML strategist with neural network model
  */
@@ -391,6 +395,15 @@ int ml_reprioritize_strategies(ml_strategist_t* strategist,
         }
     }
 
+    // Store the prediction made by the ML model for later verification
+    // The top-ranked strategy (index 0) is our prediction
+    if (*strategy_count > 0) {
+        g_last_predicted_strategy = applicable_strategies[0];
+        g_last_prediction_confidence = scores_copy[0];
+        // Note: The actual prediction will be recorded in ml_provide_feedback
+        // when we know if it was correct or not
+    }
+
     return 0;
 }
 
@@ -519,6 +532,33 @@ int ml_provide_feedback(ml_strategist_t* strategist,
     // Track instruction processing
     if (g_ml_metrics) {
         ml_metrics_record_instruction_processed(g_ml_metrics, features.has_nulls);
+    }
+
+    // Check if the applied strategy matches our prediction and record it
+    if (g_ml_metrics && g_last_predicted_strategy != NULL) {
+        // A prediction was made - check if it was correct
+        int prediction_correct = 0;
+
+        if (applied_strategy != NULL && applied_strategy == g_last_predicted_strategy) {
+            // The ML model predicted this strategy, and it was used
+            // It's correct if the strategy was successful
+            prediction_correct = success ? 1 : 0;
+        } else if (applied_strategy == NULL && g_last_predicted_strategy != NULL) {
+            // A fallback was used instead of the predicted strategy
+            // This means the prediction was incorrect
+            prediction_correct = 0;
+        } else if (applied_strategy != NULL && applied_strategy != g_last_predicted_strategy) {
+            // A different strategy was used than predicted
+            // This shouldn't happen in the current flow, but mark as incorrect
+            prediction_correct = 0;
+        }
+
+        // Record the prediction result
+        ml_metrics_record_prediction(g_ml_metrics, prediction_correct, g_last_prediction_confidence);
+
+        // Clear the prediction for next instruction
+        g_last_predicted_strategy = NULL;
+        g_last_prediction_confidence = 0.0;
     }
 
     // Enable learning based on feedback

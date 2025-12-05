@@ -207,93 +207,113 @@ All existing single-file functionality remains unchanged and fully compatible!
 
 <br>
 
-## ML METRICS ENHANCEMENT
+## ML PREDICTION TRACKING SYSTEM
 
-**New in v2.2.1**: BYVALVER now properly records ML predictions in metrics, fixing the "Predictions Made: 0" issue.
-
-### Problem Fixed
-
-Previous versions showed "Predictions Made: 0" in ML metrics even when processing thousands of instructions, because the neural network was used for strategy reprioritization but predictions weren't being recorded.
-
-### Solution Implemented
-
-- **Prediction Recording**: `ml_get_strategy_recommendation` now properly calls `ml_metrics_record_prediction`
-- **Metrics Tracking**: Each ML-based strategy selection is now recorded as a prediction
-- **Accuracy Reporting**: Metrics now accurately reflect ML model usage and performance
-- **Performance Tracking**: Proper tracking of ML feedback iterations and learning progress
-
-### Before vs After
-
-**Before Fix:**
-```
-=== ML STRATEGIST PERFORMANCE SUMMARY ===
-Instructions Processed: 14623
-Strategies Applied: 13025
-Null Bytes Eliminated: 12518 / 14623 (0.00%)
-
---- Model Performance ---
-Predictions Made: 0
-Current Accuracy: 0.00%
-```
-
-**After Fix:**
-```
-=== ML STRATEGIST PERFORMANCE SUMMARY ===
-Instructions Processed: 14623
-Strategies Applied: 13025
-Null Bytes Eliminated: 12518 / 14623 (0.00%)
-
---- Model Performance ---
-Predictions Made: 14623
-Current Accuracy: 94.23%
-```
-
-The ML strategist now properly tracks and reports prediction metrics for enhanced analysis and debugging.
-
-<br>
-
-## IMPROVED ML PREDICTION ACCURACY
-
-**New in v2.3**: BYVALVER now accurately tracks ML prediction outcomes, fixing issues with prediction confidence and accuracy reporting.
+**New in v2.2.1**: BYVALVER now properly tracks and records ML predictions with outcome-based accuracy metrics.
 
 ### Problem Fixed
 
-Previous versions inaccurately reported prediction accuracy as 100% with 0.0000 confidence because predictions were recorded as "successful" when made, not when outcomes were known.
+Previous versions showed "Predictions Made: 0" in ML metrics even when the neural network was actively reprioritizing strategies. The ML model was performing inference and learning from feedback, but predictions were never being recorded in the metrics system.
+
+**Root Cause:** The `ml_reprioritize_strategies()` function performed neural network inference to reorder strategies but never called `ml_metrics_record_prediction()`. Learning happened (feedback iterations were tracked), but prediction counts remained at zero.
 
 ### Solution Implemented
 
-- **Outcome-Based Recording**: ML predictions are now tracked when made and resolved when outcomes are known
-- **Accurate Confidence Calculation**: Average prediction confidence now reflects actual ML model confidence values
-- **Real Accuracy Metrics**: Prediction accuracy now reflects true success rate of ML-recommended strategies
-- **Proper Learning Feedback**: ML model receives accurate feedback about prediction success/failure
+A comprehensive three-component prediction tracking system:
+
+#### 1. **Prediction State Tracking** (`src/ml_strategist.c`)
+```c
+static strategy_t* g_last_predicted_strategy = NULL;
+static double g_last_prediction_confidence = 0.0;
+```
+Global state variables track the ML model's prediction for each instruction.
+
+#### 2. **Prediction Storage** (`ml_reprioritize_strategies()`)
+When the ML model reprioritizes strategies:
+- The top-ranked strategy (index 0) is stored as the prediction
+- The ML confidence score for that strategy is saved
+- Prediction is held in pending state until outcome is known
+
+#### 3. **Outcome-Based Recording** (`ml_provide_feedback()`)
+When strategy application completes:
+- Compares applied strategy against stored prediction
+- Determines if prediction was correct:
+  - **Correct**: Predicted strategy was used AND succeeded
+  - **Incorrect**: Different strategy used OR predicted strategy failed
+- Records prediction with actual outcome via `ml_metrics_record_prediction()`
+- Clears prediction state for next instruction
 
 ### Implementation Details
 
-- **Prediction Tracking**: When ML makes a recommendation, it's stored in a pending prediction buffer
-- **Outcome Resolution**: When strategy result is known, the corresponding prediction is resolved with actual outcome
-- **Metrics Updates**: Prediction accuracy and confidence are calculated based on actual results, not assumptions
+**Key Files Modified:**
+- `src/ml_strategist.c:39-41` - Added prediction state variables
+- `src/ml_strategist.c:398-407` - Store predictions in `ml_reprioritize_strategies()`
+- `src/ml_strategist.c:537-562` - Verify and record predictions in `ml_provide_feedback()`
+
+**How It Works:**
+1. Instruction is analyzed and strategies are collected
+2. `ml_reprioritize_strategies()` uses neural network to rank strategies
+3. Top-ranked strategy and its confidence are stored globally
+4. Strategy is applied and result is obtained
+5. `ml_provide_feedback()` compares result against prediction
+6. Prediction is recorded with correct/incorrect status
+7. State is cleared for next instruction
+
+### Metrics Tracking Flow
+
+```
+Instruction → ML Inference → Store Prediction → Apply Strategy → Record Outcome
+                  ↓                                                    ↓
+          (save strategy + confidence)              (correct/incorrect + confidence)
+                                                                       ↓
+                                                        Update Accuracy Metrics
+```
 
 ### Before vs After
 
 **Before Fix:**
 ```
 === ML STRATEGIST PERFORMANCE SUMMARY ===
+Instructions Processed: 3702
+Strategies Applied: 3693
+Null Bytes Eliminated: 3693 / 3702 (99.76%)
+
 --- Model Performance ---
-Current Accuracy: 100.00%
-Accuracy Improvement: +0.00%
+Predictions Made: 0          ← No predictions recorded
+Current Accuracy: 0.00%      ← No accuracy tracking
 Avg Prediction Confidence: 0.0000
+
+--- Learning Progress ---
+Learning Enabled: YES
+Total Feedback Iterations: 7395  ← Learning WAS happening
+Positive Feedback: 3693
 ```
 
 **After Fix:**
 ```
 === ML STRATEGIST PERFORMANCE SUMMARY ===
+Instructions Processed: 4
+Strategies Applied: 4
+Null Bytes Eliminated: 4 / 4 (100.00%)
+
 --- Model Performance ---
-Current Accuracy: 97.68%
-Accuracy Improvement: -2.32%
-Avg Prediction Confidence: 0.7421
+Predictions Made: 4          ← Predictions now tracked
+Current Accuracy: 100.00%    ← Real accuracy metrics
+Avg Prediction Confidence: 0.0062  ← Actual confidence values
+
+--- Learning Progress ---
+Learning Enabled: YES
+Total Feedback Iterations: 8
+Positive Feedback: 4
 ```
 
-The ML strategist now provides realistic metrics that accurately reflect model performance and improvement over time.
+### Benefits
+
+- **Accurate Metrics**: Prediction counts now reflect actual ML model usage
+- **Real Accuracy**: Accuracy percentages based on actual prediction outcomes
+- **Confidence Tracking**: Average confidence reflects true ML model confidence scores
+- **Learning Validation**: Confirms ML model is making predictions, not just learning
+- **Performance Analysis**: Enables evaluation of ML model effectiveness over time
 
 <br>
 
