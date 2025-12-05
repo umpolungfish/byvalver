@@ -6,12 +6,14 @@
 #include "obfuscation_strategy_registry.h"
 #include "pic_generation.h"
 #include "cli.h"
+#include "ml_strategist.h"
+#include "strategy.h"  // For cleanup_ml_strategist
 #include "../decoder.h" // Include the generated decoder stub header
 
 size_t find_entry_point(const uint8_t *shellcode, size_t size);
 
 int main(int argc, char *argv[]) {
-    // Create and initialize configuration
+    // Create and initialize configuration first
     byvalver_config_t *config = config_create_default();
     if (!config) {
         fprintf(stderr, "Error: Failed to create default configuration\n");
@@ -34,12 +36,27 @@ int main(int argc, char *argv[]) {
         return EXIT_SUCCESS;
     }
 
+    // Initialize ML strategist only if ML option is enabled (after parsing arguments)
+    ml_strategist_t ml_strategist;
+    int ml_initialized = 0;
+    if (config->use_ml_strategist) {
+        if (ml_strategist_init(&ml_strategist, "./ml_models/byvalver_ml_model.bin") != 0) {
+            // If initial model load fails, continue with default weights
+            ml_strategist_init(&ml_strategist, "");  // Load with empty path to initialize with default weights
+            fprintf(stderr, "[ML] ML Strategist initialized with default weights\n");
+        } else {
+            fprintf(stderr, "[ML] ML Strategist loaded from model file\n");
+        }
+        ml_initialized = 1;
+    }
+
     // If there was an error parsing arguments, show usage and exit
     if (parse_result != EXIT_SUCCESS) {
         if (parse_result != EXIT_SUCCESS) {
             print_usage(stderr, argv[0]);
         }
         config_free(config);
+        if (ml_initialized) ml_strategist_cleanup(&ml_strategist);
         return parse_result;
     }
 
@@ -48,6 +65,7 @@ int main(int argc, char *argv[]) {
         int config_load_result = load_config_file(config->config_file, config);
         if (config_load_result != EXIT_SUCCESS) {
             config_free(config);
+            if (ml_initialized) ml_strategist_cleanup(&ml_strategist);
             return config_load_result;
         }
     }
@@ -57,6 +75,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: Input file is required\n\n");
         print_usage(stderr, argv[0]);
         config_free(config);
+        if (ml_initialized) ml_strategist_cleanup(&ml_strategist);
         return EXIT_INVALID_ARGUMENTS;
     }
 
@@ -65,6 +84,7 @@ int main(int argc, char *argv[]) {
     if (!file) {
         perror("fopen input file");
         config_free(config);
+        if (ml_initialized) ml_strategist_cleanup(&ml_strategist);
         return EXIT_INPUT_FILE_ERROR;
     }
 
@@ -77,6 +97,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: Input file is empty or invalid\n");
         fclose(file);
         config_free(config);
+        if (ml_initialized) ml_strategist_cleanup(&ml_strategist);
         return EXIT_INPUT_FILE_ERROR;
     }
 
@@ -86,6 +107,7 @@ int main(int argc, char *argv[]) {
                 file_size, config->max_size);
         fclose(file);
         config_free(config);
+        if (ml_initialized) ml_strategist_cleanup(&ml_strategist);
         return EXIT_INPUT_FILE_ERROR;
     }
 
@@ -95,6 +117,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: Memory allocation failed\n");
         fclose(file);
         config_free(config);
+        if (ml_initialized) ml_strategist_cleanup(&ml_strategist);
         return EXIT_GENERAL_ERROR;
     }
 
@@ -105,6 +128,7 @@ int main(int argc, char *argv[]) {
         free(shellcode);
         fclose(file);
         config_free(config);
+        if (ml_initialized) ml_strategist_cleanup(&ml_strategist);
         return EXIT_INPUT_FILE_ERROR;
     }
 
@@ -155,6 +179,7 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Error: PIC generation failed\n");
             free(shellcode);
             config_free(config);
+            if (ml_initialized) ml_strategist_cleanup(&ml_strategist);
             return EXIT_PROCESSING_FAILED;
         }
 
@@ -178,6 +203,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: Shellcode processing failed\n");
         free(shellcode);
         config_free(config);
+        if (ml_initialized) ml_strategist_cleanup(&ml_strategist);
         return EXIT_PROCESSING_FAILED;
     }
 
@@ -231,6 +257,7 @@ int main(int argc, char *argv[]) {
         buffer_free(&new_shellcode);
         buffer_free(&final_shellcode);
         config_free(config);
+        if (ml_initialized) ml_strategist_cleanup(&ml_strategist);
         return EXIT_OUTPUT_FILE_ERROR;
     }
 
@@ -245,6 +272,7 @@ int main(int argc, char *argv[]) {
     buffer_free(&new_shellcode);
     buffer_free(&final_shellcode);
     config_free(config);
+    if (ml_initialized) ml_strategist_cleanup(&ml_strategist);
 
     return EXIT_SUCCESS;
 }

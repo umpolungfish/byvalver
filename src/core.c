@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "strategy.h"  // For provide_ml_feedback
 
 #ifdef DEBUG
 // C99 compliant debug macro
@@ -518,16 +519,35 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
                        strategies[0]->name, current->insn->mnemonic, current->insn->op_str);
                 strategies[0]->generate(&new_shellcode, current->insn);
 
-                // Verify no nulls introduced
+                // Check if the strategy was successful (i.e., didn't introduce new nulls)
+                int strategy_success = 1;
                 for (size_t i = before_gen; i < new_shellcode.size; i++) {
                     if (new_shellcode.data[i] == 0x00) {
                         fprintf(stderr, "ERROR: Strategy '%s' introduced null at offset %zu\n",
                                strategies[0]->name, i - before_gen);
+                        strategy_success = 0; // Mark as failed if it introduced nulls
                     }
                 }
+
+                // Provide feedback to ML model about strategy effectiveness
+                provide_ml_feedback(current->insn, strategies[0], strategy_success, new_shellcode.size - before_gen);
             } else {
                 // If no strategy can handle it, use comprehensive fallback
                 fallback_general_instruction(&new_shellcode, current->insn);
+
+                // Even fallback strategies should provide feedback
+                // In this case we'll treat it as successful if no nulls are introduced in the final result
+                int fallback_success = 1;
+                for (size_t i = before_gen; i < new_shellcode.size; i++) {
+                    if (new_shellcode.data[i] == 0x00) {
+                        fallback_success = 0;
+                        break;
+                    }
+                }
+
+                // We don't have a specific strategy pointer for fallback, so we pass NULL
+                // The provide_ml_feedback function handles NULL strategy gracefully
+                provide_ml_feedback(current->insn, NULL, fallback_success, new_shellcode.size - before_gen);
             }
         } else {
             // No nulls, output original instruction

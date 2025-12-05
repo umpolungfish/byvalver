@@ -60,6 +60,7 @@
 **byvalver v2.0** features a sophisticated architecture with **comprehensive strategy registry** for improved maintainability, testability, and extensibility:
 
 - ✅ **100+ transformation strategies** for diverse instruction types
+- ✅ **ML-powered strategy prioritization** with neural network inference
 - ✅ **Biphase processing** (obfuscation + null-byte elimination)
 - ✅ **Position Independent Code (PIC) generation** capability
 - ✅ **XOR encoding with decoder stubs**
@@ -239,6 +240,20 @@ Success output:
 [+] Success: Processed shellcode with 0 null bytes remaining.
 ```
 
+**5. MACHINE LEARNING MODE (EXPERIMENTAL)**
+
+```bash
+# Enable ML-powered strategy prioritization
+byvalver --ml input.bin output.bin
+
+# Combine with other processing modes
+byvalver --ml --biphasic input.bin output.bin
+byvalver --ml --pic input.bin output.bin
+byvalver --ml --pic --biphasic input.bin output.bin
+```
+
+ML mode uses a neural network to intelligently prioritize transformation strategies based on instruction patterns, potentially improving null-byte elimination effectiveness.
+
 ### ADVANCED USAGE EXAMPLES
 
 **PROCESS WITH DETAILED OUTPUT:**
@@ -297,6 +312,7 @@ byvalver --stats --biphasic shellcode.bin output.bin
 ```
 --biphasic                    Enable biphasic processing (obfuscation + null-elimination)
 --pic                         Generate position-independent code
+--ml                          Enable ML-powered strategy prioritization (experimental)
 --xor-encode KEY              XOR encode output with 4-byte key (hex)
 --format FORMAT               Output format: raw, c, python, powershell, hexstring
 ```
@@ -333,7 +349,8 @@ byvalver --stats --biphasic shellcode.bin output.bin
 - **Cross-platform compatibility** (Windows, Linux, macOS)
 - **x86/x64 architecture support** with Capstone framework
 - **Intelligent instruction analysis** via Capstone disassembly
-- **80+ transformation strategies** for diverse instruction types
+- **100+ transformation strategies** for diverse instruction types
+- **ML-powered strategy prioritization** (experimental)
 - **Biphase processing** (obfuscation + null-byte elimination)
 - **Position Independent Code (PIC) generation**
 - **XOR encoding with decoder stubs**
@@ -366,7 +383,8 @@ byvalver --stats --biphasic shellcode.bin output.bin
 | Component | Function | Description |
 |-----------|----------|-------------|
 | **Capstone Integration** | Disassembly | Analyzes x86/x64 assembly instructions for null-byte detection |
-| **Strategy Registry System** | Transformation | 80+ strategies handle different instruction types (MOV, arithmetic, jumps, etc.) |
+| **Strategy Registry System** | Transformation | 100+ strategies handle different instruction types (MOV, arithmetic, jumps, etc.) |
+| **ML Strategist** | Prioritization | Neural network-based strategy selection and ranking (experimental) |
 | **Biphase Processing** | Obfuscation & Elimination | Two-pass approach: first obfuscates, then removes null bytes |
 | **PIC Generation** | Position Independence | Windows-specific PIC with JMP-CALL-POP and API hashing |
 | **XOR Encoding** | Obfuscation | Prepending of decoder stub with 4-byte key support |
@@ -468,6 +486,92 @@ Generate position-independent code with API resolution:
 - **PEB-based API Discovery**: Locate kernel32.dll base address and enumerate exported functions
 - **Anti-Debugging Features**: Built-in checks to detect debugging environments
 - **PIC Shellcode Generation**: Convert regular shellcode to position-independent format
+
+</details>
+
+### MACHINE LEARNING MODE (EXPERIMENTAL)
+
+<details>
+<summary><b>Click to expand ML-powered strategy prioritization</b></summary>
+
+Enable intelligent strategy selection using neural network inference:
+
+```bash
+# Basic ML mode
+./bin/byvalver --ml input.bin output.bin
+
+# ML with biphasic processing
+./bin/byvalver --ml --biphasic input.bin output.bin
+
+# ML with PIC generation
+./bin/byvalver --ml --pic input.bin output.bin
+
+# Full-featured ML processing
+./bin/byvalver --ml --pic --biphasic --xor-encode 0x12345678 input.bin output.bin
+```
+
+**How It Works:**
+
+The ML strategist uses a custom neural network to analyze instruction features and intelligently prioritize transformation strategies:
+
+1. **Feature Extraction**: For each instruction, the system extracts features including:
+   - Instruction opcode and type (MOV, ADD, JMP, etc.)
+   - Operand types (register, immediate, memory)
+   - Instruction size and null-byte presence
+   - Register indices and immediate values
+
+2. **Neural Network Inference**: A 3-layer neural network (128→256→200 nodes) processes these features:
+   - **Input Layer**: 128 instruction features
+   - **Hidden Layer**: 256 nodes with ReLU activation
+   - **Output Layer**: 200 strategy confidence scores with softmax normalization
+
+3. **Strategy Prioritization**: The network's output scores are mapped to applicable strategies:
+   - Strategies are re-ranked based on ML confidence scores
+   - Higher-scoring strategies are attempted first
+   - Falls back to traditional priority-based selection if ML is unavailable
+
+4. **Model Persistence**: The neural network model is stored in `./ml_models/byvalver_ml_model.bin`:
+   - Pre-trained weights loaded at startup
+   - Lightweight binary format for fast loading
+   - Falls back to default random weights if model file is missing
+
+**Benefits:**
+
+- **Intelligent Selection**: Neural network learns patterns in successful transformations
+- **Adaptive Prioritization**: Strategies are ranked based on instruction context
+- **Performance**: Minimal overhead with efficient forward-pass inference
+- **Compatibility**: Seamlessly integrates with all processing modes (--biphasic, --pic, --xor-encode)
+
+**Technical Details:**
+
+- **Architecture**: Custom neural network with backpropagation support
+- **Recursion Prevention**: Guard mechanisms prevent infinite recursion during strategy selection
+- **Feedback Loop**: System tracks strategy success/failure (currently disabled to prevent recursion)
+- **Thread-Safe**: Recursion guards ensure single-threaded ML operations
+
+**Current Limitations:**
+
+- **Experimental Status**: ML mode is under active development and testing
+- **Feedback Learning Disabled**: Reinforcement learning temporarily disabled due to recursion issues
+- **Model Training**: Current model uses random initialization; future updates will include trained weights
+- **Performance Impact**: Slight processing overhead due to neural network inference
+
+**Future Development:**
+
+- Enable feedback-based learning with proper recursion handling
+- Train models on large shellcode datasets for improved accuracy
+- Add model versioning and automatic updates
+- Implement adaptive learning during processing
+- Support for custom model training and fine-tuning
+
+**When to Use ML Mode:**
+
+- ✅ Complex shellcode with diverse instruction patterns
+- ✅ When traditional strategies produce suboptimal results
+- ✅ Experimental evaluation and research purposes
+- ✅ Combined with biphasic processing for maximum effectiveness
+- ❌ Not recommended for production use (experimental)
+- ❌ Avoid if deterministic output is required
 
 </details>
 

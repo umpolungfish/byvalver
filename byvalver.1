@@ -77,18 +77,25 @@ Output file (alternative to positional argument)
 Validate output is null-byte free
 
 .SH EXAMPLES
-.TP
 .B Basic usage:
-byvalver shellcode.bin output.bin
-.TP
+.br
+       byvalver shellcode.bin output.bin
+.br
+.PP
 .B With biphasic processing:
-byvalver --biphasic shellcode.bin output.bin
-.TP
+.br
+       byvalver --biphasic shellcode.bin output.bin
+.br
+.PP
 .B With XOR encoding:
-byvalver --biphasic --xor-encode 0x12345678 shellcode.bin output.bin
-.TP
+.br
+       byvalver --biphasic --xor-encode 0x12345678 shellcode.bin output.bin
+.br
+.PP
 .B Generate position-independent code:
-byvalver --pic shellcode.bin output.bin
+.br
+       byvalver --pic shellcode.bin output.bin
+.br
 
 .SH EXIT CODES
 .TP
@@ -114,11 +121,10 @@ Output file error
 Timeout exceeded
 
 .SH AUTHOR
-Written by the Monad (Mo) for the Advanced Cyber Security Framework.
+Orchestrated by `umpolungfish`
 
 .SH REPORTING BUGS
-Report bugs to: https://github.com/mrnob0dy666/byvalver/issues
+Report bugs to: https://github.com/umpolungfish/byvalver/issues
 
 .SH COPYRIGHT
-Copyright \(co The Monad (Mo).
-License: MIT
+Unlicense

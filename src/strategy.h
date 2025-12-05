@@ -10,7 +10,7 @@ struct buffer;
 
 // Strategy interface structure
 typedef struct {
-    const char* name;                           // Strategy name for identification
+    char name[64];                             // Strategy name for identification (max 64 chars)
     int (*can_handle)(cs_insn *insn);          // Function to check if strategy can handle instruction
     size_t (*get_size)(cs_insn *insn);         // Function to calculate new size
     void (*generate)(struct buffer *b, cs_insn *insn);  // Function to generate new code
@@ -45,5 +45,13 @@ int has_null_bytes(cs_insn *insn);
 
 // Additional utility functions for arithmetic substitution
 int find_arithmetic_equivalent(uint32_t target, uint32_t *base, uint32_t *offset, int *operation);
+
+// ML strategist integration functions
+int provide_ml_feedback(cs_insn* original_insn,
+                        strategy_t* applied_strategy,
+                        int success,
+                        size_t new_shellcode_size);
+void cleanup_ml_strategist(void);
+int save_ml_model(const char* path);
 
 #endif

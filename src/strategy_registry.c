@@ -1,5 +1,6 @@
 #include "strategy.h"
 #include "new_strategies.h"
+#include "ml_strategist.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h> // Added for debug prints
@@ -13,6 +14,11 @@
 #endif
 
 #define MAX_STRATEGIES 200
+
+// Global ML strategist instance for this module
+static ml_strategist_t g_ml_strategist;
+static int g_ml_initialized = 0;
+static int g_ml_in_progress = 0; // Recursion guard
 
 static strategy_t* strategies[MAX_STRATEGIES];
 static int strategy_count = 0;
@@ -105,6 +111,21 @@ void init_strategies() {
     #endif
 
     strategy_count = 0;
+
+    // Initialize ML strategist if available
+    if (!g_ml_initialized) {
+        // Try to load a pre-trained model, or initialize with default if not available
+        int ml_init_result = ml_strategist_init(&g_ml_strategist, "./ml_models/byvalver_ml_model.bin");
+        if (ml_init_result != 0) {
+            // If model file doesn't exist, initialize without loading a specific model
+            ml_strategist_init(&g_ml_strategist, ""); // Empty path initializes with default weights
+        }
+        g_ml_initialized = 1;
+        #ifdef DEBUG
+        fprintf(stderr, "[DEBUG] ML Strategist initialized\n");
+        #endif
+    }
+
     register_advanced_transformations();  // Register advanced transformations (highest priority)
     init_advanced_transformations();      // Initialize the can_handle functions
     register_indirect_call_strategies();  // Register indirect CALL/JMP strategies (priority 100)
@@ -188,7 +209,7 @@ void init_strategies() {
 strategy_t** get_strategies_for_instruction(cs_insn *insn, int *count) {
     DEBUG_LOG("get_strategies_for_instruction called for instruction ID: 0x%x", insn->id);
     DEBUG_LOG("Instruction: %s %s", insn->mnemonic, insn->op_str);
-    
+
     static strategy_t* applicable_strategies[MAX_STRATEGIES];
     int applicable_count = 0;
 
@@ -200,17 +221,25 @@ strategy_t** get_strategies_for_instruction(cs_insn *insn, int *count) {
         }
     }
 
-    // Sort strategies by priority (higher priority first)
-    for (int i = 0; i < applicable_count - 1; i++) {
-        for (int j = i + 1; j < applicable_count; j++) {
-            if (applicable_strategies[i]->priority < applicable_strategies[j]->priority) {
-                strategy_t* temp = applicable_strategies[i];
-                applicable_strategies[i] = applicable_strategies[j];
-                applicable_strategies[j] = temp;
+    // Use ML-powered reprioritization if ML strategist is initialized
+    // and we're not already in an ML operation (prevent recursion)
+    if (g_ml_initialized && !g_ml_in_progress) {
+        g_ml_in_progress = 1; // Set recursion guard
+        ml_reprioritize_strategies(&g_ml_strategist, insn, applicable_strategies, &applicable_count);
+        g_ml_in_progress = 0; // Clear recursion guard
+    } else {
+        // Sort strategies by priority (higher priority first) - traditional approach
+        for (int i = 0; i < applicable_count - 1; i++) {
+            for (int j = i + 1; j < applicable_count; j++) {
+                if (applicable_strategies[i]->priority < applicable_strategies[j]->priority) {
+                    strategy_t* temp = applicable_strategies[i];
+                    applicable_strategies[i] = applicable_strategies[j];
+                    applicable_strategies[j] = temp;
+                }
             }
         }
     }
-    
+
     DEBUG_LOG("  Found %d applicable strategies", applicable_count);
     if (applicable_count > 0) {
         DEBUG_LOG("  Using: %s (priority %d)", applicable_strategies[0]->name, applicable_strategies[0]->priority);
@@ -374,6 +403,53 @@ void register_new_strategies() {
     // Re-enabled with low priority to handle specific patterns
     register_strategy(&transform_mov_reg_mem_self);
     register_strategy(&transform_add_mem_reg8);
+}
+
+/**
+ * @brief Provide feedback to the ML strategist about strategy application
+ * @param original_insn Original instruction that needed transformation
+ * @param applied_strategy Strategy that was applied (can be NULL for fallback)
+ * @param success Whether the strategy application was successful
+ * @param new_shellcode_size Size of the resulting shellcode
+ * @return 0 on success, non-zero on failure
+ */
+int provide_ml_feedback(cs_insn* original_insn,
+                        strategy_t* applied_strategy,
+                        int success,
+                        size_t new_shellcode_size) {
+    if (!g_ml_initialized || !original_insn || g_ml_in_progress) {
+        return -1;
+    }
+
+    // If no specific strategy was applied (e.g., fallback), we can still provide feedback
+    // The ML model can learn from these general patterns as well
+    g_ml_in_progress = 1; // Set recursion guard
+    int result = ml_provide_feedback(&g_ml_strategist, original_insn, applied_strategy, success, new_shellcode_size);
+    g_ml_in_progress = 0; // Clear recursion guard
+    return result;
+}
+
+/**
+ * @brief Cleanup the ML strategist resources
+ */
+void cleanup_ml_strategist() {
+    if (g_ml_initialized) {
+        ml_strategist_cleanup(&g_ml_strategist);
+        g_ml_initialized = 0;
+    }
+}
+
+/**
+ * @brief Save the updated ML model to file
+ * @param path Path to save the model to
+ * @return 0 on success, non-zero on failure
+ */
+int save_ml_model(const char* path) {
+    if (!g_ml_initialized || !path) {
+        return -1;
+    }
+
+    return ml_strategist_save_model(&g_ml_strategist, path);
 }
 
 

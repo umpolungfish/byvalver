@@ -77,6 +77,7 @@ void print_detailed_help(FILE *stream, const char *program_name) {
     fprintf(stream, "    Processing Options:\n");
     fprintf(stream, "      --biphasic                    Enable biphasic processing (obfuscation + null-elimination)\n");
     fprintf(stream, "      --pic                         Generate position-independent code\n");
+    fprintf(stream, "      --ml                          Use ML-enhanced strategy selection (optional)\n");
     fprintf(stream, "      --xor-encode KEY              XOR encode output with 4-byte key (hex)\n");
     fprintf(stream, "      --format FORMAT               Output format: raw, c, python, powershell, hexstring\n\n");
     
@@ -152,6 +153,7 @@ int parse_arguments(int argc, char *argv[], byvalver_config_t *config) {
         {"xor-encode", required_argument, 0, 0},
         {"format", required_argument, 0, 0},
         {"arch", required_argument, 0, 0},
+        {"ml", no_argument, 0, 0},
         
         // Advanced options
         {"strategy-limit", required_argument, 0, 0},
@@ -206,6 +208,9 @@ int parse_arguments(int argc, char *argv[], byvalver_config_t *config) {
                     }
                     else if (strcmp(opt_name, "pic") == 0) {
                         config->use_pic_generation = 1;
+                    }
+                    else if (strcmp(opt_name, "ml") == 0) {
+                        config->use_ml_strategist = 1;
                     }
                     else if (strcmp(opt_name, "xor-encode") == 0) {
                         config->encode_shellcode = 1;

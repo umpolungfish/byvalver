@@ -38,6 +38,7 @@ typedef struct {
     int use_pic_generation;
     int encode_shellcode;
     uint32_t xor_key;
+    int use_ml_strategist;  // Whether to use ML-enhanced strategy selection
     
     // Advanced options
     char *output_format;  // "raw", "c", "python", "powershell", "hexstring"

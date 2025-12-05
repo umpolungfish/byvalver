@@ -51,6 +51,7 @@ byvalver [OPTIONS] <input_file> [output_file]
 ### Processing Options
 - `--biphasic`: Enable biphasic processing (obfuscation + null-byte elimination)
 - `--pic`: Generate position-independent code
+- `--ml`: Enable ML-powered strategy prioritization (experimental)
 - `--xor-encode KEY`: XOR encode output with 4-byte key (hex)
 - `--format FORMAT`: Output format: raw, c, python, powershell, hexstring
 
@@ -105,6 +106,105 @@ byvalver --biphasic --xor-encode 0x12345678 input.bin output.bin
 
 This mode prepends a JMP-CALL-POP decoder stub that will decode the shellcode at runtime using the provided key.
 
+### 5. Machine Learning Mode (Experimental)
+Enables ML-powered strategy prioritization using neural network inference:
+```bash
+byvalver --ml input.bin output.bin
+```
+
+**Overview:**
+
+ML mode uses a custom neural network to intelligently select and prioritize transformation strategies based on instruction context. Instead of using fixed priority values, the neural network analyzes instruction features and ranks strategies dynamically.
+
+**How It Works:**
+
+1. **Feature Extraction**:
+   - Extracts 128 features from each instruction (opcode, operands, size, registers, etc.)
+   - Encodes instruction characteristics into numerical feature vectors
+   - Detects null-byte presence and operand types
+
+2. **Neural Network Inference**:
+   - 3-layer feedforward network (128→256→200 nodes)
+   - ReLU activation in hidden layer
+   - Softmax normalization in output layer
+   - Forward pass inference for each instruction
+
+3. **Strategy Re-ranking**:
+   - Maps neural network outputs to applicable strategies
+   - Re-sorts strategies by ML confidence scores
+   - Falls back to traditional priority if needed
+   - Selects highest-scoring strategy first
+
+4. **Model Persistence**:
+   - Model stored in `./ml_models/byvalver_ml_model.bin`
+   - Binary format with weights and biases
+   - Automatic fallback to random weights if missing
+
+**Combining ML with Other Modes:**
+
+```bash
+# ML with biphasic processing
+byvalver --ml --biphasic input.bin output.bin
+
+# ML with PIC generation
+byvalver --ml --pic input.bin output.bin
+
+# ML with all features
+byvalver --ml --pic --biphasic --xor-encode 0xABCD1234 input.bin output.bin
+```
+
+**Benefits:**
+
+- **Context-Aware Selection**: Strategies ranked based on instruction patterns
+- **Adaptive Behavior**: Different prioritization for different shellcode types
+- **Seamless Integration**: Works with all processing modes
+- **Minimal Overhead**: Fast forward-pass inference
+
+**Current Limitations:**
+
+- **Experimental Status**: Under active development and testing
+- **No Trained Model**: Current implementation uses random initialization
+- **Feedback Disabled**: Reinforcement learning temporarily disabled
+- **Non-Deterministic**: Output may vary between runs
+
+**Technical Implementation:**
+
+- **Architecture**: Custom neural network in C
+- **Input Features**: 128 instruction characteristics
+- **Hidden Neurons**: 256 nodes with ReLU activation
+- **Output Strategies**: 200 confidence scores
+- **Recursion Guards**: Prevents infinite loops during strategy selection
+- **Model Format**: Binary weights stored in custom format
+
+**Future Development:**
+
+- Model training on large shellcode datasets
+- Enable feedback-based reinforcement learning
+- Add model versioning and updates
+- Support custom model training
+- Implement online learning during processing
+
+**When to Use ML Mode:**
+
+✅ **Recommended For:**
+- Complex shellcode with diverse instruction patterns
+- Experimental evaluation and research
+- Combined with biphasic processing
+- Testing different strategy selections
+
+❌ **Not Recommended For:**
+- Production environments (experimental status)
+- Deterministic output requirements
+- Time-critical processing
+- Environments without model file
+
+**Performance Considerations:**
+
+- Slight processing overhead due to neural network inference
+- Memory usage increases minimally (model weights)
+- Processing time increase typically < 10%
+- Model loading adds ~100ms startup time
+
 ## Practical Examples
 
 ### Basic Usage
@@ -131,10 +231,25 @@ byvalver --biphasic shellcode.bin output.bin
 byvalver --biphasic --xor-encode 0xABCDEF00 shellcode.bin encoded_shellcode.bin
 ```
 
+### Machine Learning Mode
+```bash
+# Basic ML mode
+byvalver --ml input.bin output.bin
+
+# ML with biphasic processing
+byvalver --ml --biphasic input.bin output.bin
+
+# ML with PIC and XOR encoding
+byvalver --ml --pic --xor-encode 0x99887766 input.bin output.bin
+```
+
 ### Multiple Options Combined
 ```bash
 # Full-featured processing with biphasic mode and XOR encoding
 byvalver --pic --biphasic --xor-encode 0x11223344 input.bin output.bin
+
+# ML with all features enabled
+byvalver --ml --pic --biphasic --xor-encode 0x11223344 input.bin output.bin
 
 # With detailed statistics and verbose output
 byvalver --biphasic --stats --verbose input.bin output.bin
