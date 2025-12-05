@@ -1,372 +1,55 @@
-feat: Add comprehensive batch directory processing with full option compatibility
+fix: Address ML strategist prediction tracking issue
 
 ## Summary
-This commit introduces comprehensive batch directory processing capabilities to byvalver with full compatibility for all existing options. The new functionality enables processing entire directories with recursive traversal, pattern matching, and flexible output structure preservation while maintaining seamless integration with all existing features.
+This commit fixes the issue where the ML strategist was showing "Predictions Made: 0" in the metrics output despite processing thousands of instructions. The neural network was being used for strategy reprioritization but predictions weren't being properly recorded in the metrics system.
 
-## New Features Added
+## Problem Analysis
+The ML strategist was using the neural network for strategy selection and reprioritization via ml_reprioritize_strategies function, but the ml_metrics_record_prediction function was never being called anywhere in the codebase. This resulted in the metrics showing zero predictions even when ML was actively being used for decision making.
 
-### Command-Line Options for Batch Processing
-- `-r, --recursive` - Process directories recursively
-- `--pattern PATTERN` - File pattern to match (default: *.bin) 
-- `--no-preserve-structure` - Flatten output (don't preserve directory structure)
-- `--continue-on-error` - Continue processing even if some files fail
+## Solution Implemented
 
-### Auto-Detection Mechanism
-Batch mode is automatically enabled when the input is a directory:
-```bash
-# Single file mode (automatic)
-byvalver input.bin output.bin
+### 1. Prediction Recording in Strategy Registry
+Modified the get_strategies_for_instruction function in src/strategy_registry.c to:
+- Call ml_get_strategy_recommendation when ML mode is enabled
+- Record the prediction using ml_metrics_record_prediction
+- Access the global metrics tracker via a new get_ml_metrics_tracker function
 
-# Batch mode (automatic)
-byvalver input_dir/ output_dir/
-```
+### 2. Metrics Tracker Access Function
+Added a new function get_ml_metrics_tracker() in src/ml_strategist.c that:
+- Returns a reference to the global ML metrics tracker
+- Allows other modules to access metrics for recording predictions
+- Added corresponding declaration in src/ml_strategist.h
 
-### Full Compatibility with All Existing Options
-All existing options work seamlessly with batch processing:
-- `--biphasic` - Applies biphasic processing to all files
-- `--pic` - Generates PIC code for all files  
-- `--ml` - Uses ML strategy selection for all files
-- `--xor-encode KEY` - XOR encodes all processed files
-- `--metrics, --metrics-json, --metrics-csv` - Aggregates metrics across all files
-- `--quiet, --verbose` - Controls output level for batch operations
-- `--dry-run` - Validates all files without processing
+### 3. Header Dependencies
+Updated src/ml_strategist.h to include ml_metrics.h so the new function declaration works properly.
 
-## Implementation Details
+## Key Changes Made
 
-### New Files Created
-- `src/batch_processing.h` - Batch processing API header with function declarations
-- `src/batch_processing.c` - Directory traversal, file discovery, statistics collection, and processing orchestration logic
+### src/strategy_registry.c (+15 lines):
+- Modified get_strategies_for_instruction to call ml_get_strategy_recommendation
+- Added logic to record predictions when ML is used for strategy selection
+- Used get_ml_metrics_tracker() to access metrics system
 
-### Modified Files
-- `src/cli.h` - Added batch processing configuration options and structures
-- `src/cli.c` - Added command-line parsing for batch options (`-r`, `--pattern`, `--no-preserve-structure`, `--continue-on-error`)
-- `src/main.c` - Refactored to support both single-file and batch modes with unified processing pipeline
+### src/ml_strategist.c (+8 lines):
+- Added get_ml_metrics_tracker() function to return global metrics tracker
+- Properly handles NULL cases for safety
 
-### Key Features Implemented
+### src/ml_strategist.h (+3 lines):
+- Added declaration for get_ml_metrics_tracker() function
+- Included ml_metrics.h to access the tracker type
 
-1. **Automatic Directory Creation** - Parent directories created automatically (preserves existing functionality)
-2. **Pattern Matching** - Uses fnmatch for flexible file pattern matching with configurable patterns
-3. **Directory Structure Preservation** - Optional preservation of input directory hierarchy with toggle for flattening
-4. **Comprehensive Statistics** - Tracks total files, processed, failed, skipped, and size metrics with aggregation
-5. **Progress Reporting** - Shows progress as [N/Total] filename for user feedback
-6. **Error Handling** - Configurable error handling (stop or continue on errors) with detailed error reporting
-
-### Batch Processing Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    main()                                   │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  parse_command_line()                                 │  │
-│  │  • Detects directory vs file input                    │  │
-│  │  • Parses new batch options (-r, --pattern, etc.)     │  │
-│  │  • Maintains backward compatibility for single files  │  │
-│  └─────────────┬─────────────────────────────────────────┘  │
-│                │                                            │
-│                ▼                                            │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  process_input()                                       │  │
-│  │  • Directory → batch_process_directory()              │  │
-│  │  • File → process_single_file()                       │  │
-│  └─────────────┬─────────────────────────────────────────┘  │
-│                │                                            │
-│                ▼                                            │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  batch_process_directory()                            │  │
-│  │  • Discover files based on --pattern                  │  │
-│  │  • Traverse recursively if --recursive               │  │
-│  │  • Generate output paths with --no-preserve-structure│  │
-│  │  • Process each file with error handling              │  │
-│  └───────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-
-Batch Processing Pipeline:
-─────────────────────────
-Input: input_dir/ -> File Discovery (match pattern) -> Process Each File -> Output: output_dir/
-                     └─ [file1.bin, file2.bin, ...]      └─ [file1.bin, file2.bin, ...]
-```
-
-## Usage Examples
-
-### Basic Batch Processing
-```bash
-# Process all .bin files in a directory (non-recursive)
-byvalver shellcodes/ output/
-
-# Process recursively with all subdirectories
-byvalver -r shellcodes/ output/
-
-# Process only .txt files recursively
-byvalver -r --pattern "*.txt" input/ output/
-```
-
-### Advanced Batch Processing with All Options
-```bash
-# Process with biphasic mode and XOR encoding
-byvalver -r --biphasic --xor-encode 0x12345678 input/ output/
-
-# Flatten output (don't preserve directory structure)
-byvalver -r --no-preserve-structure input/ output/
-
-# Continue processing even if some files fail
-byvalver -r --continue-on-error input/ output/
-
-# Combine all features (ML + biphasic + XOR + metrics)
-byvalver -r --ml --biphasic --xor-encode 0xABCDEF00 --metrics input/ output/
-```
-
-### Integration with Existing Features
-```bash
-# Batch with ML metrics tracking
-byvalver -r --ml --metrics-json input/ output/
-
-# Batch with verbose output and dry run
-byvalver -r --verbose --dry-run input/ output/
-
-# Batch with PIC generation and XOR encoding
-byvalver -r --pic --xor-encode 0x11223344 input/ output/
-```
-
-## Technical Implementation
-
-### Files Modified
-
-**1. src/cli.h** (+20 lines):
-```c
-// New batch configuration structure
-typedef struct {
-    bool recursive;
-    char* pattern;
-    bool preserve_structure;
-    bool continue_on_error;
-    // Existing config fields...
-} batch_config_t;
-
-// Function declarations for batch processing
-int parse_batch_options(int argc, char *argv[], batch_config_t *config);
-bool is_directory(const char *path);
-```
-
-**2. src/cli.c** (+80 lines):
-- Added command-line argument parsing for new batch options
-- Implemented `--recursive`, `--pattern`, `--no-preserve-structure`, `--continue-on-error` option handling
-- Added directory detection logic
-- Updated help text with new options
-- Maintained backward compatibility with single-file mode
-
-**3. src/main.c** (+120 lines):
-- Added directory detection before processing
-- Implemented conditional branching: directory vs file input
-- Integrated batch processing with existing processing pipeline
-- Updated error handling for batch scenarios
-- Added progress reporting for batch operations
-
-**4. src/batch_processing.h** (+35 lines):
-```c
-// Batch processing API declarations
-int batch_process_directory(const char *input_dir, const char *output_dir, 
-                           const batch_config_t *config);
-int discover_files(const char *input_dir, const char *pattern, 
-                   char ***files, int *count);
-char *generate_output_path(const char *input_path, const char *input_dir, 
-                          const char *output_dir, bool preserve_structure);
-```
-
-**5. src/batch_processing.c** (+380 lines):
-- Directory traversal with recursive option
-- File pattern matching using fnmatch()
-- Output path generation with structure preservation logic
-- File processing with error handling and statistics collection
-- Progress reporting during batch operations
-- Statistics aggregation across all processed files
-
-**6. README.md** (+104 lines):
-- Added comprehensive "BATCH DIRECTORY PROCESSING" section
-- Documented new command-line options
-- Provided usage examples and implementation details
-- Included compatibility information with existing options
-
-**7. docs/USAGE.md** (+180 lines):
-- Added "What's New in v2.2" section with batch processing details
-- Documented new command-line options in appropriate section
-- Added batch processing examples to practical examples section
-- Updated documentation with comprehensive batch usage information
-
-## Architecture: Directory Structure Preservation
-
-```
-With --preserve-structure (default):
-Input:  input/nested/level1/level2/file.bin
-Output: output/nested/level1/level2/file.bin
-
-With --no-preserve-structure:
-Input:  input/nested/level1/level2/file.bin  
-Output: output/file.bin
-
-Flattened with preserved names:
-Input:  input/nested/level1/level2/file.bin
-Output: output/nested_level1_level2_file.bin  (optional variation)
-```
-
-## Implementation Details
-
-**1. Pattern Matching**:
-- Uses `fnmatch()` for flexible file pattern matching
-- Default pattern is "*.bin" for typical shellcode files
-- Supports all standard shell glob patterns (*, ?, [abc], [a-z])
-
-**2. Recursive Traversal**:
-- Implemented depth-first traversal to avoid infinite loops
-- Limits recursion depth to prevent stack overflow
-- Handles symbolic links appropriately
-
-**3. Output Path Generation**:
-- Constructs output paths maintaining directory hierarchy
-- Automatically creates parent directories as needed
-- Handles path separator normalization across platforms
-
-**4. Error Handling**:
-- Individual file processing errors don't halt entire batch
-- Configurable behavior with `--continue-on-error`
-- Detailed error reporting with file-specific information
-
-## Benefits
-
-### For End Users
-- **Batch Processing**: Process hundreds of shellcode files with a single command
-- **Recursive Processing**: Automatically traverse nested directory structures
-- **Pattern Matching**: Filter files by extension or name patterns
-- **Flexible Output**: Choose between preserving directory structure or flattening
-- **Robust Error Handling**: Continue processing despite individual file failures
-- **Full Feature Compatibility**: All existing features work with batch processing
-
-### For Developers
-- **Unified Pipeline**: Single processing pipeline for both modes
-- **Extensible Design**: Easy to add new batch features
-- **Maintainable Code**: Clear separation of batch vs single-file logic
-- **Comprehensive Testing**: Built-in statistics and validation
-
-### For System Administrators
-- **Automation**: Perfect for automated processing pipelines
-- **Scalability**: Efficient processing of large file collections
-- **Reliability**: Robust error handling for production environments
-- **Monitoring**: Detailed statistics and progress reporting
+## Result
+After this fix:
+- ML strategist now properly records predictions in the metrics system
+- "Predictions Made" count accurately reflects the number of ML-based decisions
+- Metrics summary shows meaningful prediction statistics instead of zeros
+- All existing functionality remains unchanged
 
 ## Testing
+- Verified build completes successfully with no new warnings
+- Confirmed that ML mode now records non-zero prediction counts
+- Validated that all existing functionality remains intact
+- Tested that metrics are properly exported to JSON and CSV formats
 
-### Build Verification
-```bash
-make clean && make
-```
-**Result**: ✅ Clean build with no warnings and all batch processing files compiled
-
-### Functionality Testing
-
-**Test 1: Basic Directory Processing**
-```bash
-mkdir -p input_test/ output_test/
-echo -e "\x90\x00\x90" > input_test/test1.bin
-echo -e "\x90\x00\x90" > input_test/test2.bin
-./bin/byvalver input_test/ output_test/
-ls output_test/
-```
-**Result**: ✅ Both files processed successfully with null bytes removed
-
-**Test 2: Recursive Processing**
-```bash
-mkdir -p input_test/subdir/
-echo -e "\x90\x00\x90" > input_test/subdir/test3.bin
-./bin/byvalver -r input_test/ output_test/
-ls -R output_test/
-```
-**Result**: ✅ All files in subdirectories processed successfully
-
-**Test 3: Pattern Matching**
-```bash
-echo -e "\x90\x00\x90" > input_test/other.txt
-./bin/byvalver -r --pattern "*.txt" input_test/ output_test/
-```
-**Result**: ✅ Only .txt files processed, .bin files ignored
-
-**Test 4: Structure Preservation**
-```bash
-./bin/byvalver -r input_test/ output_test_preserve/
-./bin/byvalver -r --no-preserve-structure input_test/ output_test_flat/
-```
-**Result**: ✅ Directory structure preserved when requested, flattened when specified
-
-**Test 5: Error Handling**
-```bash
-# Create a read-only file that will cause an error
-chmod 000 input_test/readonly.bin
-./bin/byvalver -r --continue-on-error input_test/ output_test/
-```
-**Result**: ✅ Other files processed despite read-only file failure
-
-**Test 6: Full Option Compatibility**
-```bash
-./bin/byvalver -r --biphasic --xor-encode 0x12345678 input_test/ output_test/
-```
-**Result**: ✅ All options work together with batch processing
-
-**Test 7: ML Mode with Batch**
-```bash
-./bin/byvalver -r --ml --biphasic input_test/ output_test/
-```
-**Result**: ✅ ML mode functions correctly in batch context
-
-### Performance Testing
-
-**Test 8: Large Batch Processing**
-- Processed 1000+ shellcode files in nested directory structure
-- Memory usage remained stable throughout processing
-- Processing completed successfully within reasonable time frame
-
-**Test 9: Statistics Collection**
-- Verified comprehensive statistics are collected across all files
-- Verified individual file processing metrics are aggregated correctly
-- Confirmed error counts are properly tracked
-
-## Backward Compatibility
-
-### Maintained Compatibility
-- ✅ All existing single-file mode functionality preserved
-- ✅ All existing command-line options continue to work as before
-- ✅ All existing API functions and interfaces unchanged
-- ✅ All existing test cases continue to pass
-- ✅ All existing documentation examples still valid
-
-### Detection Logic
-- Directory input automatically triggers batch mode
-- File input continues to use single-file mode
-- No breaking changes to existing workflows
-- Command-line interface extended rather than modified
-
-## Integration Points
-
-The batch processing feature integrates seamlessly with existing byvalver capabilities:
-
-1. **Null-byte Elimination**: Applied individually to each file in batch
-2. **Biphase Processing**: Available for all files in batch mode
-3. **PIC Generation**: Available for all files in batch mode  
-4. **XOR Encoding**: Available for all files in batch mode
-5. **ML Processing**: Applied individually to each file with model reuse
-6. **Metrics Collection**: Aggregated across all processed files
-7. **Error Handling**: Individual file errors don't halt entire batch
-8. **Statistics**: Aggregated metrics across all processed files
-
-## Security Considerations
-
-- **Path Validation**: All file paths are validated to prevent directory traversal attacks
-- **File Access**: Proper permission checking before file operations
-- **Output Safety**: Only processes files matching specified patterns
-- **Resource Limits**: Proper bounds checking on file counts and sizes
-
-## Performance Considerations
-
-- **Memory Usage**: Maintains reasonable memory consumption during batch processing
-- **Processing Speed**: Efficient file I/O and processing pipeline
-- **Scalability**: Designed to handle large numbers of files efficiently
-- **Resource Management**: Proper cleanup of resources between files
-
-This comprehensive batch processing feature significantly expands byvalver's capabilities while maintaining full compatibility with existing functionality.
+## Impact
+This fix resolves the main issue reported where ML strategist showed 0 predictions despite processing many instructions. The neural network is now properly tracked in the metrics system, providing accurate feedback on ML model usage and performance.

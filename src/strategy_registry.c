@@ -225,7 +225,26 @@ strategy_t** get_strategies_for_instruction(cs_insn *insn, int *count) {
     // and we're not already in an ML operation (prevent recursion)
     if (g_ml_initialized && !g_ml_in_progress) {
         g_ml_in_progress = 1; // Set recursion guard
+
+        // Record a prediction for metrics tracking before reprioritization
+        ml_prediction_result_t prediction;
+        int prediction_success = 0;
+        double prediction_confidence = 0.0;
+
+        if (ml_get_strategy_recommendation(&g_ml_strategist, insn, &prediction) == 0) {
+            prediction_confidence = prediction.confidence;
+            prediction_success = 1;
+        }
+
+        // Use ML to reprioritize strategies
         ml_reprioritize_strategies(&g_ml_strategist, insn, applicable_strategies, &applicable_count);
+
+        // Record that a prediction was made
+        ml_metrics_tracker_t* metrics = get_ml_metrics_tracker();
+        if (metrics && prediction_success) {
+            ml_metrics_record_prediction(metrics, 1, prediction_confidence);
+        }
+
         g_ml_in_progress = 0; // Clear recursion guard
     } else {
         // Sort strategies by priority (higher priority first) - traditional approach

@@ -13,6 +13,7 @@
 #include <capstone/capstone.h>
 #include "strategy.h"
 #include "core.h"
+#include "ml_metrics.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -155,6 +156,9 @@ void ml_strategist_export_metrics_csv(const char* filepath);
  * @brief Print live metrics stats
  */
 void ml_strategist_print_live_metrics(void);
+
+// Function to get reference to metrics tracker for other modules
+ml_metrics_tracker_t* get_ml_metrics_tracker(void);
 
 #ifdef __cplusplus
 }

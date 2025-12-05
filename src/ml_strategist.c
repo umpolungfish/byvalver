@@ -733,6 +733,14 @@ void ml_strategist_export_metrics_csv(const char* filepath) {
 }
 
 /**
+ * @brief Get reference to the global ML metrics tracker
+ * @return Pointer to global metrics tracker, or NULL if not initialized
+ */
+ml_metrics_tracker_t* get_ml_metrics_tracker() {
+    return g_ml_metrics;
+}
+
+/**
  * @brief Print live metrics stats
  */
 void ml_strategist_print_live_metrics(void) {

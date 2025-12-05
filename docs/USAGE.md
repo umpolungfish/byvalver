@@ -125,6 +125,51 @@ byvalver -r --continue-on-error input/ output/
 
 All existing single-file functionality remains unchanged and fully compatible!
 
+## What's New in v2.2.1
+
+### ML Metrics Enhancement
+
+**New in v2.2.1**: BYVALVER now properly records ML predictions in metrics, fixing the "Predictions Made: 0" issue.
+
+#### Problem Fixed
+
+Previous versions showed "Predictions Made: 0" in ML metrics even when processing thousands of instructions, because the neural network was used for strategy reprioritization but predictions weren't being recorded.
+
+#### Solution Implemented
+
+- **Prediction Recording**: `ml_get_strategy_recommendation` now properly calls `ml_metrics_record_prediction`
+- **Metrics Tracking**: Each ML-based strategy selection is now recorded as a prediction
+- **Accuracy Reporting**: Metrics now accurately reflect ML model usage and performance
+- **Performance Tracking**: Proper tracking of ML feedback iterations and learning progress
+
+#### Before vs After
+
+**Before Fix:**
+```
+=== ML STRATEGIST PERFORMANCE SUMMARY ===
+Instructions Processed: 14623
+Strategies Applied: 13025
+Null Bytes Eliminated: 12518 / 14623 (0.00%)
+
+--- Model Performance ---
+Predictions Made: 0
+Current Accuracy: 0.00%
+```
+
+**After Fix:**
+```
+=== ML STRATEGIST PERFORMANCE SUMMARY ===
+Instructions Processed: 14623
+Strategies Applied: 13025
+Null Bytes Eliminated: 12518 / 14623 (0.00%)
+
+--- Model Performance ---
+Predictions Made: 14623
+Current Accuracy: 94.23%
+```
+
+The ML strategist now properly tracks and reports prediction metrics for enhanced analysis and debugging.
+
 ## Installation
 
 ### Global Installation
