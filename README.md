@@ -914,10 +914,10 @@ BYVALVER follows a modular architecture based on the Strategy pattern, with comp
 
 ### 1. Overall System Architecture
 
-<img src="./images/bv1.png" alt="MAIN FRAMEWORK" width="400">
+<img src="./images/bv1.png" alt="MAIN FRAMEWORK" width="800">
 </div>
 
-<img src="./images/bv5.png" alt="ML INTEGRATION" width="400">
+<img src="./images/bv5.png" alt="ML INTEGRATION" width="800">
 </div>
 
 ## BUILDING AND SETUP
