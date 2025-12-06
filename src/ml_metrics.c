@@ -267,10 +267,12 @@ void ml_metrics_print_summary(ml_metrics_tracker_t* tracker) {
                    tracker->session.session_start));
     printf("Instructions Processed: %d\n", tracker->session.total_instructions_processed);
     printf("Strategies Applied: %d\n", tracker->session.total_strategies_applied);
+    double null_elim_pct = tracker->session.total_null_bytes_original > 0 ?
+        (double)tracker->session.total_nulls_eliminated / tracker->session.total_null_bytes_original * 100.0 : 0.0;
     printf("Null Bytes Eliminated: %d / %d (%.2f%%)\n",
            tracker->session.total_nulls_eliminated,
            tracker->session.total_null_bytes_original,
-           tracker->session.null_elimination_rate * 100.0);
+           null_elim_pct);
 
     // Model performance
     printf("\n--- Model Performance ---\n");

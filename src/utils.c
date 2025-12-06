@@ -170,14 +170,32 @@ void generate_mov_eax_imm(struct buffer *b, uint32_t imm) {
 }
 
 size_t get_mov_reg_imm_size(cs_insn *insn) {
-    // For MOV reg32, imm32: 1 + 1 + 4 = 6 bytes (B8 for EAX, B9 for ECX, etc.)
-    // But for other registers it's different: C7 /0 + imm32 = 6 bytes
     uint8_t reg = insn->detail->x86.operands[0].reg;
-    
+    uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
+
     if (reg == X86_REG_EAX) {
-        return 5;  // B8 + imm32
+        // Use the comprehensive size calculator for EAX
+        return get_mov_eax_imm_size(imm);
+    } else {
+        // Check if direct encoding would have nulls
+        uint8_t test_code[] = {0xC7, 0xC0 + get_reg_index(reg), 0, 0, 0, 0};
+        memcpy(test_code + 2, &imm, 4);
+
+        int has_null = 0;
+        for (int i = 0; i < 6; i++) {
+            if (test_code[i] == 0x00) {
+                has_null = 1;
+                break;
+            }
+        }
+
+        if (!has_null) {
+            return 6; // Direct C7 /0 + imm32
+        } else {
+            // Use EAX as intermediary: MOV EAX, imm + MOV reg, EAX
+            return get_mov_eax_imm_size(imm) + 2;
+        }
     }
-    return 6; // C7 /0 + imm32
 }
 
 void generate_mov_reg_imm(struct buffer *b, cs_insn *insn) {
@@ -196,13 +214,32 @@ void generate_mov_reg_imm(struct buffer *b, cs_insn *insn) {
     uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
 
     if (reg == X86_REG_EAX) {
-        uint8_t code[] = {0xB8, 0, 0, 0, 0};
-        memcpy(code + 1, &imm, 4);
-        buffer_append(b, code, 5);
+        // For EAX, use the comprehensive null-free generator
+        generate_mov_eax_imm(b, imm);
     } else {
-        uint8_t code[] = {0xC7, 0xC0 + get_reg_index(reg), 0, 0, 0, 0};
-        memcpy(code + 2, &imm, 4);
-        buffer_append(b, code, 6);
+        // For other registers: Check if direct encoding would have nulls
+        uint8_t test_code[] = {0xC7, 0xC0 + get_reg_index(reg), 0, 0, 0, 0};
+        memcpy(test_code + 2, &imm, 4);
+
+        // Check the encoding for null bytes
+        int has_null = 0;
+        for (int i = 0; i < 6; i++) {
+            if (test_code[i] == 0x00) {
+                has_null = 1;
+                break;
+            }
+        }
+
+        if (!has_null) {
+            // Safe to use direct encoding
+            buffer_append(b, test_code, 6);
+        } else {
+            // Use EAX as intermediary with comprehensive null-free handling
+            generate_mov_eax_imm(b, imm);
+            // MOV reg, EAX
+            uint8_t mov_reg_eax[] = {0x89, 0xC0 + get_reg_index(reg)};
+            buffer_append(b, mov_reg_eax, 2);
+        }
     }
 }
 
@@ -570,14 +607,51 @@ void generate_call_imm(struct buffer *b, cs_insn *insn) {
 }
 
 size_t get_mov_reg_imm_shift_size(__attribute__((unused)) cs_insn *insn) {
-    return 10; // Placeholder for shift-based construction
+    // MOV reg, imm32 (5 bytes) + SHR/SHL reg, imm8 (3 bytes) = 8 bytes
+    return 8;
 }
 
 void generate_mov_reg_imm_shift(struct buffer *b, cs_insn *insn) {
-    // Placeholder for shift-based immediate construction
-    // This would involve using SHL/SHR operations to build the value
-    
-    // For now, just use the regular MOV
+    uint8_t reg = insn->detail->x86.operands[0].reg;
+    uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
+
+    // Try left shifts (SHL) - useful when low bytes are zero
+    for (int shift_amount = 1; shift_amount <= 24; shift_amount++) {
+        uint32_t shifted = target << shift_amount;
+        if (is_null_free(shifted)) {
+            // MOV reg, shifted_value
+            cs_insn temp_insn = *insn;
+            temp_insn.detail->x86.operands[1].imm = shifted;
+            generate_mov_reg_imm(b, &temp_insn);
+
+            // SHR reg, shift_amount
+            uint8_t code[] = {0xC1, 0xE8, 0};
+            code[1] = 0xE8 + get_reg_index(reg);
+            code[2] = shift_amount;
+            buffer_append(b, code, 3);
+            return;
+        }
+    }
+
+    // Try right shifts (SHR) - useful when high bytes are zero
+    for (int shift_amount = 1; shift_amount <= 24; shift_amount++) {
+        uint32_t shifted = target >> shift_amount;
+        if (shifted != 0 && is_null_free(shifted)) {
+            // MOV reg, shifted_value
+            cs_insn temp_insn = *insn;
+            temp_insn.detail->x86.operands[1].imm = shifted;
+            generate_mov_reg_imm(b, &temp_insn);
+
+            // SHL reg, shift_amount
+            uint8_t code[] = {0xC1, 0xE0, 0};
+            code[1] = 0xE0 + get_reg_index(reg);
+            code[2] = shift_amount;
+            buffer_append(b, code, 3);
+            return;
+        }
+    }
+
+    // Fallback if no suitable shift found
     generate_mov_reg_imm(b, insn);
 }
 
@@ -657,14 +731,50 @@ void generate_op_reg_imm_neg(struct buffer *b, cs_insn *insn) {
     }
 }
 
-size_t get_xor_encoded_mov_size(__attribute__((unused)) cs_insn *insn) {
-    // XOR encoding would depend on the specific encoding used
-    return 10; // Placeholder
+size_t get_xor_encoded_mov_size(cs_insn *insn) {
+    uint8_t reg = insn->detail->x86.operands[0].reg;
+    // MOV reg, encoded_imm32 (5 bytes) + XOR reg, key (5 for EAX, 6 for others)
+    return (reg == X86_REG_EAX) ? 10 : 11;
 }
 
 void generate_xor_encoded_mov(struct buffer *b, cs_insn *insn) {
-    // Implementation would use XOR encoding technique
-    // For now, use original implementation as fallback
+    uint8_t reg = insn->detail->x86.operands[0].reg;
+    uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
+
+    // Try to find a null-free XOR key
+    uint32_t xor_keys[] = {
+        0x01010101, 0x11111111, 0x22222222, 0x33333333,
+        0x44444444, 0x55555555, 0x66666666, 0x77777777,
+        0x88888888, 0x99999999, 0xAAAAAAAA, 0xBBBBBBBB,
+        0xCCCCCCCC, 0xDDDDDDDD, 0xEEEEEEEE, 0xFFFFFFFF
+    };
+
+    for (size_t i = 0; i < sizeof(xor_keys)/sizeof(xor_keys[0]); i++) {
+        uint32_t encoded = target ^ xor_keys[i];
+        if (is_null_free(encoded) && is_null_free(xor_keys[i])) {
+            // MOV reg, encoded_value
+            cs_insn temp_insn = *insn;
+            temp_insn.detail->x86.operands[1].imm = encoded;
+            generate_mov_reg_imm(b, &temp_insn);
+
+            // XOR reg, key
+            if (reg == X86_REG_EAX) {
+                // XOR EAX, imm32
+                uint8_t code[] = {0x35, 0, 0, 0, 0};
+                memcpy(code + 1, &xor_keys[i], 4);
+                buffer_append(b, code, 5);
+            } else {
+                // XOR reg, imm32
+                uint8_t code[] = {0x81, 0xF0, 0, 0, 0, 0};
+                code[1] = 0xF0 + get_reg_index(reg);
+                memcpy(code + 2, &xor_keys[i], 4);
+                buffer_append(b, code, 6);
+            }
+            return;
+        }
+    }
+
+    // Fallback if no suitable key found
     generate_mov_reg_imm(b, insn);
 }
 
