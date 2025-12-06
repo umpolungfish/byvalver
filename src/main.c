@@ -169,6 +169,25 @@ static int process_single_file(const char *input_file, const char *output_file,
         *output_size_out = final_shellcode.size;
     }
 
+    // Verify that the final shellcode has no null bytes
+    int has_remaining_nulls = 0;
+    for (size_t i = 0; i < final_shellcode.size; i++) {
+        if (final_shellcode.data[i] == 0x00) {
+            has_remaining_nulls = 1;
+            break;
+        }
+    }
+
+    if (has_remaining_nulls) {
+        if (!config->quiet) {
+            fprintf(stderr, "Error: Shellcode processing completed but null bytes still remain in output\n");
+        }
+        free(shellcode);
+        buffer_free(&new_shellcode);
+        buffer_free(&final_shellcode);
+        return EXIT_PROCESSING_FAILED;  // Return failure when null bytes remain
+    }
+
     // Write modified shellcode to output file
     // First, create parent directories if needed
     if (create_parent_dirs(output_file) != 0) {

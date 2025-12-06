@@ -46,7 +46,7 @@ byvalver_config_t* config_create_default(void) {
     config->recursive = 0;
     config->file_pattern = "*.bin";
     config->preserve_structure = 1;  // Preserve by default
-    config->continue_on_error = 0;
+    config->continue_on_error = 1;  // Default to continuing on errors
 
     return config;
 }
@@ -106,7 +106,7 @@ void print_detailed_help(FILE *stream, const char *program_name) {
     fprintf(stream, "      -r, --recursive               Process directories recursively\n");
     fprintf(stream, "      --pattern PATTERN             File pattern to match (default: *.bin)\n");
     fprintf(stream, "      --no-preserve-structure       Don't preserve directory structure in output\n");
-    fprintf(stream, "      --continue-on-error           Continue processing files even if some fail\n\n");
+    fprintf(stream, "      --no-continue-on-error        Stop processing on first error (default is to continue)\n\n");
 
     fprintf(stream, "    Advanced Options:\n");
     fprintf(stream, "      --strategy-limit N            Limit number of strategies to consider per instruction\n");
@@ -199,7 +199,7 @@ int parse_arguments(int argc, char *argv[], byvalver_config_t *config) {
         {"recursive", no_argument, 0, 'r'},
         {"pattern", required_argument, 0, 0},
         {"no-preserve-structure", no_argument, 0, 0},
-        {"continue-on-error", no_argument, 0, 0},
+        {"no-continue-on-error", no_argument, 0, 0},
 
         // Advanced options
         {"strategy-limit", required_argument, 0, 0},
@@ -354,8 +354,8 @@ int parse_arguments(int argc, char *argv[], byvalver_config_t *config) {
                     else if (strcmp(opt_name, "no-preserve-structure") == 0) {
                         config->preserve_structure = 0;
                     }
-                    else if (strcmp(opt_name, "continue-on-error") == 0) {
-                        config->continue_on_error = 1;
+                    else if (strcmp(opt_name, "no-continue-on-error") == 0) {
+                        config->continue_on_error = 0;
                     }
                 }
                 break;

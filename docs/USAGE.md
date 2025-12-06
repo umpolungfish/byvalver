@@ -40,7 +40,7 @@ byvalver input.bin experiments/2025/december/run_042/shellcode.bin
 - `-r, --recursive` - Process directories recursively
 - `--pattern PATTERN` - File pattern to match (default: *.bin)
 - `--no-preserve-structure` - Flatten output (don't preserve directory structure)
-- `--continue-on-error` - Continue processing even if some files fail
+- `--no-continue-on-error` - Stop processing on first error (default is to continue)
 
 #### Auto-Detection
 
@@ -92,9 +92,9 @@ Flatten output (don't preserve directory structure):
 byvalver -r --no-preserve-structure input/ output/
 ```
 
-Continue processing even if some files fail:
+Stop processing on first error (default is to continue):
 ```bash
-byvalver -r --continue-on-error input/ output/
+byvalver -r --no-continue-on-error input/ output/
 ```
 
 #### Implementation Details
@@ -120,7 +120,7 @@ byvalver -r --continue-on-error input/ output/
 ✅ Custom file patterns (--pattern)
 ✅ Compatibility with --biphasic
 ✅ Compatibility with --xor-encode
-✅ Error handling with --continue-on-error
+✅ Error handling with --no-continue-on-error
 ✅ Empty file handling
 
 All existing single-file functionality remains unchanged and fully compatible!
@@ -1080,3 +1080,150 @@ byvalver --ml --pic input.bin output.bin
 # ML with all features
 byvalver --ml --pic --biphasic --xor-encode 0xABCD1234 input.bin output.bin
 ```
+
+## What's New in v2.5 - Verification Tools
+
+**New in v2.5**: BYVALVER now includes comprehensive verification tools for validating null-byte elimination, functionality preservation, and semantic equivalence of processed shellcode.
+
+### New Verification Tools
+
+#### 1. **verify_denulled.py** - Null Byte Elimination Verification
+**Purpose**: Verifies that output files contain zero null bytes after processing
+**Key Features**:
+- Single file or batch directory verification
+- Detailed analysis of null byte positions and sequences
+- Size change tracking between input and output
+- Recursive directory processing support
+- Pattern matching for batch operations
+
+**Usage Examples**:
+```bash
+# Verify single file
+python3 verify_denulled.py input.bin
+
+# Verify batch directory (all *.bin files)
+python3 verify_denulled.py input_dir/
+
+# Verify specific output file
+python3 verify_denulled.py input.bin output.bin
+
+# Batch process with recursion
+python3 verify_denulled.py input_dir/ -r --pattern "*.bin"
+```
+
+#### 2. **verify_functionality.py** - Basic Functionality Verification
+**Purpose**: Verifies that processed shellcode maintains basic functionality patterns
+**Key Features**:
+- Instruction pattern analysis (MOV, arithmetic, logical, control flow, etc.)
+- Architecture-specific analysis (x86/x64 support)
+- Shellcode health assessment with pattern preservation metrics
+- Batch processing with directory mapping
+- Disassembly validation and complexity tracking
+
+**Usage Examples**:
+```bash
+# Verify single file functionality
+python3 verify_functionality.py shellcode.bin
+
+# Batch functionality verification
+python3 verify_functionality.py input_dir/
+
+# With architecture specification
+python3 verify_functionality.py input_dir/ -r --arch x64
+```
+
+#### 3. **verify_semantic.py** - Semantic Equivalence Verification
+**Purpose**: Verifies semantic equivalence between original and processed shellcode
+**Key Features**:
+- Comparative instruction pattern analysis
+- Critical pattern preservation monitoring (system calls, control flow, stack operations)
+- BYVALVER-aware analysis accounting for null-byte elimination transformations
+- Transformation strategy detection (register-to-stack conversion, etc.)
+- Batch processing for input/output directory pairs
+
+**Usage Examples**:
+```bash
+# Verify semantic equivalence of single file pair
+python3 verify_semantic.py input.bin output.bin
+
+# Batch semantic verification between directories
+python3 verify_semantic.py input_dir/ output_dir/
+
+# Recursive batch verification
+python3 verify_semantic.py input_dir/ output_dir/ -r
+```
+
+### BYVALVER-Aware Semantic Analysis
+
+The semantic verification tool is specifically designed for the BYVALVER context:
+
+**Critical Patterns (Must Be Preserved)**:
+- Control flow instructions (conditional jumps, loops, calls)
+- Stack operations (PUSH/POP for function calls)
+- System calls (INT 0x80, SYSCALL)
+
+**Expected Transformations (Acceptable Changes)**:
+- MOV patterns often change during null-byte elimination
+- Arithmetic patterns may be decomposed to avoid nulls
+- Logical operations may be substituted (XOR/NOT sequences)
+- LEA operations may change for displacement encoding
+
+**Transformation Detection**:
+- Register-to-stack conversion for null elimination
+- LEA-based displacement encoding strategies
+- Logical operation substitution (XOR/AND/OR for null elimination)
+- Memory addressing substitution to avoid null displacements
+
+### Batch Processing Capabilities
+
+All verification tools support comprehensive batch processing:
+
+**Common Batch Options**:
+- `-r, --recursive`: Process directories recursively
+- `--pattern PATTERN`: File pattern matching (default: "*.bin")
+- `--continue-on-error`: Continue processing if individual files fail
+- `-v, --verbose`: Enable detailed output
+
+**Example Batch Workflow**:
+```bash
+# Process shellcode directory with byvalver
+./bin/byvalver -r --biphasic shellcodes/ processed/
+
+# Verify null-byte elimination in output
+python3 verify_denulled.py processed/
+
+# Verify functionality preservation
+python3 verify_functionality.py processed/
+
+# Verify semantic equivalence between original and processed
+python3 verify_semantic.py shellcodes/ processed/
+```
+
+### Performance and Integration
+
+**Verification Performance**:
+- Null verification: O(n) - linear scan of shellcode bytes
+- Functionality verification: O(n) - single-pass disassembly analysis
+- Semantic verification: O(n) - pattern comparison and analysis
+
+**Integration with BYVALVER Pipeline**:
+1. Process shellcode with BYVALVER: `./bin/byvalver input.bin output.bin`
+2. Verify null elimination: `python3 verify_denulled.py output.bin`
+3. Verify functionality: `python3 verify_functionality.py output.bin`
+4. Verify semantics: `python3 verify_semantic.py input.bin output.bin`
+
+**Verification Reports**:
+- Detailed statistics and analysis for each verification
+- Batch summary reports with success/failure rates
+- Pattern preservation analysis with specific warnings
+- Transformation strategy identification
+
+### Impact Summary
+- **Enhanced Quality Assurance**: Automated verification of null-byte elimination results
+- **Increased Confidence**: Confirms processed shellcode maintains intended functionality
+- **Pipeline Integration**: Full verification pipeline for shellcode processing
+- **Batch Processing**: Comprehensive verification of large shellcode collections
+- **BYVALVER-Specific Logic**: Verification tools understand null-byte elimination transformations
+- **Performance Metrics**: Detailed reports on verification results and success rates
+
+All verification tools are designed to work seamlessly with BYVALVER's null-byte elimination framework, providing confidence in both the elimination of null bytes and the preservation of the shellcode's intended behavior.
