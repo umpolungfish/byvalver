@@ -134,18 +134,40 @@ strategy_t arith_mem_imm_strategy = {
 
 // LEA reg, [disp32] strategy
 int can_handle_lea_disp32(cs_insn *insn) {
-    return (insn->id == X86_INS_LEA && insn->detail->x86.op_count == 2 && 
-            insn->detail->x86.operands[1].type == X86_OP_MEM && 
+    return (insn->id == X86_INS_LEA && insn->detail->x86.op_count == 2 &&
+            insn->detail->x86.operands[1].type == X86_OP_MEM &&
             insn->detail->x86.operands[1].mem.disp != 0 &&
             has_null_bytes(insn));
 }
 
 size_t get_size_lea_disp32(cs_insn *insn) {
-    return get_lea_reg_mem_disp32_size(insn);
+    // This should use the same size calculation as the standard function but with a more conservative estimate
+    uint32_t addr = (uint32_t)insn->detail->x86.operands[1].mem.disp;
+    // MOV EAX, addr (null-free) + LEA reg, [EAX] with safe encoding
+    size_t mov_size = get_mov_eax_imm_size(addr);
+    // LEA reg, [EAX] takes 2 bytes, or 3 bytes with SIB if reg is EAX
+    size_t lea_size = (insn->detail->x86.operands[0].reg == X86_REG_EAX) ? 3 : 2;
+    return mov_size + lea_size;
 }
 
 void generate_lea_disp32(struct buffer *b, cs_insn *insn) {
-    generate_lea_reg_mem_disp32(b, insn);
+    uint8_t dst_reg = insn->detail->x86.operands[0].reg;
+    uint32_t addr = (uint32_t)insn->detail->x86.operands[1].mem.disp;
+
+    // MOV EAX, addr - using null-free construction
+    generate_mov_eax_imm(b, addr);
+
+    // LEA dst_reg, [EAX] - with safe ModR/M encoding
+    if (dst_reg == X86_REG_EAX) {
+        // Use SIB byte to avoid null: LEA EAX, [EAX] = 8D 04 20
+        uint8_t code[] = {0x8D, 0x04, 0x20}; // LEA EAX, [EAX] with SIB byte (scale=0, index=ESP, base=EAX)
+        buffer_append(b, code, 3);
+    } else {
+        // For other registers: LEA reg, [EAX] = 8D /0
+        uint8_t code[] = {0x8D, 0x00}; // LEA reg, [EAX] format
+        code[1] = (get_reg_index(dst_reg) << 3) | 0;  // Encode dst_reg in reg field, [EAX] in r/m field
+        buffer_append(b, code, 2);
+    }
 }
 
 strategy_t lea_disp32_strategy = {

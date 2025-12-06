@@ -70,11 +70,32 @@ int can_handle_mov_neg(cs_insn *insn) {
 }
 
 size_t get_size_mov_neg(cs_insn *insn) {
-    return get_mov_reg_imm_neg_size(insn);
+    // MOV reg, negated_val (5-15 bytes depending on construction complexity) + NEG reg (2 bytes)
+    // Total: 7-17 bytes depending on how complex the null-free construction is
+    (void)insn; // Unused parameter
+    return 15; // Conservative estimate
 }
 
 void generate_mov_neg(struct buffer *b, cs_insn *insn) {
-    generate_mov_reg_imm_neg(b, insn);
+    uint8_t reg = insn->detail->x86.operands[0].reg;
+    uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
+
+    // Find the negated value that has no null bytes
+    uint32_t negated_val;
+    if (find_neg_equivalent(imm, &negated_val)) {
+        // MOV reg, negated_val (using null-free construction)
+        cs_insn temp_insn = *insn;
+        temp_insn.detail->x86.operands[1].imm = negated_val;
+        generate_mov_reg_imm(b, &temp_insn);
+
+        // NEG reg (to get the original value back)
+        uint8_t neg_code[] = {0xF7, 0xD8};
+        neg_code[1] = neg_code[1] + get_reg_index(reg);
+        buffer_append(b, neg_code, 2);
+    } else {
+        // If no suitable negated value found, fall back to original
+        generate_mov_reg_imm(b, insn);
+    }
 }
 
 strategy_t mov_neg_strategy = {
@@ -164,25 +185,76 @@ int can_handle_mov_shift(cs_insn *insn) {
     if (insn->id != X86_INS_MOV || insn->detail->x86.op_count != 2) {
         return 0;
     }
-    
+
     // CRITICAL FIX: Must be register destination
     if (insn->detail->x86.operands[0].type != X86_OP_REG) {
         return 0;
     }
-    
+
     if (insn->detail->x86.operands[1].type != X86_OP_IMM) {
         return 0;
     }
-    
+
     return has_null_bytes(insn);
 }
 
 size_t get_size_mov_shift(cs_insn *insn) {
-    return get_mov_reg_imm_shift_size(insn);
+    // Conservative estimate accounting for the MOV reg, shifted_val (5 bytes) + shift operation (3 bytes)
+    // Total: ~8 bytes (could be more complex)
+    (void)insn; // Unused parameter
+    return 12; // Conservative estimate with buffer for complex cases
 }
 
 void generate_mov_shift(struct buffer *b, cs_insn *insn) {
-    generate_mov_reg_imm_shift(b, insn);
+    uint8_t reg = insn->detail->x86.operands[0].reg;
+    uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
+
+    // Try different shift amounts to see if we can get a null-free intermediate value
+    for (int shift_amount = 1; shift_amount <= 24; shift_amount++) {
+        // Try left shifts (SHL) - multiply by 2^shift
+        uint32_t shifted = target << shift_amount;
+        if (is_null_free(shifted)) {
+            // MOV reg, shifted_value
+            cs_insn temp_insn = *insn;
+            temp_insn.detail->x86.operands[1].imm = shifted;
+            generate_mov_reg_imm(b, &temp_insn);
+
+            // SHR reg, shift_amount (to get back to original value)
+            uint8_t code[] = {0xC1, 0xE8, 0};
+            code[1] = 0xE8 + get_reg_index(reg);
+            code[2] = shift_amount;
+            buffer_append(b, code, 3);
+            return;
+        }
+
+        // Try right shifts (SHR) - divide by 2^shift, then compensate by multiplying
+        // Note: this is more complex because we'd need to multiply back, which introduces more complexity
+        // So we'll focus on left shifts which are more straightforward
+    }
+
+    // Try the reverse: see if shifting a null-free value can produce our target
+    for (int shift_amount = 1; shift_amount <= 24; shift_amount++) {
+        // For right shifts: shifted_value >> shift_amount = target
+        // So shifted_value = target << shift_amount (with potential issues)
+        // Instead, let's try: if target << shift produces a null-free value, we can shift right
+        uint32_t shifted = target << shift_amount;
+        if (is_null_free(shifted)) {
+            // MOV reg, shifted_value (null-free)
+            cs_insn temp_insn = *insn;
+            temp_insn.detail->x86.operands[1].imm = shifted;
+            generate_mov_reg_imm(b, &temp_insn);
+
+            // SHR reg, shift_amount (to get target value back)
+            uint8_t code[] = {0xC1, 0xE8, 0};
+            code[1] = 0xE8 + get_reg_index(reg);
+            code[2] = shift_amount;
+            buffer_append(b, code, 3);
+            return;
+        }
+    }
+
+    // If no suitable shift found, fall back to the original implementation
+    generate_mov_reg_imm(b, insn);
 }
 
 strategy_t mov_shift_strategy = {

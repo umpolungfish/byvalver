@@ -69,10 +69,9 @@ int can_handle_small_immediate_optimization(cs_insn *insn) {
  */
 size_t get_size_small_immediate_optimization(cs_insn *insn) {
     // This approach varies, but often involves multiple instructions
-    // XOR reg,reg (2) + MOV regLow,byte1 (2-3) + MOV regHigh,byte2 (2-3) etc = 6-8 bytes typically
-    // vs original MOV reg,imm32 = 5 bytes
+    // Conservative estimate accounting for complex construction methods
     (void)insn; // Unused parameter
-    return 8; // Conservative estimate
+    return 15; // Increased conservative estimate for complex encoding methods
 }
 
 /*
@@ -85,29 +84,6 @@ void generate_small_immediate_optimization(struct buffer *b, cs_insn *insn) {
     uint32_t imm = (uint32_t)src_op->imm;
     uint8_t dst_reg = dst_op->reg;
 
-    // Approach: Clear the register and then build the value byte by byte
-    // This is a general approach that works for most immediate values
-
-    // Clear the destination register
-    if (dst_reg == X86_REG_EAX) {
-        uint8_t xor_eax[] = {0x31, 0xC0}; // XOR EAX, EAX
-        buffer_append(b, xor_eax, 2);
-    } else {
-        // Use EAX to clear the target register
-        uint8_t xor_eax[] = {0x31, 0xC0}; // XOR EAX, EAX
-        buffer_append(b, xor_eax, 2);
-
-        uint8_t mov_to_dst[] = {0x89, 0xC0};
-        uint8_t dst_idx = get_reg_index(dst_reg);
-        mov_to_dst[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | dst_idx;
-        buffer_append(b, mov_to_dst, 2);
-    }
-
-    // Now build the immediate value byte by byte
-    // We'll set each byte that's non-zero using MOV instructions
-    uint8_t bytes[4];
-    memcpy(bytes, &imm, 4);
-
     // Try alternative encoding methods first before falling back to byte construction
     // Method 1: NOT encoding
     uint32_t not_val;
@@ -116,11 +92,19 @@ void generate_small_immediate_optimization(struct buffer *b, cs_insn *insn) {
         if (dst_reg == X86_REG_EAX) {
             generate_mov_eax_imm(b, not_val);
         } else {
+            // Save original register value to avoid clobbering
+            uint8_t push_dst = 0x50 + get_reg_index(dst_reg);
+            buffer_append(b, &push_dst, 1);
+
             generate_mov_eax_imm(b, not_val);
             uint8_t mov_to_dst[] = {0x89, 0xC0};
             uint8_t dst_idx = get_reg_index(dst_reg);
             mov_to_dst[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | dst_idx;
             buffer_append(b, mov_to_dst, 2);
+
+            // Restore original register value
+            uint8_t pop_dst = 0x58 + get_reg_index(dst_reg);
+            buffer_append(b, &pop_dst, 1);
         }
 
         // NOT dst_reg
@@ -138,11 +122,19 @@ void generate_small_immediate_optimization(struct buffer *b, cs_insn *insn) {
         if (dst_reg == X86_REG_EAX) {
             generate_mov_eax_imm(b, negated_val);
         } else {
+            // Save original register value to avoid clobbering
+            uint8_t push_dst = 0x50 + get_reg_index(dst_reg);
+            buffer_append(b, &push_dst, 1);
+
             generate_mov_eax_imm(b, negated_val);
             uint8_t mov_to_dst[] = {0x89, 0xC0};
             uint8_t dst_idx = get_reg_index(dst_reg);
             mov_to_dst[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | dst_idx;
             buffer_append(b, mov_to_dst, 2);
+
+            // Restore original register value
+            uint8_t pop_dst = 0x58 + get_reg_index(dst_reg);
+            buffer_append(b, &pop_dst, 1);
         }
 
         // NEG dst_reg
@@ -187,6 +179,34 @@ void generate_small_immediate_optimization(struct buffer *b, cs_insn *insn) {
         return;
     }
 
+    // If no good encoding method found, fall back to the original approach:
+    // Approach: Clear the register and then build the value byte by byte
+    // This is a general approach that works for most immediate values
+
+    // Clear the destination register
+    if (dst_reg == X86_REG_EAX) {
+        uint8_t xor_eax[] = {0x31, 0xC0}; // XOR EAX, EAX
+        buffer_append(b, xor_eax, 2);
+    } else {
+        // Save original register value to avoid clobbering
+        uint8_t push_dst = 0x50 + get_reg_index(dst_reg);
+        buffer_append(b, &push_dst, 1);
+
+        // Use EAX to clear the target register
+        uint8_t xor_eax[] = {0x31, 0xC0}; // XOR EAX, EAX
+        buffer_append(b, xor_eax, 2);
+
+        uint8_t mov_to_dst[] = {0x89, 0xC0};
+        uint8_t dst_idx = get_reg_index(dst_reg);
+        mov_to_dst[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | dst_idx;
+        buffer_append(b, mov_to_dst, 2);
+    }
+
+    // Now build the immediate value byte by byte
+    // We'll set each byte that's non-zero using MOV instructions
+    uint8_t bytes[4];
+    memcpy(bytes, &imm, 4);
+
     // If no good encoding method found, use byte-by-byte construction for smaller values
     // This only works efficiently for smaller values where individual bytes don't contain nulls
     uint32_t temp_val = 0;
@@ -206,6 +226,10 @@ void generate_small_immediate_optimization(struct buffer *b, cs_insn *insn) {
         uint8_t dst_idx = get_reg_index(dst_reg);
         mov_to_dst[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | dst_idx;
         buffer_append(b, mov_to_dst, 2);
+
+        // Restore original register value
+        uint8_t pop_dst = 0x58 + get_reg_index(dst_reg);
+        buffer_append(b, &pop_dst, 1);
     }
 }
 

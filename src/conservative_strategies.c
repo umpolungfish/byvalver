@@ -40,9 +40,9 @@ size_t get_size_conservative_mov(cs_insn *insn) {
 void generate_conservative_mov(struct buffer *b, cs_insn *insn) {
     uint8_t reg = insn->detail->x86.operands[0].reg;
     uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
-    
+
     // Try various encoding methods to preserve instruction semantics
-    
+
     // Method 1: Try NOT encoding first (higher priority for conservation)
     uint32_t not_val;
     if (find_not_equivalent(imm, &not_val)) {
@@ -50,14 +50,14 @@ void generate_conservative_mov(struct buffer *b, cs_insn *insn) {
         cs_insn temp_insn = *insn;
         temp_insn.detail->x86.operands[1].imm = not_val;
         generate_mov_reg_imm(b, &temp_insn);  // This will call the regular function that handles nulls
-        
+
         // NOT reg
         uint8_t not_code[] = {0xF7, 0xD0};
         not_code[1] = not_code[1] + get_reg_index(reg);
         buffer_append(b, not_code, 2);
         return;
     }
-    
+
     // Method 2: Try NEG encoding
     uint32_t negated_val;
     if (find_neg_equivalent(imm, &negated_val)) {
@@ -65,14 +65,14 @@ void generate_conservative_mov(struct buffer *b, cs_insn *insn) {
         cs_insn temp_insn = *insn;
         temp_insn.detail->x86.operands[1].imm = negated_val;
         generate_mov_reg_imm(b, &temp_insn);
-        
+
         // NEG reg
         uint8_t neg_code[] = {0xF7, 0xD8};
         neg_code[1] = neg_code[1] + get_reg_index(reg);
         buffer_append(b, neg_code, 2);
         return;
     }
-    
+
     // Method 3: Try ADD/SUB encoding
     uint32_t val1, val2;
     int is_add;
@@ -93,7 +93,7 @@ void generate_conservative_mov(struct buffer *b, cs_insn *insn) {
             // For other registers, use save/restore
             uint8_t push_reg = 0x50 + get_reg_index(reg);
             buffer_append(b, &push_reg, 1);
-            
+
             generate_mov_eax_imm(b, is_add ? (imm - val2) : (imm + val2));
             if (is_add) {
                 uint8_t add_eax_key[] = {0x05, 0, 0, 0, 0};
@@ -104,19 +104,38 @@ void generate_conservative_mov(struct buffer *b, cs_insn *insn) {
                 memcpy(sub_eax_key + 1, &val2, 4);
                 buffer_append(b, sub_eax_key, 5);
             }
-            
+
             uint8_t mov_reg_eax[] = {0x89, 0xC0};
             mov_reg_eax[1] = mov_reg_eax[1] + get_reg_index(reg);
             buffer_append(b, mov_reg_eax, 2);
-            
+
             uint8_t pop_reg = 0x58 + get_reg_index(reg);
             buffer_append(b, &pop_reg, 1);
         }
         return;
     }
-    
+
     // If all conservative methods fail, fall back to the original approach
-    generate_mov_reg_imm(b, insn);
+    // But first, ensure we use our reliable null-free construction
+    if (reg == X86_REG_EAX) {
+        generate_mov_eax_imm(b, imm);
+    } else {
+        // Save original register value
+        uint8_t push_reg = 0x50 + get_reg_index(reg);
+        buffer_append(b, &push_reg, 1);
+
+        // Use EAX to construct the value null-free
+        generate_mov_eax_imm(b, imm);
+
+        // Move to target register
+        uint8_t mov_to_reg[] = {0x89, 0xC0};
+        mov_to_reg[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(reg);
+        buffer_append(b, mov_to_reg, 2);
+
+        // Restore original register value
+        uint8_t pop_reg = 0x58 + get_reg_index(reg);
+        buffer_append(b, &pop_reg, 1);
+    }
 }
 
 strategy_t conservative_mov_strategy = {

@@ -31,26 +31,123 @@ size_t get_size_register_chaining_immediate(cs_insn *insn) {
         uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
         if ((imm & 0xFF) == 0 || ((imm >> 8) & 0xFF) == 0 ||
             ((imm >> 16) & 0xFF) == 0 || ((imm >> 24) & 0xFF) == 0) {
-            return 20; // Size for multi-register construction
+            return 25; // Increased size for multi-register construction with more complex encoding
         }
     }
-    return 20; // Fallback size
+    return 25; // Increased fallback size
 }
 
 void generate_register_chaining_immediate(struct buffer *b, cs_insn *insn) {
     uint32_t target_val = (uint32_t)insn->detail->x86.operands[1].imm;
     uint8_t target_reg = insn->detail->x86.operands[0].reg;
-    
+
+    // Strategy: Use multiple registers to build complex values with null-free encoding
+    // Try alternative encoding methods first before falling back to complex construction
+
+    // Method 1: Try NOT encoding
+    uint32_t not_val;
+    if (find_not_equivalent(target_val, &not_val)) {
+        if (target_reg == X86_REG_EAX) {
+            generate_mov_eax_imm(b, not_val);
+            uint8_t not_code[] = {0xF7, 0xD0}; // NOT EAX
+            not_code[1] = 0xD0 + get_reg_index(X86_REG_EAX);
+            buffer_append(b, not_code, 2);
+        } else {
+            // Save original target register value
+            uint8_t push_target = 0x50 + get_reg_index(target_reg);
+            buffer_append(b, &push_target, 1);
+
+            generate_mov_eax_imm(b, not_val);
+            uint8_t not_code[] = {0xF7, 0xD0}; // NOT EAX
+            not_code[1] = 0xD0 + get_reg_index(X86_REG_EAX);
+            buffer_append(b, not_code, 2);
+
+            // Move result to target register
+            uint8_t mov_to_target[] = {0x89, 0xC0}; // MOV target_reg, EAX
+            mov_to_target[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(target_reg);
+            buffer_append(b, mov_to_target, 2);
+
+            // Restore original target register value
+            uint8_t pop_target = 0x58 + get_reg_index(target_reg);
+            buffer_append(b, &pop_target, 1);
+        }
+        return;
+    }
+
+    // Method 2: Try NEG encoding
+    uint32_t negated_val;
+    if (find_neg_equivalent(target_val, &negated_val)) {
+        if (target_reg == X86_REG_EAX) {
+            generate_mov_eax_imm(b, negated_val);
+            uint8_t neg_code[] = {0xF7, 0xD8}; // NEG EAX
+            neg_code[1] = 0xD8 + get_reg_index(X86_REG_EAX);
+            buffer_append(b, neg_code, 2);
+        } else {
+            // Save original target register value
+            uint8_t push_target = 0x50 + get_reg_index(target_reg);
+            buffer_append(b, &push_target, 1);
+
+            generate_mov_eax_imm(b, negated_val);
+            uint8_t neg_code[] = {0xF7, 0xD8}; // NEG EAX
+            neg_code[1] = 0xD8 + get_reg_index(X86_REG_EAX);
+            buffer_append(b, neg_code, 2);
+
+            // Move result to target register
+            uint8_t mov_to_target[] = {0x89, 0xC0}; // MOV target_reg, EAX
+            mov_to_target[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(target_reg);
+            buffer_append(b, mov_to_target, 2);
+
+            // Restore original target register value
+            uint8_t pop_target = 0x58 + get_reg_index(target_reg);
+            buffer_append(b, &pop_target, 1);
+        }
+        return;
+    }
+
+    // Method 3: Try ADD/SUB encoding
+    uint32_t val1, val2;
+    int is_add;
+    if (find_addsub_key(target_val, &val1, &val2, &is_add)) {
+        if (target_reg == X86_REG_EAX) {
+            generate_mov_eax_imm(b, val1);
+            uint8_t op_code = is_add ? 0x05 : 0x2D; // ADD EAX, imm32 or SUB EAX, imm32
+            uint8_t addsub_code[] = {op_code, 0, 0, 0, 0};
+            memcpy(addsub_code + 1, &val2, 4);
+            buffer_append(b, addsub_code, 5);
+        } else {
+            // Save original target register value
+            uint8_t push_target = 0x50 + get_reg_index(target_reg);
+            buffer_append(b, &push_target, 1);
+
+            generate_mov_eax_imm(b, val1);
+            uint8_t op_code = is_add ? 0x05 : 0x2D; // ADD EAX, imm32 or SUB EAX, imm32
+            uint8_t addsub_code[] = {op_code, 0, 0, 0, 0};
+            memcpy(addsub_code + 1, &val2, 4);
+            buffer_append(b, addsub_code, 5);
+
+            // Move result to target register
+            uint8_t mov_to_target[] = {0x89, 0xC0}; // MOV target_reg, EAX
+            mov_to_target[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(target_reg);
+            buffer_append(b, mov_to_target, 2);
+
+            // Restore original target register value
+            uint8_t pop_target = 0x58 + get_reg_index(target_reg);
+            buffer_append(b, &pop_target, 1);
+        }
+        return;
+    }
+
+    // If no good encoding method found, use byte-by-byte construction
     // Strategy: Use multiple registers to build complex values
     // Example: Build value across multiple registers then combine
-    
+
     // Clear target register first
     uint8_t target_idx = get_reg_index(target_reg);
-    
+
     // Clear EAX and build value there first
     uint8_t xor_eax[] = {0x31, 0xC0}; // XOR EAX, EAX
     buffer_append(b, xor_eax, 2);
-    
+
     // Build the value byte by byte
     // Start with the lowest byte (making sure it's not 0)
     uint8_t low_byte = target_val & 0xFF;
@@ -62,13 +159,13 @@ void generate_register_chaining_immediate(struct buffer *b, cs_insn *insn) {
         uint8_t xor_al[] = {0x30, 0xC0}; // XOR AL, AL
         buffer_append(b, xor_al, 2);
     }
-    
+
     // Shift to position if needed
     if (((target_val >> 8) & 0xFF) != 0) {
         uint8_t mov_ah[] = {0xB4, (uint8_t)((target_val >> 8) & 0xFF)}; // MOV AH, byte
         buffer_append(b, mov_ah, 2);
     }
-    
+
     // For higher bytes, we'll need more complex construction
     // Use shift and OR operations to construct full value
     uint16_t high_word = (target_val >> 16) & 0xFFFF;
@@ -92,7 +189,7 @@ void generate_register_chaining_immediate(struct buffer *b, cs_insn *insn) {
         uint8_t or_eax_edx[] = {0x09, 0xD0}; // OR EAX, EDX
         buffer_append(b, or_eax_edx, 2);
     }
-    
+
     // Move to target register if not EAX
     if (target_reg != X86_REG_EAX) {
         uint8_t mov_reg_eax[] = {0x89, 0xC0 + target_idx}; // MOV target_reg, EAX
