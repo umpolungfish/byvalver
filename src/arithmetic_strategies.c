@@ -59,14 +59,18 @@ int can_handle_arithmetic_neg(cs_insn *insn) {
     if (!is_valid_arithmetic_reg_imm(insn)) {
         return 0;
     }
-    
+
     if (!has_null_bytes(insn)) {
         return 0;
     }
-    
+
     uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
     uint32_t negated_val;
-    return find_neg_equivalent(target, &negated_val);
+    if (find_neg_equivalent(target, &negated_val)) {
+        // Additional check: make sure negated value itself is null-free
+        return is_null_free(negated_val);
+    }
+    return 0;
 }
 
 size_t get_size_arithmetic_neg(cs_insn *insn) {
@@ -114,8 +118,24 @@ int can_handle_arithmetic_xor(cs_insn *insn) {
     if (!is_valid_arithmetic_reg_imm(insn)) {
         return 0;
     }
-    
-    return has_null_bytes(insn);
+
+    if (!has_null_bytes(insn)) {
+        return 0;
+    }
+
+    // Check if we can find a good XOR equivalent
+    uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
+    uint32_t xor_key;
+    if (find_xor_key(target, &xor_key)) {
+        // Additional check: make sure the XOR approach won't introduce more nulls
+        uint32_t val1 = ~target;  // First part would be ~target
+        uint32_t val2 = xor_key;  // Second part would be key
+
+        // Check if both values are null-free, or we have a viable alternative
+        return (is_null_free(val1) && is_null_free(val2)) ||
+               find_xor_key(target, &xor_key);  // If find_xor_key exists, there's likely an alternative
+    }
+    return 0;
 }
 
 size_t get_size_arithmetic_xor(cs_insn *insn) {
@@ -123,7 +143,87 @@ size_t get_size_arithmetic_xor(cs_insn *insn) {
 }
 
 void generate_arithmetic_xor(struct buffer *b, cs_insn *insn) {
-    generate_xor_encoded_arithmetic(b, insn);
+    // Extract operands
+    uint8_t reg = insn->detail->x86.operands[0].reg;
+    uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
+
+    // Find XOR decomposition: we have imm = (~imm) XOR xor_key
+    uint32_t xor_key;
+    if (!find_xor_key(imm, &xor_key)) {
+        // If no XOR key found, fall back to regular construction
+        if (reg == X86_REG_EAX) {
+            generate_mov_eax_imm(b, imm);
+        } else {
+            // Save EAX first
+            uint8_t push_eax[] = {0x50};
+            buffer_append(b, push_eax, 1);
+
+            generate_mov_eax_imm(b, imm);
+
+            // MOV reg, EAX
+            uint8_t mov_reg_eax[] = {0x89, 0xC0};
+            mov_reg_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(reg);
+            buffer_append(b, mov_reg_eax, 2);
+
+            // Restore EAX
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
+        }
+        return;
+    }
+
+    // Use XOR decomposition: MOV reg, ~imm; XOR reg, xor_key
+    // First, move ~imm to the target register
+    if (reg == X86_REG_EAX) {
+        generate_mov_eax_imm(b, ~imm);
+    } else {
+        // Save EAX first
+        uint8_t push_eax[] = {0x50};
+        buffer_append(b, push_eax, 1);
+
+        generate_mov_eax_imm(b, ~imm);
+
+        // MOV reg, EAX
+        uint8_t mov_reg_eax[] = {0x89, 0xC0};
+        mov_reg_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(reg);
+        buffer_append(b, mov_reg_eax, 2);
+
+        // Restore EAX
+        uint8_t pop_eax[] = {0x58};
+        buffer_append(b, pop_eax, 1);
+    }
+
+    // Then XOR with the key
+    if (is_null_free(xor_key)) {
+        // Use immediate XOR
+        if (xor_key <= 0xFF) {
+            // Try to use 8-bit immediate if possible
+            uint8_t xor8_code[] = {0x83, 0x00, 0x00};
+            xor8_code[1] = 0xF0 + get_reg_index(reg);  // F0-F7 for XOR reg, imm8
+            xor8_code[2] = (uint8_t)xor_key;
+            buffer_append(b, xor8_code, 3);
+        } else {
+            // Use 32-bit immediate
+            uint8_t xor32_code[] = {0x81, 0x00, 0x00, 0x00, 0x00, 0x00};
+            xor32_code[1] = 0xF0 + get_reg_index(reg);  // F0-F7 for XOR reg, imm32
+            memcpy(xor32_code + 2, &xor_key, 4);
+            buffer_append(b, xor32_code, 6);
+        }
+    } else {
+        // Key has nulls, need to load via EAX
+        uint8_t push_eax[] = {0x50};  // Save EAX
+        buffer_append(b, push_eax, 1);
+
+        generate_mov_eax_imm(b, xor_key);  // Load key into EAX (null-free)
+
+        // XOR reg, EAX
+        uint8_t xor_reg_eax[] = {0x31, 0xC0};
+        xor_reg_eax[1] = 0xC0 + (get_reg_index(reg) << 3) + get_reg_index(X86_REG_EAX);
+        buffer_append(b, xor_reg_eax, 2);
+
+        uint8_t pop_eax[] = {0x58};  // Restore EAX
+        buffer_append(b, pop_eax, 1);
+    }
 }
 
 strategy_t arithmetic_xor_strategy = {

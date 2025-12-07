@@ -45,11 +45,26 @@ void generate_conservative_mov(struct buffer *b, cs_insn *insn) {
 
     // Method 1: Try NOT encoding first (higher priority for conservation)
     uint32_t not_val;
-    if (find_not_equivalent(imm, &not_val)) {
+    if (find_not_equivalent(imm, &not_val) && is_null_free(not_val)) {
         // MOV reg, ~imm then NOT reg
-        cs_insn temp_insn = *insn;
-        temp_insn.detail->x86.operands[1].imm = not_val;
-        generate_mov_reg_imm(b, &temp_insn);  // This will call the regular function that handles nulls
+        if (reg == X86_REG_EAX) {
+            generate_mov_eax_imm(b, not_val);  // Use reliable null-free construction
+        } else {
+            // Use EAX as temporary
+            uint8_t push_eax[] = {0x50};  // Save EAX
+            buffer_append(b, push_eax, 1);
+
+            generate_mov_eax_imm(b, not_val);  // MOV EAX, not_val (null-free)
+
+            // MOV reg, EAX
+            uint8_t mov_reg_eax[] = {0x89, 0xC0};
+            mov_reg_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(reg);
+            buffer_append(b, mov_reg_eax, 2);
+
+            // Restore original EAX
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
+        }
 
         // NOT reg
         uint8_t not_code[] = {0xF7, 0xD0};
@@ -60,11 +75,26 @@ void generate_conservative_mov(struct buffer *b, cs_insn *insn) {
 
     // Method 2: Try NEG encoding
     uint32_t negated_val;
-    if (find_neg_equivalent(imm, &negated_val)) {
+    if (find_neg_equivalent(imm, &negated_val) && is_null_free(negated_val)) {
         // MOV reg, -imm then NEG reg
-        cs_insn temp_insn = *insn;
-        temp_insn.detail->x86.operands[1].imm = negated_val;
-        generate_mov_reg_imm(b, &temp_insn);
+        if (reg == X86_REG_EAX) {
+            generate_mov_eax_imm(b, negated_val);  // Use reliable null-free construction
+        } else {
+            // Use EAX as temporary
+            uint8_t push_eax[] = {0x50};  // Save EAX
+            buffer_append(b, push_eax, 1);
+
+            generate_mov_eax_imm(b, negated_val);  // MOV EAX, negated_val (null-free)
+
+            // MOV reg, EAX
+            uint8_t mov_reg_eax[] = {0x89, 0xC0};
+            mov_reg_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(reg);
+            buffer_append(b, mov_reg_eax, 2);
+
+            // Restore original EAX
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
+        }
 
         // NEG reg
         uint8_t neg_code[] = {0xF7, 0xD8};
@@ -76,41 +106,37 @@ void generate_conservative_mov(struct buffer *b, cs_insn *insn) {
     // Method 3: Try ADD/SUB encoding
     uint32_t val1, val2;
     int is_add;
-    if (find_addsub_key(imm, &val1, &val2, &is_add)) {
+    if (find_addsub_key(imm, &val1, &val2, &is_add) && is_null_free(val1) && is_null_free(val2)) {
         if (reg == X86_REG_EAX) {
-            // For EAX, work directly
-            generate_mov_eax_imm(b, is_add ? (imm - val2) : (imm + val2));
-            if (is_add) {
-                uint8_t add_eax_key[] = {0x05, 0, 0, 0, 0};
-                memcpy(add_eax_key + 1, &val2, 4);
-                buffer_append(b, add_eax_key, 5);
-            } else {
-                uint8_t sub_eax_key[] = {0x2D, 0, 0, 0, 0};
-                memcpy(sub_eax_key + 1, &val2, 4);
-                buffer_append(b, sub_eax_key, 5);
-            }
+            // MOV EAX, val1 (null-free construction)
+            generate_mov_eax_imm(b, val1);
+
+            // ADD/SUB EAX, val2 (val2 is null-free per check above)
+            uint8_t opcode = is_add ? 0x05 : 0x2D;
+            uint8_t code[] = {opcode, 0, 0, 0, 0};
+            memcpy(code + 1, &val2, 4);
+            buffer_append(b, code, 5);
         } else {
             // For other registers, use save/restore
-            uint8_t push_reg = 0x50 + get_reg_index(reg);
-            buffer_append(b, &push_reg, 1);
+            uint8_t push_eax[] = {0x50};  // Save EAX
+            buffer_append(b, push_eax, 1);
 
-            generate_mov_eax_imm(b, is_add ? (imm - val2) : (imm + val2));
-            if (is_add) {
-                uint8_t add_eax_key[] = {0x05, 0, 0, 0, 0};
-                memcpy(add_eax_key + 1, &val2, 4);
-                buffer_append(b, add_eax_key, 5);
-            } else {
-                uint8_t sub_eax_key[] = {0x2D, 0, 0, 0, 0};
-                memcpy(sub_eax_key + 1, &val2, 4);
-                buffer_append(b, sub_eax_key, 5);
-            }
+            generate_mov_eax_imm(b, val1);  // MOV EAX, val1 (null-free)
 
+            // ADD/SUB EAX, val2 (val2 is null-free per check above)
+            uint8_t opcode = is_add ? 0x05 : 0x2D;
+            uint8_t code[] = {opcode, 0, 0, 0, 0};
+            memcpy(code + 1, &val2, 4);
+            buffer_append(b, code, 5);
+
+            // MOV reg, EAX
             uint8_t mov_reg_eax[] = {0x89, 0xC0};
-            mov_reg_eax[1] = mov_reg_eax[1] + get_reg_index(reg);
+            mov_reg_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(reg);
             buffer_append(b, mov_reg_eax, 2);
 
-            uint8_t pop_reg = 0x58 + get_reg_index(reg);
-            buffer_append(b, &pop_reg, 1);
+            // Restore original EAX
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
         }
         return;
     }

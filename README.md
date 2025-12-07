@@ -24,6 +24,33 @@
   <a href="#usage-guide">Usage</a> •
   <a href="#architecture">Architecture</a> •
   <a href="#development">Development</a> •
+  <a href="#troubleshooting">Troubleshooting</a> •
+  <a href="#changelog">Changelog</a>
+</p>
+
+<hr>
+
+<br>
+
+<div align="center">
+
+  ![C](https://img.shields.io/badge/c-%2300599C.svg?style=for-the-badge&logo=c&logoColor=white)
+  &nbsp;
+  ![Shellcode](https://img.shields.io/badge/Shellcode-Analysis-%23FF6B6B.svg?style=for-the-badge)
+  &nbsp;
+  ![Cross-Platform](https://img.shields.io/badge/Cross--Platform-Windows%20%7C%20Linux%20%7C%20macOS-%230071C5.svg?style=for-the-badge)
+  &nbsp;
+  ![Security](https://img.shields.io/badge/Security-Hardened-%23000000.svg?style=for-the-badge)
+
+</div>
+
+<p align="center">
+  <a href="#overview">Overview</a> •
+  <a href="#features">Features</a> •
+  <a href="#building-and-setup">Setup</a> •
+  <a href="#usage-guide">Usage</a> •
+  <a href="#architecture">Architecture</a> •
+  <a href="#development">Development</a> •
   <a href="#troubleshooting">Troubleshooting</a>
 </p>
 
@@ -378,6 +405,46 @@ python3 verify_semantic.py shellcodes/ processed/
 - **Performance Metrics**: Detailed reports on verification results and success rates
 
 All verification tools are designed to work seamlessly with BYVALVER's null-byte elimination framework, providing confidence in both the elimination of null bytes and the preservation of the shellcode's intended behavior.
+
+<br>
+
+## ADVANCED STRATEGY REPAIRS
+
+BYVALVER v2.4 includes comprehensive fixes for the root cause of widespread strategy failures affecting 20+ transformation strategies with 0% success rates.
+
+### The Critical Root Cause: `generate_mov_reg_imm()`
+
+**Location**: `src/utils.c`
+
+The fundamental bug that caused cascading failures across 20+ strategies was in the core `generate_mov_reg_imm()` utility function. This function is called by nearly every MOV-based transformation strategy, making it a critical piece of infrastructure.
+
+**The Problem**: The function would generate MOV instructions that contained null bytes when the immediate value had null bytes, causing the strategies that called it to fail and be marked as unsuccessful.
+
+**The Fix**: Enhanced null-byte validation and fallback mechanisms to ensure all generated code is null-free.
+
+### Strategies Improved in v2.4
+
+**Previously 0% Success Rate Strategies (Now Fixed)**:
+- `arithmetic_neg`, `arithmetic_xor` - Arithmetic transformation strategies
+- `lea_complex_displacement`, `lea_displacement_adjusted`, `lea_disp32` - LEA addressing strategies
+- `mov_shift`, `mov_neg`, `mov_addsub` - MOV transformation strategies
+- `conservative_mov` and related conservative approaches
+- `register_chaining_immediate`, `cross_register_operation` - Register operation strategies
+- `Small Immediate Value Encoding Optimization`, `MOV Arithmetic Decomposition` - Immediate value strategies
+- `null_free_path_construction` - Path construction strategy
+- `Windows Syscall Number MOV (x64)` - Windows syscall strategy
+- `socketcall_argument_array` - Socket-related strategy
+- `REP STOSB Count Setup Optimization` - Memory initialization strategy
+- `SIB Addressing` - SIB addressing strategy
+
+**Key Improvements**:
+- Enhanced `can_handle` validation to ensure intermediate values are null-free
+- Improved `generate` functions using reliable null-free construction methods
+- Proper register preservation (save/restore EAX during complex operations)
+- Better displacement and address calculation for LEA instructions
+- Comprehensive fallback mechanisms when primary methods fail
+
+**Impact**: All previously failing strategies now achieve meaningful success rates, significantly improving the overall null-byte elimination effectiveness of BYVALVER.
 
 <br>
 

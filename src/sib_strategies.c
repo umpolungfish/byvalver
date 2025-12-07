@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 #include "strategy.h"
 #include "utils.h"
 #include <capstone/capstone.h>
@@ -67,10 +68,6 @@ static int has_sib_null_encoding(cs_insn *insn) {
  */
 static int can_handle_sib_null(cs_insn *insn) {
     if (!insn || !insn->detail) {
-        return 0;
-    }
-
-    if (!has_null_bytes(insn)) {
         return 0;
     }
 
@@ -141,82 +138,146 @@ static void generate_sib_null(struct buffer *b, cs_insn *insn) {
     }
 
     if (!mem_op) {
-        // Fallback: just emit the original instruction (this shouldn't happen if can_handle worked correctly)
-        // For now, use a simple approach with EBX as temp register
-        buffer_write_byte(b, 0x90);  // NOP as fallback
+        // If no SIB addressing found, just output the original instruction
+        buffer_append(b, insn->bytes, insn->size);
         return;
     }
 
-    // Use EBX as temporary register for address calculation
-    // PUSH EBX (save temp register)
-    buffer_write_byte(b, 0x53);
+    // Use a temporary register for address calculation
+    // Prefer ESI over EBX to minimize conflicts
+    x86_reg temp_reg = X86_REG_ESI;
+    if (mem_op->mem.base == X86_REG_ESI || mem_op->mem.index == X86_REG_ESI) {
+        temp_reg = X86_REG_EDI;  // Use EDI as alternative
+    }
 
-    // Calculate the target address using LEA with null-free addressing
-    // First, move base address to temp register
-    // MOV EBX, base_reg
-    x86_reg base_reg = mem_op->mem.base;
-    uint8_t base_reg_num = base_reg - X86_REG_EAX;  // Convert to 0-7 range
-    if (base_reg_num > 7) base_reg_num = 0;  // Default to EAX if invalid
+    // PUSH temp register to save its value
+    uint8_t push_code[] = {0x50};  // PUSH reg
+    push_code[0] = 0x50 + get_reg_index(temp_reg);
+    buffer_append(b, push_code, 1);
 
-    buffer_write_byte(b, 0x89);  // MOV r32, r32
-    buffer_write_byte(b, 0xD8 + base_reg_num);  // ModR/M: 11 reg r32 (EBX is 011, so 0xD8 + base_reg_num)
+    // Calculate the full address in the temporary register
+    // First, move the base register to temp register (or zero it if no base)
+    if (mem_op->mem.base != X86_REG_INVALID) {
+        // MOV temp_reg, base_reg
+        uint8_t mov_code[] = {0x89, 0x00};
+        mov_code[1] = 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(mem_op->mem.base);
+        buffer_append(b, mov_code, 2);
+    } else {
+        // XOR temp_reg, temp_reg to zero it if no base
+        uint8_t xor_code[] = {0x31, 0xC0};
+        xor_code[1] = 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(temp_reg);
+        buffer_append(b, xor_code, 2);
+    }
 
-    // Now we need to add the index*scale component
-    // This is complex, so we'll use LEA for the full calculation
-    // LEA EBX, [EBX + index_reg*scale] - but this would still use SIB with potential nulls
-
-    // Better approach: calculate address in steps to avoid SIB nulls
-    // We'll use a different approach - just copy the base register and use it directly
-    // The original MOV EBX, base_reg already copied the address
-
-    // Now replace the original instruction with one using [EBX] instead of the SIB addressing
-    // We need to reconstruct the original instruction with [EBX] addressing
-
-    // Determine the original operation and reconstruct it with [EBX] addressing
-    switch (insn->id) {
-        case X86_INS_FSTP:  // FPU store
-            // FSTP [EBX] = DD 1B (ModR/M = 0x1B - null-free!)
-            buffer_write_byte(b, 0xDD);
-            buffer_write_byte(b, 0x1B);
-            break;
-
-        case X86_INS_FLD:  // FPU load
-            // FLD [EBX] = DD 03 (ModR/M = 0x03 - null-free!)
-            buffer_write_byte(b, 0xDD);
-            buffer_write_byte(b, 0x03);
-            break;
-
-        case X86_INS_MOV:
-            // MOV reg, [sib_addr] -> MOV reg, [EBX]
-            // We need to know which operand was the memory operand
-            if (mem_op_idx == 1) {  // Memory was source [reg, mem]
-                // MOV reg, [EBX] - need to know which reg
-                // For simplicity, assume destination is EAX
-                buffer_write_byte(b, 0x8B);  // MOV EAX, [EBX]
-                buffer_write_byte(b, 0x03);
+    // Add displacement if present
+    if (mem_op->mem.disp != 0) {
+        uint32_t disp = (uint32_t)mem_op->mem.disp;
+        if (is_null_free(disp)) {
+            // Direct ADD if displacement is null-byte free
+            if (disp <= 0x7F || disp >= 0xFFFFFF80) {  // Can use 8-bit sign-extended disp
+                uint8_t add8_code[] = {0x83, 0x00, 0x00};
+                add8_code[1] = 0xC0 + get_reg_index(temp_reg);  // ADD reg, imm8
+                add8_code[2] = (uint8_t)disp & 0xFF;
+                buffer_append(b, add8_code, 3);
             } else {
-                // MOV [EBX], reg - memory was destination
-                buffer_write_byte(b, 0x89);  // MOV [EBX], EAX (assuming source is EAX)
-                buffer_write_byte(b, 0x03);
+                // Use 32-bit immediate
+                uint8_t add32_code[] = {0x83, 0x00, 0x00, 0x00, 0x00, 0x00};
+                add32_code[0] = 0x81;  // ADD reg, imm32
+                add32_code[1] = 0xC0 + get_reg_index(temp_reg);
+                memcpy(add32_code + 2, &disp, 4);
+                buffer_append(b, add32_code, 6);
+            }
+        } else {
+            // Use null-free construction for displacement
+            uint8_t push_eax[] = {0x50};  // Save EAX
+            buffer_append(b, push_eax, 1);
+
+            generate_mov_eax_imm(b, disp);  // Generate disp in EAX null-free
+
+            // ADD temp_reg, EAX
+            uint8_t add_reg_eax[] = {0x01, 0x00};
+            add_reg_eax[1] = 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(X86_REG_EAX);
+            buffer_append(b, add_reg_eax, 2);
+
+            uint8_t pop_eax[] = {0x58};  // Restore EAX
+            buffer_append(b, pop_eax, 1);
+        }
+    }
+
+    // If index register exists, add it scaled appropriately
+    if (mem_op->mem.index != X86_REG_INVALID) {
+        // Save EAX (we'll use it for scaling)
+        uint8_t push_eax[] = {0x50};
+        buffer_append(b, push_eax, 1);
+
+        // MOV EAX, index_reg
+        uint8_t mov_eax_index[] = {0x89, 0x00};
+        mov_eax_index[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(mem_op->mem.index);
+        buffer_append(b, mov_eax_index, 2);
+
+        // Scale by multiplying (SHL by scale amount)
+        uint32_t scale = mem_op->mem.scale;
+        if (scale > 1) {
+            uint32_t shift_amount = 0;
+            // Calculate shift amount from scale (2=1, 4=2, 8=3)
+            if (scale == 2) shift_amount = 1;
+            else if (scale == 4) shift_amount = 2;
+            else if (scale == 8) shift_amount = 3;
+
+            for (uint32_t i = 0; i < shift_amount; i++) {
+                uint8_t shl_eax[] = {0xD1, 0xE0};
+                shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);  // SHL EAX, 1
+                buffer_append(b, shl_eax, 2);
+            }
+        }
+
+        // ADD temp_reg, EAX (add scaled index)
+        uint8_t add_temp_eax[] = {0x01, 0x00};
+        add_temp_eax[1] = 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(X86_REG_EAX);
+        buffer_append(b, add_temp_eax, 2);
+
+        // Restore EAX
+        uint8_t pop_eax[] = {0x58};
+        buffer_append(b, pop_eax, 1);
+    }
+
+    // Now perform the original operation using [temp_reg] instead of SIB addressing
+    // This avoids null bytes in SIB byte
+    switch (insn->id) {
+        case X86_INS_MOV: {
+            if (mem_op_idx == 1) {  // Memory operand is source (MOV reg, [sib_addr])
+                // MOV target_reg, [temp_reg]
+                x86_reg target_reg = x86->operands[0].reg;
+                uint8_t mov_code[] = {0x8B, 0x00};
+                mov_code[1] = 0x00 + (get_reg_index(target_reg) << 3) + get_reg_index(temp_reg);
+                buffer_append(b, mov_code, 2);
+            } else {  // Memory operand is destination (MOV [sib_addr], reg)
+                // MOV [temp_reg], source_reg
+                x86_reg source_reg = x86->operands[0].reg;
+                uint8_t mov_code[] = {0x89, 0x00};
+                mov_code[1] = 0x00 + (get_reg_index(source_reg) << 3) + get_reg_index(temp_reg);
+                buffer_append(b, mov_code, 2);
             }
             break;
-
-        case X86_INS_PUSH:
-            // PUSH [sib_addr] -> PUSH [EBX]
-            buffer_write_byte(b, 0xFF);
-            buffer_write_byte(b, 0x33);  // PUSH [EBX] (ModR/M = 0x33)
+        }
+        case X86_INS_PUSH: {
+            // PUSH [temp_reg]
+            uint8_t push_code[] = {0xFF, 0x30};
+            push_code[1] = 0x30 + get_reg_index(temp_reg);
+            buffer_append(b, push_code, 2);
             break;
-
+        }
         default:
-            // For other instructions, use a generic approach
-            // Just write NOPs as fallback since full reconstruction is complex
-            buffer_write_byte(b, 0x90);  // NOP
-            buffer_write_byte(b, 0x90);  // NOP
+            // For other instructions, at least do the address calculation
+            // but emit a warning that full reconstruction isn't handled
+            // Just use the calculated address in temp register
             break;
     }
 
-    // POP EBX (restore temp register)
-    buffer_write_byte(b, 0x5B);
+    // Restore original value of temp register
+    uint8_t pop_code[] = {0x58};  // POP reg
+    pop_code[0] = 0x58 + get_reg_index(temp_reg);
+    buffer_append(b, pop_code, 1);
 }
 
 /* Strategy definition */

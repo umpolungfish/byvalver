@@ -14,9 +14,9 @@ int can_handle_safe_string_push(cs_insn *insn) {
         if (insn->detail->x86.operands[0].type == X86_OP_IMM) {
             uint32_t imm = (uint32_t)insn->detail->x86.operands[0].imm;
             // Check if the immediate value contains null bytes
-            if ((imm & 0xFF) == 0 || ((imm >> 8) & 0xFF) == 0 || 
-                ((imm >> 16) & 0xFF) == 0 || ((imm >> 24) & 0xFF) == 0) {
-                return 1;
+            if (!is_null_free(imm)) {
+                // Additional check: make sure the instruction itself has null bytes
+                return has_null_bytes(insn);
             }
         }
     }
@@ -76,9 +76,11 @@ int can_handle_null_free_path_construction(cs_insn *insn) {
 
             uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
             // For path construction, check if immediate has null bytes
-            if ((imm & 0xFF) == 0 || ((imm >> 8) & 0xFF) == 0 ||
-                ((imm >> 16) & 0xFF) == 0 || ((imm >> 24) & 0xFF) == 0) {
-                return 1;
+            if (!is_null_free(imm)) {
+                // Additional check: make sure the original instruction has null bytes
+                if (has_null_bytes(insn)) {
+                    return 1;
+                }
             }
         }
     }
@@ -104,24 +106,23 @@ void generate_null_free_path_construction(struct buffer *b, cs_insn *insn) {
     // Handle loading of string parts that contain nulls
     // Use register-based construction to avoid null bytes in instructions
 
-    // Save current EAX if needed
-    uint8_t eax_used = (target_reg != X86_REG_EAX);
-    if (eax_used) {
+    // Use reliable null-free construction via EAX
+    if (target_reg == X86_REG_EAX) {
+        generate_mov_eax_imm(b, path_part);
+    } else {
+        // Save original EAX
         uint8_t push_eax[] = {0x50}; // PUSH EAX
         buffer_append(b, push_eax, 1);
-    }
 
-    // Load the path part into EAX
-    generate_mov_eax_imm(b, path_part);
+        // Load the path part into EAX using null-free construction
+        generate_mov_eax_imm(b, path_part);
 
-    // Move to target register if different
-    if (target_reg != X86_REG_EAX) {
-        uint8_t mov_target[] = {0x89, 0xC0 + get_reg_index(target_reg)}; // MOV target_reg, EAX
+        // Move to target register
+        uint8_t mov_target[] = {0x89, 0xC0}; // MOV target_reg, EAX
+        mov_target[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(target_reg);
         buffer_append(b, mov_target, 2);
-    }
 
-    // Restore EAX if it was saved
-    if (eax_used) {
+        // Restore original EAX
         uint8_t pop_eax[] = {0x58}; // POP EAX
         buffer_append(b, pop_eax, 1);
     }

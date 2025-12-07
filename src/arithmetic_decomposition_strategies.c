@@ -56,23 +56,35 @@ int can_handle_mov_arith_decomp(cs_insn *insn) {
         return 0;
     }
 
+    // Additional check: make sure the instruction itself has null bytes
+    if (!has_null_bytes(insn)) {
+        return 0;
+    }
+
     // Check if we can find a good arithmetic decomposition
     uint32_t base, offset, xor_key, neg_val;
     int operation;
 
-    // Try arithmetic decomposition (ADD/SUB)
+    // Try arithmetic decomposition (ADD/SUB) and ensure both values are null-free
     if (find_arithmetic_equivalent(imm, &base, &offset, &operation)) {
-        return 1;
+        if (is_null_free(base) && is_null_free(offset)) {
+            return 1;
+        }
     }
 
-    // Try XOR decomposition
+    // Try XOR decomposition and ensure both values are null-free
     if (find_xor_key(imm, &xor_key)) {
-        return 1;
+        uint32_t val1 = ~imm;
+        if (is_null_free(val1) && is_null_free(xor_key)) {
+            return 1;
+        }
     }
 
-    // Try NEG decomposition
+    // Try NEG decomposition and ensure the negated value is null-free
     if (find_neg_equivalent(imm, &neg_val)) {
-        return 1;
+        if (is_null_free(neg_val)) {
+            return 1;
+        }
     }
 
     // No suitable decomposition found
@@ -128,92 +140,160 @@ size_t get_size_mov_arith_decomp(cs_insn *insn) {
  */
 void generate_mov_arith_decomp(struct buffer *b, cs_insn *insn) {
     cs_x86_op *dst_op = &insn->detail->x86.operands[0];
-    cs_x86_op *src_op = &insn->detail->x86.operands[1];
-
-    uint32_t imm = (uint32_t)src_op->imm;
+    uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
     uint8_t dst_reg = dst_op->reg;
-    uint8_t reg_idx = dst_reg - X86_REG_EAX; // 0 for EAX, 1 for ECX, etc.
 
     uint32_t base, offset, xor_key, neg_val;
     int operation;
 
-    // Calculate sizes for each method
-    size_t arith_size = 1000, xor_size = 1000, neg_size = 1000;
-    int has_arith = 0, has_xor = 0, has_neg = 0;
+    // This should only be called if can_handle found a valid decomposition
+    // so we need to find a working decomposition
+    // Check each method and use the first one that has null-free components
 
-    if (find_arithmetic_equivalent(imm, &base, &offset, &operation)) {
-        arith_size = get_mov_eax_imm_size(base) + get_mov_eax_imm_size(offset) + 2;
-        has_arith = 1;
-    }
-
-    if (find_xor_key(imm, &xor_key)) {
-        xor_size = get_mov_eax_imm_size(~imm) + get_mov_eax_imm_size(xor_key) + 2;
-        has_xor = 1;
-    }
-
-    if (find_neg_equivalent(imm, &neg_val)) {
-        neg_size = get_mov_eax_imm_size(neg_val) + 2;
-        has_neg = 1;
-    }
-
-    // Select most efficient method
-    if (has_neg && neg_size <= arith_size && neg_size <= xor_size) {
+    // Method 1: Try NEG decomposition
+    if (find_neg_equivalent(imm, &neg_val) && is_null_free(neg_val)) {
         // Use NEG decomposition: MOV reg, -target; NEG reg
-        generate_mov_eax_imm(b, neg_val);
+        if (dst_reg == X86_REG_EAX) {
+            generate_mov_eax_imm(b, neg_val);
+        } else {
+            // Save EAX first
+            uint8_t push_eax[] = {0x50};
+            buffer_append(b, push_eax, 1);
 
-        // If target register is not EAX, move it
-        if (dst_reg != X86_REG_EAX) {
+            generate_mov_eax_imm(b, neg_val);
+
             // MOV dst_reg, EAX
-            buffer_write_byte(b, 0x89);
-            buffer_write_byte(b, 0xC0 + reg_idx); // ModR/M for MOV reg, EAX
+            uint8_t mov_dst_eax[] = {0x89, 0xC0};
+            mov_dst_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(dst_reg);
+            buffer_append(b, mov_dst_eax, 2);
+
+            // Restore EAX
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
         }
 
         // NEG dst_reg
-        buffer_write_byte(b, 0xF7);
-        buffer_write_byte(b, 0xD8 + reg_idx); // ModR/M for NEG reg
+        uint8_t neg_code[] = {0xF7, 0xD8};
+        neg_code[1] = 0xD8 + get_reg_index(dst_reg);
+        buffer_append(b, neg_code, 2);
+        return;
+    }
 
-    } else if (has_xor && xor_size <= arith_size) {
+    // Method 2: Try XOR decomposition
+    if (find_xor_key(imm, &xor_key) && is_null_free(~imm) && is_null_free(xor_key)) {
         // Use XOR decomposition: MOV reg, ~target; XOR reg, key
-        generate_mov_eax_imm(b, ~imm);
+        if (dst_reg == X86_REG_EAX) {
+            generate_mov_eax_imm(b, ~imm);
+        } else {
+            // Save EAX first
+            uint8_t push_eax[] = {0x50};
+            buffer_append(b, push_eax, 1);
 
-        if (dst_reg != X86_REG_EAX) {
-            buffer_write_byte(b, 0x89);
-            buffer_write_byte(b, 0xC0 + reg_idx);
+            generate_mov_eax_imm(b, ~imm);
+
+            // MOV dst_reg, EAX
+            uint8_t mov_dst_eax[] = {0x89, 0xC0};
+            mov_dst_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(dst_reg);
+            buffer_append(b, mov_dst_eax, 2);
+
+            // Restore EAX
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
         }
 
-        // XOR dst_reg, xor_key (need to generate null-free)
-        // For simplicity, use immediate XOR if key is small
-        if (is_null_free(xor_key)) {
-            buffer_write_byte(b, 0x81); // XOR r/m32, imm32
-            buffer_write_byte(b, 0xF0 + reg_idx); // ModR/M
-            buffer_write_byte(b, (uint8_t)(xor_key & 0xFF));
-            buffer_write_byte(b, (uint8_t)((xor_key >> 8) & 0xFF));
-            buffer_write_byte(b, (uint8_t)((xor_key >> 16) & 0xFF));
-            buffer_write_byte(b, (uint8_t)((xor_key >> 24) & 0xFF));
+        // XOR with the key value (which is null-free per check above)
+        uint8_t xor_code[] = {0x83, 0x00, 0x00}; // XOR reg, imm8 (if possible) or 0x81 for 32-bit
+        // Try to use 8-bit immediate if the key fits
+        if (xor_key <= 0xFF) {
+            xor_code[0] = 0x83;
+            xor_code[1] = 0xF0 + get_reg_index(dst_reg);  // F0-F7 for XOR
+            xor_code[2] = (uint8_t)xor_key;
+            buffer_append(b, xor_code, 3);
+        } else {
+            // Use 32-bit immediate
+            uint8_t xor32_code[] = {0x81, 0x00, 0x00, 0x00, 0x00, 0x00};
+            xor32_code[1] = 0xF0 + get_reg_index(dst_reg);  // F0-F7 for XOR
+            memcpy(xor32_code + 2, &xor_key, 4);
+            buffer_append(b, xor32_code, 6);
         }
+        return;
+    }
 
-    } else if (has_arith) {
+    // Method 3: Try ADD/SUB decomposition
+    if (find_arithmetic_equivalent(imm, &base, &offset, &operation) &&
+        is_null_free(base) && is_null_free(offset)) {
         // Use ADD/SUB decomposition: MOV reg, base; ADD/SUB reg, offset
-        generate_mov_eax_imm(b, base);
+        if (dst_reg == X86_REG_EAX) {
+            generate_mov_eax_imm(b, base);
+        } else {
+            // Save EAX first
+            uint8_t push_eax[] = {0x50};
+            buffer_append(b, push_eax, 1);
 
-        if (dst_reg != X86_REG_EAX) {
-            buffer_write_byte(b, 0x89);
-            buffer_write_byte(b, 0xC0 + reg_idx);
+            generate_mov_eax_imm(b, base);
+
+            // MOV dst_reg, EAX
+            uint8_t mov_dst_eax[] = {0x89, 0xC0};
+            mov_dst_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(dst_reg);
+            buffer_append(b, mov_dst_eax, 2);
+
+            // Restore EAX
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
         }
 
-        // ADD or SUB dst_reg, offset
+        // ADD or SUB with the offset (which is null-free per check above)
         if (operation == X86_INS_ADD) {
-            buffer_write_byte(b, 0x81); // ADD r/m32, imm32
-            buffer_write_byte(b, 0xC0 + reg_idx); // ModR/M
+            // ADD reg, offset
+            if (offset <= 0x7F || (offset >= 0xFFFFFF80)) {  // 8-bit signed immediate
+                uint8_t add8_code[] = {0x83, 0x00, 0x00};
+                add8_code[1] = 0xC0 + get_reg_index(dst_reg); // C0-C7 for ADD
+                add8_code[2] = (uint8_t)offset;
+                buffer_append(b, add8_code, 3);
+            } else {
+                // Use 32-bit immediate
+                uint8_t add32_code[] = {0x81, 0x00, 0x00, 0x00, 0x00, 0x00};
+                add32_code[1] = 0xC0 + get_reg_index(dst_reg); // C0-C7 for ADD
+                memcpy(add32_code + 2, &offset, 4);
+                buffer_append(b, add32_code, 6);
+            }
         } else { // SUB
-            buffer_write_byte(b, 0x81); // SUB r/m32, imm32
-            buffer_write_byte(b, 0xE8 + reg_idx); // ModR/M
+            // SUB reg, offset
+            if (offset <= 0x7F || (offset >= 0xFFFFFF80)) {  // 8-bit signed immediate
+                uint8_t sub8_code[] = {0x83, 0x00, 0x00};
+                sub8_code[1] = 0xE8 + get_reg_index(dst_reg); // E8-EF for SUB
+                sub8_code[2] = (uint8_t)offset;
+                buffer_append(b, sub8_code, 3);
+            } else {
+                // Use 32-bit immediate
+                uint8_t sub32_code[] = {0x81, 0x00, 0x00, 0x00, 0x00, 0x00};
+                sub32_code[1] = 0xE8 + get_reg_index(dst_reg); // E8-EF for SUB
+                memcpy(sub32_code + 2, &offset, 4);
+                buffer_append(b, sub32_code, 6);
+            }
         }
+        return;
+    }
 
-        buffer_write_byte(b, (uint8_t)(offset & 0xFF));
-        buffer_write_byte(b, (uint8_t)((offset >> 8) & 0xFF));
-        buffer_write_byte(b, (uint8_t)((offset >> 16) & 0xFF));
-        buffer_write_byte(b, (uint8_t)((offset >> 24) & 0xFF));
+    // If no valid decomposition is found (shouldn't happen if can_handle worked properly),
+    // fall back to reliable construction
+    if (dst_reg == X86_REG_EAX) {
+        generate_mov_eax_imm(b, imm);
+    } else {
+        // Save EAX first
+        uint8_t push_eax[] = {0x50};
+        buffer_append(b, push_eax, 1);
+
+        generate_mov_eax_imm(b, imm);
+
+        // MOV dst_reg, EAX
+        uint8_t mov_dst_eax[] = {0x89, 0xC0};
+        mov_dst_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(dst_reg);
+        buffer_append(b, mov_dst_eax, 2);
+
+        // Restore EAX
+        uint8_t pop_eax[] = {0x58};
+        buffer_append(b, pop_eax, 1);
     }
 }
 

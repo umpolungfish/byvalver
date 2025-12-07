@@ -78,6 +78,11 @@ int can_handle_syscall_number_mov(cs_insn *insn) {
         return 0;
     }
 
+    // Additional check: make sure the instruction itself has null bytes
+    if (!has_null_bytes(insn)) {
+        return 0;
+    }
+
     return 1;
 }
 

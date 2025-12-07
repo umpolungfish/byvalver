@@ -10,24 +10,26 @@
 int can_handle_socketcall_argument_array(cs_insn *insn) {
     // Look for MOV instructions that load values that will be used in socketcall arguments
     // and contain null bytes (like protocol = 0, or addresses with nulls)
-    if ((insn->id == X86_INS_MOV || insn->id == X86_INS_PUSH) && 
+    if ((insn->id == X86_INS_MOV || insn->id == X86_INS_PUSH) &&
         insn->detail->x86.op_count >= 1) {
-        if (insn->detail->x86.operands[0].type == X86_OP_REG && 
+        if (insn->id == X86_INS_MOV &&
+            insn->detail->x86.operands[0].type == X86_OP_REG &&
             insn->detail->x86.operands[1].type == X86_OP_IMM) {
-            
+
             uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
             // For socketcalls, check if it's protocol=0 or other socketcall parameters
             // that might need null-free construction
             if (imm == 0) {  // Protocol parameter is often 0
-                return 1;
+                // Additional check: does the instruction itself contain nulls?
+                return has_null_bytes(insn);
             }
-        } else if (insn->id == X86_INS_PUSH && 
+        } else if (insn->id == X86_INS_PUSH &&
                    insn->detail->x86.operands[0].type == X86_OP_IMM) {
             uint32_t imm = (uint32_t)insn->detail->x86.operands[0].imm;
             // Check if the immediate value contains null bytes
-            if ((imm & 0xFF) == 0 || ((imm >> 8) & 0xFF) == 0 || 
-                ((imm >> 16) & 0xFF) == 0 || ((imm >> 24) & 0xFF) == 0) {
-                return 1;
+            if (!is_null_free(imm)) {
+                // Additional check: does the instruction itself contain nulls?
+                return has_null_bytes(insn);
             }
         }
     }
@@ -88,8 +90,28 @@ void generate_socketcall_argument_array(struct buffer *b, cs_insn *insn) {
         uint8_t pop_eax_restore[] = {0x58}; // POP EAX to restore
         buffer_append(b, pop_eax_restore, 1);
     } else {
-        // Default to regular handling
-        generate_mov_reg_imm(b, insn);
+        // Default to reliable null-free construction
+        uint8_t target_reg = insn->detail->x86.operands[0].reg;
+        uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
+
+        if (target_reg == X86_REG_EAX) {
+            generate_mov_eax_imm(b, imm);
+        } else {
+            // Save original EAX
+            uint8_t push_eax[] = {0x50};
+            buffer_append(b, push_eax, 1);
+
+            generate_mov_eax_imm(b, imm);
+
+            // Move to target register
+            uint8_t mov_to_target[] = {0x89, 0xC0};
+            mov_to_target[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(target_reg);
+            buffer_append(b, mov_to_target, 2);
+
+            // Restore original EAX
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
+        }
     }
 }
 

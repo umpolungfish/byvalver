@@ -108,7 +108,7 @@ size_t get_size_rep_stosb_count_setup(cs_insn *insn) {
  * Strategy: For typical count values, use efficient byte/word construction:
  *   - Small counts (0x01-0xFF): XOR ECX,ECX; MOV CL,count
  *   - Medium counts (0x100-0xFFFF): XOR ECX,ECX; MOV CX,count
- *   - Larger counts: Byte-by-byte construction
+ *   - Larger counts: Use alternative construction that avoids nulls
  */
 void generate_rep_stosb_count_setup(struct buffer *b, cs_insn *insn) {
     cs_x86_op *src_op = &insn->detail->x86.operands[1];
@@ -119,41 +119,55 @@ void generate_rep_stosb_count_setup(struct buffer *b, cs_insn *insn) {
     buffer_write_byte(b, 0xC9);  // ModR/M for XOR ECX, ECX
 
     if (count <= 0xFF) {
-        // Count fits in a single byte - use MOV CL, byte
-        buffer_write_byte(b, 0xB1);  // MOV CL, imm8
-        buffer_write_byte(b, (uint8_t)count);
+        // Count fits in a single byte
+        if (count != 0) {
+            // Use MOV CL, count if it's null-free, otherwise use alternative
+            if (count != 0) {  // The count byte itself is not zero
+                buffer_write_byte(b, 0xB1);  // MOV CL, imm8
+                buffer_write_byte(b, (uint8_t)count);
+            } else {
+                // Count is 0, ECX is already 0 from XOR
+                // Nothing more needed
+            }
+        }
+        // If count is 0, ECX is already zero from XOR ECX, ECX
     } else if (count <= 0xFFFF) {
-        // Count fits in a word - use MOV CX, word
-        buffer_write_byte(b, 0x66);  // Operand size override prefix
-        buffer_write_byte(b, 0xB9);  // MOV CX, imm16
-        buffer_write_byte(b, (uint8_t)(count & 0xFF));       // Low byte
-        buffer_write_byte(b, (uint8_t)((count >> 8) & 0xFF)); // High byte
+        // For 16-bit values, check if the value itself is null-free
+        if (is_null_free(count)) {
+            // Use MOV CX, word directly if it's null-free
+            buffer_write_byte(b, 0x66);  // Operand size override prefix
+            buffer_write_byte(b, 0xB9);  // MOV CX, imm16
+            buffer_write_byte(b, (uint8_t)(count & 0xFF));       // Low byte
+            buffer_write_byte(b, (uint8_t)((count >> 8) & 0xFF)); // High byte
+        } else {
+            // Use alternative construction to avoid nulls in immediate
+            // Use MOV EAX with the count value, then MOV ECX, EAX
+            uint8_t push_eax[] = {0x50};  // Save original EAX
+            buffer_append(b, push_eax, 1);
+
+            generate_mov_eax_imm(b, count);  // Set EAX to count value (null-free)
+
+            // MOV ECX, EAX
+            uint8_t mov_ecx_eax[] = {0x89, 0xC1};  // MOV ECX, EAX
+            buffer_append(b, mov_ecx_eax, 2);
+
+            uint8_t pop_eax[] = {0x58};  // Restore original EAX
+            buffer_append(b, pop_eax, 1);
+        }
     } else {
-        // Larger count - construct byte by byte
-        // This handles counts up to 0x10000
-        uint8_t bytes[4];
-        memcpy(bytes, &count, 4);
+        // For 32-bit values, use the most reliable approach
+        // Use MOV EAX with the count value, then MOV ECX, EAX
+        uint8_t push_eax[] = {0x50};  // Save original EAX
+        buffer_append(b, push_eax, 1);
 
-        // Set each non-zero byte using MOV to specific register parts
-        // For ECX: CL (low), CH (high), and then we'd need different approach for higher bytes
+        generate_mov_eax_imm(b, count);  // Set EAX to count value (null-free)
 
-        // For simplicity with counts <= 0x10000, we know bytes[2] and bytes[3] are 0
-        // So we only need to set bytes[0] and bytes[1]
+        // MOV ECX, EAX
+        uint8_t mov_ecx_eax[] = {0x89, 0xC1};  // MOV ECX, EAX
+        buffer_append(b, mov_ecx_eax, 2);
 
-        if (bytes[0] != 0) {
-            // MOV CL, byte
-            buffer_write_byte(b, 0xB1);
-            buffer_write_byte(b, bytes[0]);
-        }
-
-        if (bytes[1] != 0) {
-            // MOV CH, byte
-            buffer_write_byte(b, 0xB5);
-            buffer_write_byte(b, bytes[1]);
-        }
-
-        // If we need bytes[2] or bytes[3], we'd use different instructions
-        // But for counts <= 0x10000, this shouldn't happen
+        uint8_t pop_eax[] = {0x58};  // Restore original EAX
+        buffer_append(b, pop_eax, 1);
     }
 }
 

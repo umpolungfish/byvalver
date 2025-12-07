@@ -26,7 +26,7 @@
  * Detection function for MOV instructions with immediate values that contain null bytes
  */
 int can_handle_small_immediate_optimization(cs_insn *insn) {
-    if (insn->id != X86_INS_MOV || 
+    if (insn->id != X86_INS_MOV ||
         insn->detail->x86.op_count != 2) {
         return 0;
     }
@@ -34,7 +34,7 @@ int can_handle_small_immediate_optimization(cs_insn *insn) {
     // Check if second operand is an immediate value
     cs_x86_op *dst_op = &insn->detail->x86.operands[0];
     cs_x86_op *src_op = &insn->detail->x86.operands[1];
-    
+
     if (src_op->type != X86_OP_IMM) {
         return 0;
     }
@@ -43,24 +43,29 @@ int can_handle_small_immediate_optimization(cs_insn *insn) {
     if (dst_op->type != X86_OP_REG) {
         return 0;
     }
-    
+
     // Only handle 32-bit registers
     if (dst_op->size != 4) {
         return 0;
     }
 
     uint32_t imm = (uint32_t)src_op->imm;
-    
+
     // Check if immediate contains null bytes
     if (is_null_free(imm)) {
         // If immediate is already null-free, we don't need to optimize
         return 0;
     }
 
+    // Additional check: make sure the instruction itself has null bytes
+    if (!has_null_bytes(insn)) {
+        return 0;
+    }
+
     // For now, focus on values that could benefit from high-byte/low-byte techniques
     // e.g. 0x00000300, 0x00000001 that have problematic encodings
     // We'll specifically look for values where high-byte method is beneficial
-    
+
     return 1; // We can handle any MOV reg, imm that has nulls
 }
 
@@ -75,26 +80,24 @@ size_t get_size_small_immediate_optimization(cs_insn *insn) {
 }
 
 /*
- * Generation function for null-free immediate encoding using byte-by-byte construction
+ * Generation function for null-free immediate encoding using alternative methods
  */
 void generate_small_immediate_optimization(struct buffer *b, cs_insn *insn) {
     cs_x86_op *dst_op = &insn->detail->x86.operands[0];
-    cs_x86_op *src_op = &insn->detail->x86.operands[1];
-
-    uint32_t imm = (uint32_t)src_op->imm;
+    uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
     uint8_t dst_reg = dst_op->reg;
 
-    // Try alternative encoding methods first before falling back to byte construction
-    // Method 1: NOT encoding
+    // Try alternative encoding methods first before falling back to complex construction
+    // Method 1: NOT encoding (with null-free check)
     uint32_t not_val;
-    if (find_not_equivalent(imm, &not_val)) {
+    if (find_not_equivalent(imm, &not_val) && is_null_free(not_val)) {
         // MOV dst_reg, ~imm then NOT dst_reg
         if (dst_reg == X86_REG_EAX) {
             generate_mov_eax_imm(b, not_val);
         } else {
-            // Save original register value to avoid clobbering
-            uint8_t push_dst = 0x50 + get_reg_index(dst_reg);
-            buffer_append(b, &push_dst, 1);
+            // Save EAX first
+            uint8_t push_eax[] = {0x50};
+            buffer_append(b, push_eax, 1);
 
             generate_mov_eax_imm(b, not_val);
             uint8_t mov_to_dst[] = {0x89, 0xC0};
@@ -102,9 +105,9 @@ void generate_small_immediate_optimization(struct buffer *b, cs_insn *insn) {
             mov_to_dst[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | dst_idx;
             buffer_append(b, mov_to_dst, 2);
 
-            // Restore original register value
-            uint8_t pop_dst = 0x58 + get_reg_index(dst_reg);
-            buffer_append(b, &pop_dst, 1);
+            // Restore EAX
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
         }
 
         // NOT dst_reg
@@ -115,16 +118,16 @@ void generate_small_immediate_optimization(struct buffer *b, cs_insn *insn) {
         return;
     }
 
-    // Method 2: NEG encoding
+    // Method 2: NEG encoding (with null-free check)
     uint32_t negated_val;
-    if (find_neg_equivalent(imm, &negated_val)) {
+    if (find_neg_equivalent(imm, &negated_val) && is_null_free(negated_val)) {
         // MOV dst_reg, -imm then NEG dst_reg
         if (dst_reg == X86_REG_EAX) {
             generate_mov_eax_imm(b, negated_val);
         } else {
-            // Save original register value to avoid clobbering
-            uint8_t push_dst = 0x50 + get_reg_index(dst_reg);
-            buffer_append(b, &push_dst, 1);
+            // Save EAX first
+            uint8_t push_eax[] = {0x50};
+            buffer_append(b, push_eax, 1);
 
             generate_mov_eax_imm(b, negated_val);
             uint8_t mov_to_dst[] = {0x89, 0xC0};
@@ -132,9 +135,9 @@ void generate_small_immediate_optimization(struct buffer *b, cs_insn *insn) {
             mov_to_dst[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | dst_idx;
             buffer_append(b, mov_to_dst, 2);
 
-            // Restore original register value
-            uint8_t pop_dst = 0x58 + get_reg_index(dst_reg);
-            buffer_append(b, &pop_dst, 1);
+            // Restore EAX
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
         }
 
         // NEG dst_reg
@@ -145,10 +148,10 @@ void generate_small_immediate_optimization(struct buffer *b, cs_insn *insn) {
         return;
     }
 
-    // Method 3: ADD/SUB encoding
+    // Method 3: ADD/SUB encoding (with null-free check)
     uint32_t val1, val2;
     int is_add;
-    if (find_addsub_key(imm, &val1, &val2, &is_add)) {
+    if (find_addsub_key(imm, &val1, &val2, &is_add) && is_null_free(val1) && is_null_free(val2)) {
         if (dst_reg == X86_REG_EAX) {
             generate_mov_eax_imm(b, val1);
             uint8_t op_code = is_add ? 0x05 : 0x2D; // ADD EAX, imm32 or SUB EAX, imm32
@@ -156,9 +159,9 @@ void generate_small_immediate_optimization(struct buffer *b, cs_insn *insn) {
             memcpy(addsub_code + 1, &val2, 4);
             buffer_append(b, addsub_code, 5);
         } else {
-            // Save original register value
-            uint8_t push_dst = 0x50 + get_reg_index(dst_reg);
-            buffer_append(b, &push_dst, 1);
+            // Save EAX first
+            uint8_t push_eax[] = {0x50};
+            buffer_append(b, push_eax, 1);
 
             generate_mov_eax_imm(b, val1);
             uint8_t op_code = is_add ? 0x05 : 0x2D; // ADD EAX, imm32 or SUB EAX, imm32
@@ -172,64 +175,32 @@ void generate_small_immediate_optimization(struct buffer *b, cs_insn *insn) {
             mov_to_dst[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | dst_idx;
             buffer_append(b, mov_to_dst, 2);
 
-            // Restore original register value
-            uint8_t pop_dst = 0x58 + get_reg_index(dst_reg);
-            buffer_append(b, &pop_dst, 1);
+            // Restore EAX
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
         }
         return;
     }
 
-    // If no good encoding method found, fall back to the original approach:
-    // Approach: Clear the register and then build the value byte by byte
-    // This is a general approach that works for most immediate values
-
-    // Clear the destination register
+    // If no good encoding method found, fall back to reliable null-free construction
     if (dst_reg == X86_REG_EAX) {
-        uint8_t xor_eax[] = {0x31, 0xC0}; // XOR EAX, EAX
-        buffer_append(b, xor_eax, 2);
+        generate_mov_eax_imm(b, imm);
     } else {
-        // Save original register value to avoid clobbering
-        uint8_t push_dst = 0x50 + get_reg_index(dst_reg);
-        buffer_append(b, &push_dst, 1);
+        // Save EAX first
+        uint8_t push_eax[] = {0x50};
+        buffer_append(b, push_eax, 1);
 
-        // Use EAX to clear the target register
-        uint8_t xor_eax[] = {0x31, 0xC0}; // XOR EAX, EAX
-        buffer_append(b, xor_eax, 2);
+        generate_mov_eax_imm(b, imm);
 
-        uint8_t mov_to_dst[] = {0x89, 0xC0};
-        uint8_t dst_idx = get_reg_index(dst_reg);
-        mov_to_dst[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | dst_idx;
-        buffer_append(b, mov_to_dst, 2);
-    }
-
-    // Now build the immediate value byte by byte
-    // We'll set each byte that's non-zero using MOV instructions
-    uint8_t bytes[4];
-    memcpy(bytes, &imm, 4);
-
-    // If no good encoding method found, use byte-by-byte construction for smaller values
-    // This only works efficiently for smaller values where individual bytes don't contain nulls
-    uint32_t temp_val = 0;
-    for (int i = 0; i < 4; i++) {
-        uint8_t byte_val = (imm >> (i * 8)) & 0xFF;
-        if (byte_val != 0) {
-            temp_val |= (uint32_t)byte_val << (i * 8);
-        }
-    }
-
-    // Build value using XOR of component parts to avoid nulls
-    generate_mov_eax_imm(b, temp_val);  // Use our reliable function
-
-    // Move result to destination if needed
-    if (dst_reg != X86_REG_EAX) {
+        // Move to destination register
         uint8_t mov_to_dst[] = {0x89, 0xC0};
         uint8_t dst_idx = get_reg_index(dst_reg);
         mov_to_dst[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | dst_idx;
         buffer_append(b, mov_to_dst, 2);
 
-        // Restore original register value
-        uint8_t pop_dst = 0x58 + get_reg_index(dst_reg);
-        buffer_append(b, &pop_dst, 1);
+        // Restore EAX
+        uint8_t pop_eax[] = {0x58};
+        buffer_append(b, pop_eax, 1);
     }
 }
 

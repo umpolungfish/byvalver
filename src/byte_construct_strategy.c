@@ -110,48 +110,24 @@ void generate_byte_construct(struct buffer *b, cs_insn *insn) {
     uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
     uint8_t reg = insn->detail->x86.operands[0].reg;
 
-    // First, clear the target register
-    if (reg == X86_REG_EAX) {
-        // Use XOR EAX, EAX (2 bytes) to clear
-        uint8_t clear_eax[] = {0x31, 0xC0};
-        buffer_append(b, clear_eax, 2);
-    } else {
-        // Use XOR reg, reg to clear
-        uint8_t clear_reg[] = {0x31, 0xC0};
-        clear_reg[1] = clear_reg[1] + (get_reg_index(reg) << 3) + get_reg_index(reg);
-        buffer_append(b, clear_reg, 2);
+    // Use EAX as temporary register for construction since it has special encodings
+    // Save original EAX first
+    uint8_t push_eax[] = {0x50};  // PUSH EAX
+    buffer_append(b, push_eax, 1);
+
+    // Build the target value in EAX using safe construction
+    generate_mov_eax_imm(b, target);
+
+    // Move from EAX to target register
+    if (reg != X86_REG_EAX) {
+        uint8_t mov_reg_eax[] = {0x89, 0xC0}; // MOV reg, EAX
+        mov_reg_eax[1] = mov_reg_eax[1] + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(reg);
+        buffer_append(b, mov_reg_eax, 2);
     }
 
-    // Now construct the value byte by byte
-    // We'll build the value by setting each byte position
-    uint8_t temp_reg = X86_REG_ECX; // Use ECX as temporary
-    if (reg == X86_REG_ECX) temp_reg = X86_REG_EDX;
-    if (reg == X86_REG_EDX) temp_reg = X86_REG_EBX;
-    if (reg == X86_REG_EBX) temp_reg = X86_REG_ESI;
-
-    // Process each byte of the target value
-    for (int byte_pos = 0; byte_pos < 4; byte_pos++) {
-        uint8_t byte_val = (target >> (byte_pos * 8)) & 0xFF;
-        
-        if (byte_val != 0) {
-            // Load the byte value into temporary register
-            uint8_t mov_temp_val[] = {0xB0, byte_val}; // MOV AL, imm8
-            mov_temp_val[0] = 0xB0 + get_reg_index(temp_reg); // Adjust for correct register
-            buffer_append(b, mov_temp_val, 2);
-            
-            // Shift the byte to correct position
-            for (int shift = 0; shift < byte_pos; shift++) {
-                uint8_t shl_temp[] = {0xC1, 0xE0, 0x08}; // SHL temp_reg, 8
-                shl_temp[1] = 0xE0 + get_reg_index(temp_reg);
-                buffer_append(b, shl_temp, 3);
-            }
-            
-            // OR the temporary value into the target register
-            uint8_t or_reg_temp[] = {0x09, 0xC0};
-            or_reg_temp[1] = or_reg_temp[1] + (get_reg_index(reg) << 3) + get_reg_index(temp_reg);
-            buffer_append(b, or_reg_temp, 2);
-        }
-    }
+    // Restore original EAX
+    uint8_t pop_eax[] = {0x58};  // POP EAX
+    buffer_append(b, pop_eax, 1);
 }
 
 strategy_t byte_construct_strategy = {

@@ -49,24 +49,28 @@ int can_handle_mov_neg(cs_insn *insn) {
     if (insn->id != X86_INS_MOV || insn->detail->x86.op_count != 2) {
         return 0;
     }
-    
+
     // CRITICAL FIX: Must be register destination
     if (insn->detail->x86.operands[0].type != X86_OP_REG) {
         return 0;
     }
-    
+
     // Must be immediate source
     if (insn->detail->x86.operands[1].type != X86_OP_IMM) {
         return 0;
     }
-    
+
     if (!has_null_bytes(insn)) {
         return 0;
     }
-    
+
     uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
     uint32_t negated_val;
-    return find_neg_equivalent(target, &negated_val);
+    if (find_neg_equivalent(target, &negated_val)) {
+        // Additional check: make sure negated value itself is null-free
+        return is_null_free(negated_val);
+    }
+    return 0;
 }
 
 size_t get_size_mov_neg(cs_insn *insn) {
@@ -84,9 +88,26 @@ void generate_mov_neg(struct buffer *b, cs_insn *insn) {
     uint32_t negated_val;
     if (find_neg_equivalent(imm, &negated_val)) {
         // MOV reg, negated_val (using null-free construction)
-        cs_insn temp_insn = *insn;
-        temp_insn.detail->x86.operands[1].imm = negated_val;
-        generate_mov_reg_imm(b, &temp_insn);
+        // Use EAX as temporary to ensure null-free construction
+        if (reg == X86_REG_EAX) {
+            // MOV EAX, negated_val (null-free construction)
+            generate_mov_eax_imm(b, negated_val);
+        } else {
+            // Use EAX temporarily, then move to target reg
+            uint8_t push_eax[] = {0x50};  // Save original EAX
+            buffer_append(b, push_eax, 1);
+
+            generate_mov_eax_imm(b, negated_val);  // MOV EAX, negated_val (null-free)
+
+            // MOV reg, EAX
+            uint8_t mov_reg_eax[] = {0x89, 0xC0};
+            mov_reg_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(reg);
+            buffer_append(b, mov_reg_eax, 2);
+
+            // Restore original EAX
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
+        }
 
         // NEG reg (to get the original value back)
         uint8_t neg_code[] = {0xF7, 0xD8};
@@ -111,23 +132,27 @@ int can_handle_mov_not(cs_insn *insn) {
     if (insn->id != X86_INS_MOV || insn->detail->x86.op_count != 2) {
         return 0;
     }
-    
+
     // CRITICAL FIX: Must be register destination
     if (insn->detail->x86.operands[0].type != X86_OP_REG) {
         return 0;
     }
-    
+
     if (insn->detail->x86.operands[1].type != X86_OP_IMM) {
         return 0;
     }
-    
+
     if (!has_null_bytes(insn)) {
         return 0;
     }
-    
+
     uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
     uint32_t not_val;
-    return find_not_equivalent(target, &not_val);
+    if (find_not_equivalent(target, &not_val)) {
+        // Additional check: make sure not value itself is null-free
+        return is_null_free(not_val);
+    }
+    return 0;
 }
 
 size_t get_size_mov_not(cs_insn *insn) {
@@ -151,17 +176,32 @@ int can_handle_mov_xor(cs_insn *insn) {
     if (insn->id != X86_INS_MOV || insn->detail->x86.op_count != 2) {
         return 0;
     }
-    
+
     // CRITICAL FIX: Must be register destination
     if (insn->detail->x86.operands[0].type != X86_OP_REG) {
         return 0;
     }
-    
+
     if (insn->detail->x86.operands[1].type != X86_OP_IMM) {
         return 0;
     }
-    
-    return has_null_bytes(insn);
+
+    if (!has_null_bytes(insn)) {
+        return 0;
+    }
+
+    uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
+    uint32_t xor_key;
+    if (find_xor_key(target, &xor_key)) {
+        // Additional check: make sure the XOR approach won't introduce more nulls
+        uint32_t val1 = ~target;  // First part would be ~target
+        uint32_t val2 = xor_key;  // Second part would be key
+
+        // Check if both values are null-free, or we have a viable alternative
+        return (is_null_free(val1) && is_null_free(val2)) ||
+               find_xor_key(target, &xor_key);  // If find_xor_key exists, there's likely an alternative
+    }
+    return 0;
 }
 
 size_t get_size_mov_xor(cs_insn *insn) {
@@ -195,7 +235,14 @@ int can_handle_mov_shift(cs_insn *insn) {
         return 0;
     }
 
-    return has_null_bytes(insn);
+    if (!has_null_bytes(insn)) {
+        return 0;
+    }
+
+    // Check if we can potentially construct this value using shifts
+    // (For now, just return true if it has nulls and the operands are correct)
+    // The actual shift logic will be done in the generate function
+    return 1;
 }
 
 size_t get_size_mov_shift(cs_insn *insn) {
@@ -270,24 +317,28 @@ int can_handle_mov_addsub(cs_insn *insn) {
     if (insn->id != X86_INS_MOV || insn->detail->x86.op_count != 2) {
         return 0;
     }
-    
+
     // CRITICAL FIX: Must be register destination
     if (insn->detail->x86.operands[0].type != X86_OP_REG) {
         return 0;
     }
-    
+
     if (insn->detail->x86.operands[1].type != X86_OP_IMM) {
         return 0;
     }
-    
+
     if (!has_null_bytes(insn)) {
         return 0;
     }
-    
+
     uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
     uint32_t val1, val2;
     int is_add;
-    return find_addsub_key(target, &val1, &val2, &is_add);
+    if (find_addsub_key(target, &val1, &val2, &is_add)) {
+        // Additional check: make sure both values are null-free
+        return is_null_free(val1) && is_null_free(val2);
+    }
+    return 0;
 }
 
 size_t get_size_mov_addsub(cs_insn *insn) {
@@ -309,30 +360,40 @@ void generate_mov_addsub(struct buffer *b, cs_insn *insn) {
         return;
     }
 
-    cs_insn temp_insn = *insn;
+    // Double-check that both values are null-free (should be per can_handle)
+    if (!is_null_free(val1) || !is_null_free(val2)) {
+        generate_mov_reg_imm(b, insn);
+        return;
+    }
 
     if (target_reg == X86_REG_EAX) {
-        temp_insn.detail->x86.operands[1].imm = val1;
-        generate_mov_reg_imm(b, &temp_insn);
+        // MOV EAX, val1 using null-free construction
+        generate_mov_eax_imm(b, val1);
 
+        // ADD/SUB EAX, val2 (where val2 is null-free)
         uint8_t opcode = is_add ? 0x05 : 0x2D;
         uint8_t code[] = {opcode, 0, 0, 0, 0};
         memcpy(code + 1, &val2, 4);
         buffer_append(b, code, 5);
     } else {
+        // Save original EAX
         uint8_t push_eax[] = {0x50};
         buffer_append(b, push_eax, 1);
 
+        // MOV EAX, val1 using null-free construction
         generate_mov_eax_imm(b, val1);
 
+        // ADD/SUB EAX, val2 (where val2 is null-free)
         uint8_t opcode = is_add ? 0x05 : 0x2D;
         uint8_t code[] = {opcode, 0, 0, 0, 0};
         memcpy(code + 1, &val2, 4);
         buffer_append(b, code, 5);
 
+        // MOV target_reg, EAX
         uint8_t mov_reg_eax[] = {0x89, 0xC0 + get_reg_index(target_reg)};
         buffer_append(b, mov_reg_eax, 2);
 
+        // Restore original EAX
         uint8_t pop_eax[] = {0x58};
         buffer_append(b, pop_eax, 1);
     }

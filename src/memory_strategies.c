@@ -134,10 +134,20 @@ strategy_t arith_mem_imm_strategy = {
 
 // LEA reg, [disp32] strategy
 int can_handle_lea_disp32(cs_insn *insn) {
-    return (insn->id == X86_INS_LEA && insn->detail->x86.op_count == 2 &&
-            insn->detail->x86.operands[1].type == X86_OP_MEM &&
-            insn->detail->x86.operands[1].mem.disp != 0 &&
-            has_null_bytes(insn));
+    if (insn->id != X86_INS_LEA || insn->detail->x86.op_count != 2 ||
+        insn->detail->x86.operands[1].type != X86_OP_MEM ||
+        insn->detail->x86.operands[1].mem.disp == 0) {
+        return 0;
+    }
+
+    // Check if the memory displacement specifically contains null bytes
+    uint32_t disp = (uint32_t)insn->detail->x86.operands[1].mem.disp;
+    if (is_null_free(disp)) {
+        return 0;  // No null bytes in displacement
+    }
+
+    // Additionally check if the original instruction has null bytes
+    return has_null_bytes(insn);
 }
 
 size_t get_size_lea_disp32(cs_insn *insn) {

@@ -23,9 +23,11 @@ int can_handle_lea_complex_displacement(cs_insn *insn) {
             if (disp != 0) {
                 uint32_t disp32 = (uint32_t)disp;
 
-                for (int j = 0; j < 4; j++) {
-                    if (((disp32 >> (j * 8)) & 0xFF) == 0) {
-                        return 1; // Has null bytes in displacement
+                // Check if displacement itself contains null bytes
+                if (!is_null_free(disp32)) {
+                    // Additional check: does the overall instruction have null bytes?
+                    if (has_null_bytes(insn)) {
+                        return 1; // Has null bytes in displacement AND in instruction
                     }
                 }
             }
@@ -42,7 +44,9 @@ size_t get_size_lea_complex_displacement(__attribute__((unused)) cs_insn *insn) 
 }
 
 void generate_lea_complex_displacement(struct buffer *b, cs_insn *insn) {
-    // Extract the target register and memory operand
+    // For LEA with complex addressing that might have null bytes in displacement,
+    // a reliable approach is to calculate the address manually and move it to target register
+
     if (insn->detail->x86.op_count != 2) {
         // Fallback to original if not the expected format
         buffer_append(b, insn->bytes, insn->size);
@@ -59,27 +63,98 @@ void generate_lea_complex_displacement(struct buffer *b, cs_insn *insn) {
     }
 
     x86_reg target_reg = dst_op->reg;
-    uint32_t disp = (uint32_t)src_op->mem.disp;
 
-    // Calculate the effective address by using another register
-    // MOV EAX, displacement (using null-free construction)
-    generate_mov_eax_imm(b, disp);
+    // Calculate effective address step by step to avoid null bytes
+    // Save original EAX
+    uint8_t push_eax[] = {0x50};
+    buffer_append(b, push_eax, 1);
 
-    // Now generate LEA target_reg, [EAX]
-    // The ModR/M byte for LEA reg, [EAX] when target_reg is EAX creates a null byte
-    // So we need to handle that specially
-    if (target_reg == X86_REG_EAX) {
-        // Use SIB byte to avoid null: LEA EAX, [EAX]
-        uint8_t code[] = {0x8D, 0x04, 0x20}; // LEA EAX, [EAX] with SIB byte (scale=0, index=ESP, base=EAX)
-        buffer_append(b, code, 3);
+    // Build effective address in EAX:
+    // First handle base register
+    if (src_op->mem.base != X86_REG_INVALID) {
+        // MOV EAX, base_reg
+        uint8_t mov_eax_base[] = {0x89, 0xC0};
+        mov_eax_base[1] = 0xC0 + (get_reg_index(src_op->mem.base) << 3) + get_reg_index(X86_REG_EAX);
+        buffer_append(b, mov_eax_base, 2);
     } else {
-        // For other registers: LEA target_reg, [EAX]
-        // ModR/M byte: (target_reg_idx << 3) | 0 (for [EAX])
-        uint8_t modrm = (get_reg_index(target_reg) << 3) | 0;
-        uint8_t code[] = {0x8D, 0x00}; // LEA reg, [EAX]
-        code[1] = modrm;
-        buffer_append(b, code, 2);
+        // XOR EAX, EAX to start with 0
+        uint8_t xor_eax[] = {0x31, 0xC0};
+        buffer_append(b, xor_eax, 2);
     }
+
+    // Handle index * scale
+    if (src_op->mem.index != X86_REG_INVALID) {
+        // Save current EAX value to ECX temporarily
+        uint8_t push_ecx[] = {0x51};
+        buffer_append(b, push_ecx, 1);
+
+        // MOV EAX, index_reg
+        uint8_t mov_eax_index[] = {0x89, 0xC0};
+        mov_eax_index[1] = 0xC0 + (get_reg_index(src_op->mem.index) << 3) + get_reg_index(X86_REG_EAX);
+        buffer_append(b, mov_eax_index, 2);
+
+        // Scale EAX by the scale factor (SHL operations)
+        if (src_op->mem.scale == 2) {
+            uint8_t shl_eax[] = {0xD1, 0xE0};
+            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);
+            buffer_append(b, shl_eax, 2);
+        } else if (src_op->mem.scale == 4) {
+            uint8_t shl_eax[] = {0xD1, 0xE0};
+            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);
+            buffer_append(b, shl_eax, 2);
+            buffer_append(b, shl_eax, 2); // Double shift for x4
+        } else if (src_op->mem.scale == 8) {
+            uint8_t shl_eax[] = {0xD1, 0xE0};
+            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);
+            buffer_append(b, shl_eax, 2);
+            buffer_append(b, shl_eax, 2); // Triple shift for x8
+            buffer_append(b, shl_eax, 2);
+        }
+
+        // Add the base value back from ECX
+        uint8_t pop_ecx[] = {0x59};
+        buffer_append(b, pop_ecx, 1);
+
+        uint8_t add_eax_ecx[] = {0x01, 0xC8};
+        buffer_append(b, add_eax_ecx, 2);
+    }
+
+    // Handle displacement
+    if (src_op->mem.disp != 0) {
+        uint32_t disp = (uint32_t)src_op->mem.disp;
+        // Use null-free construction for displacement
+        uint8_t push_temp[] = {0x52}; // PUSH EDX as temp
+        buffer_append(b, push_temp, 1);
+
+        generate_mov_eax_imm(b, disp); // MOV EAX, disp with null-free construction
+
+        // MOV EDX, EAX (move displacement to EDX)
+        uint8_t mov_edx_eax[] = {0x89, 0xC2};
+        buffer_append(b, mov_edx_eax, 2);
+
+        // POP EAX (restore calculated address part)
+        uint8_t pop_eax[] = {0x58};
+        buffer_append(b, pop_eax, 1);
+
+        // ADD EAX, EDX (add displacement to calculated address)
+        uint8_t add_eax_edx[] = {0x01, 0xD0};
+        buffer_append(b, add_eax_edx, 2);
+
+        // Restore stack
+        uint8_t push_edx[] = {0x52};
+        buffer_append(b, push_edx, 1);
+    }
+
+    // Move result to target register
+    if (target_reg != X86_REG_EAX) {
+        uint8_t mov_target_eax[] = {0x89, 0xC0};
+        mov_target_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(target_reg);
+        buffer_append(b, mov_target_eax, 2);
+    }
+
+    // Restore original EAX
+    uint8_t pop_eax[] = {0x58};
+    buffer_append(b, pop_eax, 1);
 }
 
 strategy_t lea_complex_displacement_strategy = {
@@ -103,10 +178,11 @@ int can_handle_lea_displacement_adjusted(cs_insn *insn) {
             if (disp != 0) {
                 uint32_t disp32 = (uint32_t)disp;
 
-                // Check if displacement has null bytes
-                for (int j = 0; j < 4; j++) {
-                    if (((disp32 >> (j * 8)) & 0xFF) == 0) {
-                        return 1;
+                // Check if displacement itself contains null bytes
+                if (!is_null_free(disp32)) {
+                    // Additional check: does the overall instruction have null bytes?
+                    if (has_null_bytes(insn)) {
+                        return 1; // Has null bytes in displacement AND in instruction
                     }
                 }
             }
@@ -137,39 +213,98 @@ void generate_lea_displacement_adjusted(struct buffer *b, cs_insn *insn) {
     }
 
     x86_reg target_reg = dst_op->reg;
-    uint32_t disp = (uint32_t)src_op->mem.disp;
 
-    // Use arithmetic to construct the required address without nulls
-    // For example, instead of LEA reg, [base + 0x00123456], use:
-    // MOV EAX, base
-    // ADD EAX, adjusted_value (null-free)
+    // To avoid nulls in LEA, compute the effective address manually
+    // Save original EAX
+    uint8_t push_eax[] = {0x50};
+    buffer_append(b, push_eax, 1);
 
-    // If there's a base register, we first load it
+    // Build effective address in EAX, similar to our complex displacement function
+    // Handle base register
     if (src_op->mem.base != X86_REG_INVALID) {
-        // MOV target_reg, base_reg
-        uint8_t mov_base[] = {0x89, 0x00};
-        mov_base[1] = (get_reg_index(target_reg) << 3) | get_reg_index(src_op->mem.base);
-        buffer_append(b, mov_base, 2);
+        // MOV EAX, base_reg
+        uint8_t mov_eax_base[] = {0x89, 0xC0};
+        mov_eax_base[1] = 0xC0 + (get_reg_index(src_op->mem.base) << 3) + get_reg_index(X86_REG_EAX);
+        buffer_append(b, mov_eax_base, 2);
     } else {
-        // If no base register, start with 0
-        uint8_t xor_reg[] = {0x31, 0xC0}; // XOR target_reg, target_reg to zero it
-        xor_reg[1] = (get_reg_index(target_reg) << 3) | get_reg_index(target_reg);
-        buffer_append(b, xor_reg, 2);
+        // XOR EAX, EAX to start with 0
+        uint8_t xor_eax[] = {0x31, 0xC0};
+        buffer_append(b, xor_eax, 2);
     }
 
-    // Now add the displacement using null-free construction
-    if (disp != 0) {
-        // Generate MOV EAX, disp (null-free) and then ADD target_reg, EAX
-        // Or use a direct ADD if the displacement is small enough to be 8-bit
+    // Handle index * scale
+    if (src_op->mem.index != X86_REG_INVALID) {
+        // Save current EAX value to ECX temporarily
+        uint8_t push_ecx[] = {0x51};
+        buffer_append(b, push_ecx, 1);
 
-        // For the displacement, we'll use a temporary register approach
-        generate_mov_eax_imm(b, disp);
+        // MOV EAX, index_reg
+        uint8_t mov_eax_index[] = {0x89, 0xC0};
+        mov_eax_index[1] = 0xC0 + (get_reg_index(src_op->mem.index) << 3) + get_reg_index(X86_REG_EAX);
+        buffer_append(b, mov_eax_index, 2);
 
-        // ADD target_reg, EAX
-        uint8_t add_code[] = {0x01, 0x00};
-        add_code[1] = (get_reg_index(target_reg) << 3) | get_reg_index(X86_REG_EAX); // ADD target_reg, EAX
-        buffer_append(b, add_code, 2);
+        // Scale EAX by the scale factor (SHL operations)
+        if (src_op->mem.scale == 2) {
+            uint8_t shl_eax[] = {0xD1, 0xE0};
+            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);
+            buffer_append(b, shl_eax, 2);
+        } else if (src_op->mem.scale == 4) {
+            uint8_t shl_eax[] = {0xD1, 0xE0};
+            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);
+            buffer_append(b, shl_eax, 2);
+            buffer_append(b, shl_eax, 2); // Double shift for x4
+        } else if (src_op->mem.scale == 8) {
+            uint8_t shl_eax[] = {0xD1, 0xE0};
+            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);
+            buffer_append(b, shl_eax, 2);
+            buffer_append(b, shl_eax, 2); // Triple shift for x8
+            buffer_append(b, shl_eax, 2);
+        }
+
+        // Add the base value back from ECX
+        uint8_t pop_ecx[] = {0x59};
+        buffer_append(b, pop_ecx, 1);
+
+        uint8_t add_eax_ecx[] = {0x01, 0xC8};
+        buffer_append(b, add_eax_ecx, 2);
     }
+
+    // Handle displacement
+    if (src_op->mem.disp != 0) {
+        uint32_t disp = (uint32_t)src_op->mem.disp;
+        // Use null-free construction for displacement
+        uint8_t push_temp[] = {0x52}; // PUSH EDX as temp
+        buffer_append(b, push_temp, 1);
+
+        generate_mov_eax_imm(b, disp); // MOV EAX, disp with null-free construction
+
+        // MOV EDX, EAX (move displacement to EDX)
+        uint8_t mov_edx_eax[] = {0x89, 0xC2};
+        buffer_append(b, mov_edx_eax, 2);
+
+        // POP EAX (restore calculated address part)
+        uint8_t pop_eax[] = {0x58};
+        buffer_append(b, pop_eax, 1);
+
+        // ADD EAX, EDX (add displacement to calculated address)
+        uint8_t add_eax_edx[] = {0x01, 0xD0};
+        buffer_append(b, add_eax_edx, 2);
+
+        // Restore stack
+        uint8_t push_edx[] = {0x52};
+        buffer_append(b, push_edx, 1);
+    }
+
+    // Move result to target register
+    if (target_reg != X86_REG_EAX) {
+        uint8_t mov_target_eax[] = {0x89, 0xC0};
+        mov_target_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(target_reg);
+        buffer_append(b, mov_target_eax, 2);
+    }
+
+    // Restore original EAX
+    uint8_t pop_eax[] = {0x58};
+    buffer_append(b, pop_eax, 1);
 }
 
 strategy_t lea_displacement_adjusted_strategy = {
