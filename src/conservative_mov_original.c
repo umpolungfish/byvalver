@@ -161,65 +161,8 @@ void generate_conservative_mov_original(struct buffer *b, cs_insn *insn) {
     }
 
     // If all conservative methods fail, fall back to a safe method
-    // Instead of using the potentially unsafe original approach, use byte-by-byte construction
-    uint8_t reg = insn->detail->x86.operands[0].reg;
-    uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
-
-    // Clear the destination register first
-    if (reg == X86_REG_EAX) {
-        uint8_t xor_eax[] = {0x31, 0xC0}; // XOR EAX, EAX
-        buffer_append(b, xor_eax, 2);
-    } else {
-        // Use EAX to clear the target register
-        uint8_t xor_eax[] = {0x31, 0xC0}; // XOR EAX, EAX
-        buffer_append(b, xor_eax, 2);
-
-        uint8_t mov_to_reg[] = {0x89, 0xC0};
-        mov_to_reg[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | get_reg_index(reg);
-        buffer_append(b, mov_to_reg, 2);
-    }
-
-    // Now build the value byte by byte
-    uint8_t bytes[4];
-    memcpy(bytes, &imm, 4);
-
-    // Create the value using shifts and ORs to avoid nulls
-    for (int i = 0; i < 4; i++) {
-        if (bytes[i] != 0) {
-            // For each non-zero byte, construct it in the right position
-            if (i == 0) {
-                // For the lowest byte, just set AL directly if it's not zero
-                if (reg == X86_REG_EAX) {
-                    uint8_t mov_al[] = {0xB0, bytes[i]}; // MOV AL, byte
-                    buffer_append(b, mov_al, 2);
-                } else {
-                    // Use EAX temporarily to set the low byte of target reg
-                    uint8_t mov_al[] = {0xB0, bytes[i]}; // MOV AL, byte
-                    buffer_append(b, mov_al, 2);
-
-                    // Move EAX to target register to update the low byte
-                    uint8_t mov_reg_eax[] = {0x89, 0xC0};
-                    mov_reg_eax[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | get_reg_index(reg);
-                    buffer_append(b, mov_reg_eax, 2);
-                }
-            } else {
-                // For higher bytes, use shifts and ORs
-                // First set up the byte value in EAX
-                generate_mov_eax_imm(b, bytes[i]);
-
-                // Shift left by 8*i positions
-                for (int shift = 0; shift < i * 8; shift++) {
-                    uint8_t shl[] = {0xD1, 0xE0}; // SHL EAX, 1
-                    buffer_append(b, shl, 2);
-                }
-
-                // OR with the target register
-                uint8_t or_code[] = {0x09, 0xC0};
-                or_code[1] = 0xC0 | (get_reg_index(reg) << 3) | get_reg_index(X86_REG_EAX);
-                buffer_append(b, or_code, 2);
-            }
-        }
-    }
+    // Use the utility function that handles null byte construction properly
+    generate_mov_reg_imm(b, insn);
 }
 
 strategy_t conservative_mov_original_strategy = {

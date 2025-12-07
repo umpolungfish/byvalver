@@ -74,7 +74,7 @@ int can_handle_mov_arith_decomp(cs_insn *insn) {
 
     // Try XOR decomposition and ensure both values are null-free
     if (find_xor_key(imm, &xor_key)) {
-        uint32_t val1 = ~imm;
+        uint32_t val1 = imm ^ xor_key;  // The value to MOV initially
         if (is_null_free(val1) && is_null_free(xor_key)) {
             return 1;
         }
@@ -115,7 +115,8 @@ size_t get_size_mov_arith_decomp(cs_insn *insn) {
 
     // Try XOR decomposition
     if (find_xor_key(imm, &xor_key)) {
-        size_t xor_size = get_mov_eax_imm_size(~imm) +
+        uint32_t val1 = imm ^ xor_key;  // The value to MOV initially
+        size_t xor_size = get_mov_eax_imm_size(val1) +
                          get_mov_eax_imm_size(xor_key) + 2; // +2 for XOR
         if (xor_size < min_size) {
             min_size = xor_size;
@@ -179,44 +180,66 @@ void generate_mov_arith_decomp(struct buffer *b, cs_insn *insn) {
         return;
     }
 
-    // Method 2: Try XOR decomposition
-    if (find_xor_key(imm, &xor_key) && is_null_free(~imm) && is_null_free(xor_key)) {
-        // Use XOR decomposition: MOV reg, ~target; XOR reg, key
-        if (dst_reg == X86_REG_EAX) {
-            generate_mov_eax_imm(b, ~imm);
-        } else {
-            // Save EAX first
-            uint8_t push_eax[] = {0x50};
-            buffer_append(b, push_eax, 1);
+    // Method 2: Try XOR decomposition (find val1 and val2 such that val1 ^ val2 = imm)
+    if (find_xor_key(imm, &xor_key)) {
+        // For XOR decomposition, we want val1 ^ val2 = imm
+        // So if we have xor_key (val2), then val1 = imm ^ val2
+        uint32_t val1 = imm ^ xor_key;
 
-            generate_mov_eax_imm(b, ~imm);
+        // Check if both val1 and xor_key are null-free
+        if (is_null_free(val1) && is_null_free(xor_key)) {
+            // Use XOR decomposition: MOV reg, val1; XOR reg, val2
+            if (dst_reg == X86_REG_EAX) {
+                generate_mov_eax_imm(b, val1);
+            } else {
+                // Save EAX first
+                uint8_t push_eax[] = {0x50};
+                buffer_append(b, push_eax, 1);
 
-            // MOV dst_reg, EAX
-            uint8_t mov_dst_eax[] = {0x89, 0xC0};
-            mov_dst_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(dst_reg);
-            buffer_append(b, mov_dst_eax, 2);
+                generate_mov_eax_imm(b, val1);
 
-            // Restore EAX
-            uint8_t pop_eax[] = {0x58};
-            buffer_append(b, pop_eax, 1);
+                // MOV dst_reg, EAX
+                uint8_t mov_dst_eax[] = {0x89, 0xC0};
+                mov_dst_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(dst_reg);
+                buffer_append(b, mov_dst_eax, 2);
+
+                // Restore EAX
+                uint8_t pop_eax[] = {0x58};
+                buffer_append(b, pop_eax, 1);
+            }
+
+            // XOR with the key value (which is null-free per check above)
+            uint8_t xor_code[] = {0x83, 0x00, 0x00}; // XOR reg, imm8 (if possible) or 0x81 for 32-bit
+            // Try to use 8-bit immediate if the key fits
+            if (xor_key <= 0xFF) {
+                xor_code[0] = 0x83;
+                xor_code[1] = 0xF0 + get_reg_index(dst_reg);  // F0-F7 for XOR
+                xor_code[2] = (uint8_t)xor_key;
+                buffer_append(b, xor_code, 3);
+            } else {
+                // Use 32-bit immediate - but check if xor_key itself has nulls
+                if (is_null_free(xor_key)) {
+                    uint8_t xor32_code[] = {0x81, 0x00, 0x00, 0x00, 0x00, 0x00};
+                    xor32_code[1] = 0xF0 + get_reg_index(dst_reg);  // F0-F7 for XOR
+                    memcpy(xor32_code + 2, &xor_key, 4);
+                    buffer_append(b, xor32_code, 6);
+                } else {
+                    // xor_key has nulls, so we need to construct it differently
+                    // PUSH EAX to save
+                    buffer_write_byte(b, 0x50);
+                    // MOV EAX, xor_key (null-safe construction)
+                    generate_mov_eax_imm(b, xor_key);
+                    // XOR dst_reg, EAX
+                    buffer_write_byte(b, 0x31); // XOR r32, r32
+                    uint8_t xor_dst_eax[] = {0x31, 0x00};
+                    xor_dst_eax[1] = 0xC0 + (get_reg_index(dst_reg) << 3) + get_reg_index(X86_REG_EAX);
+                    buffer_append(b, xor_dst_eax, 2);
+                    // POP EAX to restore
+                    buffer_write_byte(b, 0x58);
+                }
+            }
+            return;
         }
-
-        // XOR with the key value (which is null-free per check above)
-        uint8_t xor_code[] = {0x83, 0x00, 0x00}; // XOR reg, imm8 (if possible) or 0x81 for 32-bit
-        // Try to use 8-bit immediate if the key fits
-        if (xor_key <= 0xFF) {
-            xor_code[0] = 0x83;
-            xor_code[1] = 0xF0 + get_reg_index(dst_reg);  // F0-F7 for XOR
-            xor_code[2] = (uint8_t)xor_key;
-            buffer_append(b, xor_code, 3);
-        } else {
-            // Use 32-bit immediate
-            uint8_t xor32_code[] = {0x81, 0x00, 0x00, 0x00, 0x00, 0x00};
-            xor32_code[1] = 0xF0 + get_reg_index(dst_reg);  // F0-F7 for XOR
-            memcpy(xor32_code + 2, &xor_key, 4);
-            buffer_append(b, xor32_code, 6);
-        }
-        return;
     }
 
     // Method 3: Try ADD/SUB decomposition
@@ -307,3 +330,10 @@ strategy_t mov_arith_decomp_strategy = {
     .generate = generate_mov_arith_decomp,
     .priority = 70  // Medium-high - sophisticated fallback before byte construction
 };
+
+/**
+ * Registration function for arithmetic decomposition strategy
+ */
+void register_arithmetic_decomposition_strategies(void) {
+    register_strategy(&mov_arith_decomp_strategy);
+}

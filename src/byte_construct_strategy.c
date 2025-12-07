@@ -110,24 +110,27 @@ void generate_byte_construct(struct buffer *b, cs_insn *insn) {
     uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
     uint8_t reg = insn->detail->x86.operands[0].reg;
 
-    // Use EAX as temporary register for construction since it has special encodings
-    // Save original EAX first
-    uint8_t push_eax[] = {0x50};  // PUSH EAX
-    buffer_append(b, push_eax, 1);
+    // Use the utility function which already handles null-free construction properly
+    if (reg == X86_REG_EAX) {
+        // If target register is EAX, just use the utility function directly
+        generate_mov_eax_imm(b, target);
+    } else {
+        // For other registers, save EAX, use it to build the value, then move result
+        uint8_t push_eax[] = {0x50};  // PUSH EAX to save original value
+        buffer_append(b, push_eax, 1);
 
-    // Build the target value in EAX using safe construction
-    generate_mov_eax_imm(b, target);
+        // Build the target value in EAX using safe construction
+        generate_mov_eax_imm(b, target);
 
-    // Move from EAX to target register
-    if (reg != X86_REG_EAX) {
+        // Move from EAX to target register
         uint8_t mov_reg_eax[] = {0x89, 0xC0}; // MOV reg, EAX
-        mov_reg_eax[1] = mov_reg_eax[1] + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(reg);
+        mov_reg_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(reg);
         buffer_append(b, mov_reg_eax, 2);
-    }
 
-    // Restore original EAX
-    uint8_t pop_eax[] = {0x58};  // POP EAX
-    buffer_append(b, pop_eax, 1);
+        // Restore original EAX
+        uint8_t pop_eax[] = {0x58};  // POP EAX
+        buffer_append(b, pop_eax, 1);
+    }
 }
 
 strategy_t byte_construct_strategy = {

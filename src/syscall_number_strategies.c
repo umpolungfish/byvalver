@@ -52,50 +52,19 @@ static void generate_syscall_number_byte_based(struct buffer *b, cs_insn *insn) 
     // Get the destination register
     x86_reg dest_reg = insn->detail->x86.operands[0].reg;
 
-    // Create null-free construction sequence
-    // For example, if original was MOV EAX, 0x00000100 (contains nulls)
-    // We might generate: MOV EAX, 1; SHL EAX, 8;
+    // Use EAX as temporary register for construction to avoid encoding issues
+    buffer_write_byte(b, 0x50); // PUSH EAX to save original
 
-    // Determine register size and generate appropriate code
-    if (dest_reg >= X86_REG_EAX && dest_reg <= X86_REG_EDI) {
-        // 32-bit register
-        uint8_t low_byte = val32 & 0xFF;
-        uint16_t high_part = (val32 >> 8) & 0xFFFF;
+    // Build the value in EAX using null-safe construction
+    generate_mov_eax_imm(b, val32);
 
-        // MOV reg, low_byte (if low_byte doesn't contain nulls)
-        if (low_byte != 0) {
-            buffer_write_byte(b, 0xB8 + (dest_reg - X86_REG_EAX)); // MOV EAX+reg, imm32
-            buffer_write_dword(b, low_byte);
-        } else {
-            buffer_write_byte(b, 0x31); // XOR reg, reg to zero it
-            buffer_write_byte(b, 0xC0 + ((dest_reg - X86_REG_EAX) << 3) + (dest_reg - X86_REG_EAX));
-        }
+    // MOV dest_reg, EAX to transfer the value
+    uint8_t mov_dst_eax[] = {0x89, 0x00};
+    mov_dst_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(dest_reg);
+    buffer_append(b, mov_dst_eax, 2);
 
-        // If high part exists, handle it without nulls
-        if (high_part > 0) {
-            // Use shift and add operations to build the value without nulls
-            if (high_part < 128) {
-                // SHL reg, 8; OR reg, high_part
-                buffer_write_byte(b, 0xC1); // SHL reg, 8
-                buffer_write_byte(b, 0xE0 + (dest_reg - X86_REG_EAX));
-                buffer_write_byte(b, 0x08);
-
-                if (high_part != 0) {
-                    buffer_write_byte(b, 0x83); // OR reg, imm8
-                    buffer_write_byte(b, 0xC8 + (dest_reg - X86_REG_EAX));
-                    buffer_write_byte(b, (uint8_t)high_part);
-                }
-            } else {
-                // For larger values, use multiple operations to avoid nulls
-                // This is a simplified implementation - a real one would be more sophisticated
-                buffer_write_byte(b, 0x68); // PUSH imm32 (if it doesn't contain nulls)
-                buffer_write_dword(b, high_part << 8);
-                buffer_write_byte(b, 0x58 + (dest_reg - X86_REG_EAX)); // POP reg
-                buffer_write_byte(b, 0x09); // OR reg, reg (to combine)
-                buffer_write_byte(b, 0xC0 + ((dest_reg - X86_REG_EAX) << 3) + (dest_reg - X86_REG_EAX));
-            }
-        }
-    }
+    // POP EAX to restore original value
+    buffer_write_byte(b, 0x58);
 }
 
 // Strategy B: Push/Pop Technique for small syscall numbers (1-127) for size optimization
@@ -145,10 +114,19 @@ static void generate_syscall_number_push_pop(struct buffer *b, cs_insn *insn) {
     // Get the destination register
     x86_reg dest_reg = insn->detail->x86.operands[0].reg;
 
-    // For small immediate values, use PUSH imm8; POP reg (2 bytes vs 5 bytes for MOV with nulls)
-    buffer_write_byte(b, 0x6A); // PUSH imm8
-    buffer_write_byte(b, imm8);
-    buffer_write_byte(b, 0x58 + (dest_reg - X86_REG_EAX)); // POP reg
+    // Use safe construction - build the value in EAX using null-free approach
+    buffer_write_byte(b, 0x50); // PUSH EAX to save original value
+
+    // Generate the immediate value in EAX using null-safe construction
+    generate_mov_eax_imm(b, (uint32_t)imm);
+
+    // MOV dest_reg, EAX
+    uint8_t mov_dst_eax[] = {0x89, 0x00};
+    mov_dst_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(dest_reg);
+    buffer_append(b, mov_dst_eax, 2);
+
+    // POP EAX to restore
+    buffer_write_byte(b, 0x58);
 }
 
 // Define the strategies
@@ -167,3 +145,11 @@ strategy_t syscall_number_push_pop_strategy = {
     .get_size = get_size_syscall_number_push_pop,
     .generate = generate_syscall_number_push_pop
 };
+
+/**
+ * Registration function for syscall number strategies
+ */
+void register_syscall_number_strategies() {
+    register_strategy(&syscall_number_byte_based_strategy);
+    register_strategy(&syscall_number_push_pop_strategy);
+}

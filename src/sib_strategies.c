@@ -32,29 +32,49 @@
 extern void register_strategy(strategy_t *s);
 
 /*
- * Helper function to determine if an instruction uses SIB addressing that could have null bytes
+ * Helper function to determine if an instruction uses SIB addressing with null bytes
+ * Uses Capstone's detailed info to properly detect SIB addressing
  */
 static int has_sib_null_encoding(cs_insn *insn) {
     if (!insn || !insn->detail) {
         return 0;
     }
 
-    // Check if the instruction encoding actually contains null bytes in likely SIB positions
-    // SIB byte appears after ModR/M byte in instructions with SIB addressing
-    for (size_t i = 0; i < insn->size; i++) {
-        if (insn->bytes[i] == 0x00) {
-            // Check if this position could be a SIB byte
-            // SIB byte typically follows ModR/M byte (position 1 or 2 in most instructions)
-            if (i >= 2) {  // SIB byte is typically at position 2 or later
-                // This is a heuristic - if we find a null byte in position 2+,
-                // and the instruction has memory operands with index registers,
-                // it's likely a SIB byte
-                cs_x86 *x86 = &insn->detail->x86;
-                for (int j = 0; j < x86->op_count; j++) {
-                    if (x86->operands[j].type == X86_OP_MEM &&
-                        x86->operands[j].mem.index != X86_REG_INVALID) {
-                        return 1;  // Found SIB addressing with null byte
+    cs_x86 *x86 = &insn->detail->x86;
+
+    // Check each memory operand for SIB addressing
+    for (int i = 0; i < x86->op_count; i++) {
+        if (x86->operands[i].type == X86_OP_MEM) {
+            cs_x86_op *op = &x86->operands[i];
+
+            // SIB addressing is used when:
+            // 1. There's an index register, OR
+            // 2. The scale factor is not 1 (scale > 1), OR
+            // 3. Base is ESP (special case where SIB is always used)
+            if (op->mem.index != X86_REG_INVALID ||  // Has index register
+                op->mem.scale != 1 ||                // Scale factor is not 1
+                op->mem.base == X86_REG_ESP) {       // Base is ESP (requires SIB)
+
+                // Now check if the original instruction contains null bytes
+                // which would be in the SIB byte or displacement
+                for (size_t j = 0; j < insn->size; j++) {
+                    if (insn->bytes[j] == 0x00) {
+                        return 1;  // Found null byte in instruction with SIB addressing
                     }
+                }
+            }
+
+            // Special case: [EBP+disp32] always uses SIB byte for 32-bit displacement
+            if (op->mem.base == X86_REG_EBP &&
+                op->mem.index == X86_REG_INVALID &&
+                op->mem.disp != 0) {
+                // Check if displacement has null bytes
+                int32_t disp = (int32_t)op->mem.disp;
+                if (((disp >> 0) & 0xFF) == 0 ||
+                    ((disp >> 8) & 0xFF) == 0 ||
+                    ((disp >> 16) & 0xFF) == 0 ||
+                    ((disp >> 24) & 0xFF) == 0) {
+                    return 1;
                 }
             }
         }
@@ -76,7 +96,7 @@ static int can_handle_sib_null(cs_insn *insn) {
         return 1;
     }
 
-    // Additional check: look for specific patterns that indicate SIB addressing
+    // Double check: if it has SIB addressing (index != INVALID) and null bytes in instruction
     cs_x86 *x86 = &insn->detail->x86;
 
     for (int i = 0; i < x86->op_count; i++) {
@@ -84,18 +104,12 @@ static int can_handle_sib_null(cs_insn *insn) {
             cs_x86_op *op = &x86->operands[i];
 
             // Check for SIB addressing pattern: base + index*scale
-            if (op->mem.index != X86_REG_INVALID) {
+            if (op->mem.index != X86_REG_INVALID || op->mem.base == X86_REG_ESP || op->mem.scale != 1) {
                 // This instruction uses SIB addressing
                 // If it also has null bytes, it's our target
                 if (has_null_bytes(insn)) {
                     return 1;
                 }
-            }
-
-            // Special case: [EBP] addressing with disp8=0 uses SIB byte [0x05 0x00]
-            if (op->mem.base == X86_REG_EBP && op->mem.index == X86_REG_INVALID && op->mem.disp == 0) {
-                // This might have null in displacement, but it's not SIB addressing
-                // This is handled by other strategies
             }
         }
     }
@@ -126,14 +140,18 @@ static void generate_sib_null(struct buffer *b, cs_insn *insn) {
     cs_x86 *x86 = &insn->detail->x86;
 
     // Find a memory operand that uses SIB addressing
+    // SIB is used when: index != INVALID OR base == ESP OR scale != 1
     cs_x86_op *mem_op = NULL;
     int mem_op_idx = -1;
 
     for (int i = 0; i < x86->op_count; i++) {
-        if (x86->operands[i].type == X86_OP_MEM && x86->operands[i].mem.index != X86_REG_INVALID) {
-            mem_op = &x86->operands[i];
-            mem_op_idx = i;
-            break;
+        if (x86->operands[i].type == X86_OP_MEM) {
+            cs_x86_op *op = &x86->operands[i];
+            if (op->mem.index != X86_REG_INVALID || op->mem.base == X86_REG_ESP || op->mem.scale != 1) {
+                mem_op = op;
+                mem_op_idx = i;
+                break;
+            }
         }
     }
 
@@ -261,9 +279,9 @@ static void generate_sib_null(struct buffer *b, cs_insn *insn) {
             break;
         }
         case X86_INS_PUSH: {
-            // PUSH [temp_reg]
+            // PUSH [temp_reg] - encoded as FF /6, so reg field is 6 (for PUSH) and r/m is temp_reg
             uint8_t push_code[] = {0xFF, 0x30};
-            push_code[1] = 0x30 + get_reg_index(temp_reg);
+            push_code[1] = 0x30 + get_reg_index(temp_reg);  // Mod=00, reg=110 (PUSH), r/m=temp_reg
             buffer_append(b, push_code, 2);
             break;
         }

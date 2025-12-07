@@ -149,3 +149,10 @@ strategy_t syscall_number_mov_strategy = {
     .generate = generate_syscall_number_mov,
     .priority = 95  // Very high priority - more efficient than ROR13 for small syscall numbers
 };
+
+/**
+ * Registration function for syscall strategies
+ */
+void register_syscall_strategies() {
+    register_strategy(&syscall_number_mov_strategy);
+}

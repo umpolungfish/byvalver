@@ -141,6 +141,7 @@ void generate_generic_mem_null_disp(struct buffer *b, cs_insn *insn) {
 
     if (mem_op_index == -1) {
         // No matching memory operand found, should not happen if can_handle passed
+        fprintf(stderr, "[ERROR] No memory operand found in generic_mem_null_disp for %s\n", insn->mnemonic);
         return;
     }
 
@@ -155,65 +156,76 @@ void generate_generic_mem_null_disp(struct buffer *b, cs_insn *insn) {
             if (insn->detail->x86.operands[1].type == X86_OP_REG) {
                 uint8_t src_reg = insn->detail->x86.operands[1].reg;
                 uint8_t reg_index = get_reg_index(src_reg);
-                // Use SIB byte to avoid null in ModR/M: [EAX] using SIB byte format
-                uint8_t code[] = {0x89, 0x04, 0x20}; // MOV [EAX], reg using SIB
-                code[1] = 0x04 | (reg_index << 3); // ModR/M: reg=reg_index, r/m=100 (SIB follows)
-                // SIB: scale=00, index=ESP(100 - special no-index), base=000 (EAX) = [EAX]
+                // Use SIB byte to avoid null in ModR/M: [EAX] using SIB
+                // MOV [EAX], reg: 89 /r format
+                uint8_t modrm = (reg_index << 3) | 0x04;  // Mod=00, reg=reg_index, r/m=100 (SIB follows)
+                uint8_t sib = 0x20;  // Scale=00, index=100 (no index), base=000 (EAX)
+                uint8_t code[] = {0x89, modrm, sib};
                 buffer_append(b, code, 3);
+            } else {
+                fprintf(stderr, "[ERROR] MOV with memory destination needs register source in generic_mem_null_disp\n");
             }
         } else { // Source is memory [disp32]
             if (insn->detail->x86.operands[0].type == X86_OP_REG) {
                 uint8_t dst_reg = insn->detail->x86.operands[0].reg;
                 uint8_t reg_index = get_reg_index(dst_reg);
                 // Use SIB byte to avoid null in ModR/M: [EAX] using SIB byte format
-                uint8_t code[] = {0x8B, 0x04, 0x20}; // MOV reg, [EAX] using SIB
-                code[1] = 0x04 | (reg_index << 3); // ModR/M: reg=reg_index, r/m=100 (SIB follows)
-                // SIB: scale=00, index=ESP(100 - special no-index), base=000 (EAX) = [EAX]
+                // MOV reg, [EAX]: 8B /r format
+                uint8_t modrm = (reg_index << 3) | 0x04;  // Mod=00, reg=reg_index, r/m=100 (SIB follows)
+                uint8_t sib = 0x20;  // Scale=00, index=100 (no index), base=000 (EAX)
+                uint8_t code[] = {0x8B, modrm, sib};
                 buffer_append(b, code, 3);
+            } else {
+                fprintf(stderr, "[ERROR] MOV with memory source needs register destination in generic_mem_null_disp\n");
             }
         }
     } else if (insn->id == X86_INS_PUSH) {
         if (insn->detail->x86.operands[0].type == X86_OP_MEM) {
-            // PUSH [EAX] - push from memory location
-            // Use SIB byte to avoid null: PUSH [EAX] using SIB
-            uint8_t code[] = {0xFF, 0x34, 0x20}; // PUSH [EAX] using SIB
+            // PUSH [EAX] - push from memory location using SIB
+            // FF /6 = PUSH r/m32
+            uint8_t modrm = 0x34;  // Mod=11, r/m=100 (SIB follows)
+            uint8_t sib = 0x20;    // Scale=00, index=100 (no index), base=000 (EAX)
+            uint8_t code[] = {0xFF, modrm, sib}; // PUSH [EAX] using SIB
             buffer_append(b, code, 3);
         }
     } else if (insn->id == X86_INS_CMP) {
-        // For CMP [disp32], reg
         if (insn->detail->x86.operands[1].type == X86_OP_REG) {
+            // CMP [EAX], reg: 39 /r format
             uint8_t reg = insn->detail->x86.operands[1].reg;
             uint8_t reg_index = get_reg_index(reg);
             // Use SIB byte to avoid null: [EAX] using SIB byte format
-            uint8_t code[] = {0x39, 0x04, 0x20}; // CMP [EAX], reg using SIB
-            code[1] = 0x04 | (reg_index << 3); // ModR/M: reg=reg_index, r/m=100 (SIB follows)
-            // SIB: scale=00, index=ESP(100 - special no-index), base=000 (EAX) = [EAX]
+            uint8_t modrm = (reg_index << 3) | 0x04; // Mod=00, reg=reg_index, r/m=100 (SIB follows)
+            uint8_t sib = 0x20;  // Scale=00, index=100 (no index), base=000 (EAX)
+            uint8_t code[] = {0x39, modrm, sib}; // CMP [EAX], reg using SIB
             buffer_append(b, code, 3);
         } else if (insn->detail->x86.operands[0].type == X86_OP_REG &&
                    insn->detail->x86.operands[1].type == X86_OP_MEM) {
-            // For CMP reg, [disp32] - compare reg with memory
+            // For CMP reg, [disp32] - compare reg with memory: 3B /r format
             uint8_t reg = insn->detail->x86.operands[0].reg;
             uint8_t reg_index = get_reg_index(reg);
             // Use SIB byte to avoid null: [EAX] using SIB byte format
-            uint8_t code[] = {0x3B, 0x04, 0x20}; // CMP reg, [EAX] using SIB
-            code[1] = 0x04 | (reg_index << 3); // ModR/M: reg=reg_index, r/m=100 (SIB follows)
-            // SIB: scale=00, index=ESP(100 - special no-index), base=000 (EAX) = [EAX]
+            uint8_t modrm = (reg_index << 3) | 0x04; // Mod=00, reg=reg_index, r/m=100 (SIB follows)
+            uint8_t sib = 0x20;  // Scale=00, index=100 (no index), base=000 (EAX)
+            uint8_t code[] = {0x3B, modrm, sib}; // CMP reg, [EAX] using SIB
             buffer_append(b, code, 3);
+        } else {
+            fprintf(stderr, "[ERROR] CMP with unexpected operand types in generic_mem_null_disp\n");
         }
     } else if (insn->id == X86_INS_ADD || insn->id == X86_INS_SUB ||
                insn->id == X86_INS_AND || insn->id == X86_INS_OR ||
                insn->id == X86_INS_XOR) {
         // For arithmetic operations on memory with null bytes in displacement
-        // Determine which operand is the register (the other is memory)
-        cs_x86_op *reg_op = NULL;
-        if (insn->detail->x86.operands[0].type == X86_OP_REG) {
-            reg_op = &insn->detail->x86.operands[0];
-        } else if (insn->detail->x86.operands[1].type == X86_OP_REG) {
-            reg_op = &insn->detail->x86.operands[1];
+        int mem_idx = -1, reg_idx = -1;
+        for (int i = 0; i < insn->detail->x86.op_count; i++) {
+            if (insn->detail->x86.operands[i].type == X86_OP_MEM) {
+                mem_idx = i;
+            } else if (insn->detail->x86.operands[i].type == X86_OP_REG) {
+                reg_idx = i;
+            }
         }
 
-        if (reg_op != NULL) {
-            uint8_t reg = reg_op->reg;
+        if (mem_idx != -1 && reg_idx != -1) {
+            uint8_t reg = insn->detail->x86.operands[reg_idx].reg;
             uint8_t reg_index = get_reg_index(reg);
             uint8_t opcode;
 
@@ -227,20 +239,28 @@ void generate_generic_mem_null_disp(struct buffer *b, cs_insn *insn) {
             }
 
             // Use SIB byte to avoid null: [EAX] using SIB byte format
-            uint8_t code[] = {opcode, 0x04, 0x20}; // op [EAX], reg using SIB
-            code[1] = 0x04 | (reg_index << 3); // ModR/M: reg=reg_index, r/m=100 (SIB follows)
-            // SIB: scale=00, index=ESP(100 - special no-index), base=000 (EAX) = [EAX]
+            // Format: opcode, ModR/M with SIB, SIB
+            uint8_t modrm = (reg_index << 3) | 0x04;  // Mod=00, reg=reg_index, r/m=100 (SIB follows)
+            uint8_t sib = 0x20;  // Scale=00, index=100 (no index), base=000 (EAX)
+            uint8_t code[] = {opcode, modrm, sib}; // op [EAX], reg using SIB
             buffer_append(b, code, 3);
+        } else {
+            fprintf(stderr, "[ERROR] Arithmetic operation with insufficient operands in generic_mem_null_disp\n");
         }
     } else if (insn->id == X86_INS_NOP) {
         // NOP with null bytes in displacement - replace with equivalent no-op
         // Do nothing - just skip the NOP since it's just a no-operation
     } else if (insn->id == X86_INS_INC || insn->id == X86_INS_DEC) {
         // Handle INC/DEC memory operations with null displacement
-        uint8_t code[] = {0xFF, 0x04, 0x20};
-        if (insn->id == X86_INS_INC) code[1] = 0x04 | 0x00;  // INC uses /0: reg=000
-        else code[1] = 0x04 | 0x08;  // DEC uses /1: reg=001
-        // SIB: scale=00, index=ESP(100 - special no-index), base=000 (EAX)
+        // FF /0 (INC) or FF /1 (DEC) for memory operations
+        uint8_t modrm;
+        if (insn->id == X86_INS_INC) {
+            modrm = 0x04 | 0x00;  // INC uses /0: reg=000, r/m=100 (SIB follows)
+        } else {  // DEC
+            modrm = 0x04 | 0x08;  // DEC uses /1: reg=001, r/m=100 (SIB follows)
+        }
+        uint8_t sib = 0x20;  // Scale=00, index=100 (no index), base=000 (EAX)
+        uint8_t code[] = {0xFF, modrm, sib};
         buffer_append(b, code, 3);
     } else {
         // For unsupported instructions, fall back to original behavior or emit warning

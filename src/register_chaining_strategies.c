@@ -337,3 +337,8 @@ strategy_t cross_register_operation_strategy = {
     .generate = generate_cross_register_operation,
     .priority = 60  // Medium priority
 };
+
+void register_register_chaining_strategies() {
+    register_strategy(&register_chaining_immediate_strategy);
+    register_strategy(&cross_register_operation_strategy);
+}

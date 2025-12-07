@@ -385,7 +385,12 @@ static void generate_mov_mem_disp_null(struct buffer *b, cs_insn *insn) {
             // MOV [temp], data_reg
             if (temp == X86_REG_EAX) {
                 // Use SIB to avoid [EAX] which encodes as 00
-                uint8_t mov[] = {0x89, 0x04, 0x20 | get_reg_index(data_reg) << 3};
+                // 89 /r: MOV r/m32, r32
+                // ModR/M: 00 (mod) | reg_index<<3 | 100 (r/m means SIB follows)
+                // SIB: 00 (scale) | 100 (index means no index) | 000 (base means EAX)
+                uint8_t modrm = 0x04 | (get_reg_index(data_reg) << 3);
+                uint8_t sib = 0x20;  // [EAX] with no index
+                uint8_t mov[] = {0x89, modrm, sib};
                 buffer_append(b, mov, 3);
             } else {
                 uint8_t mov[] = {0x89, 0x00 | (get_reg_index(data_reg) << 3) | get_reg_index(temp)};
@@ -395,7 +400,12 @@ static void generate_mov_mem_disp_null(struct buffer *b, cs_insn *insn) {
             // MOV data_reg, [temp]
             if (temp == X86_REG_EAX) {
                 // Use SIB encoding
-                uint8_t mov[] = {0x8B, 0x04, 0x20 | get_reg_index(data_reg) << 3};
+                // 8B /r: MOV r32, r/m32
+                // ModR/M: 00 (mod) | reg_index<<3 | 100 (r/m means SIB follows)
+                // SIB: 00 (scale) | 100 (index means no index) | 000 (base means EAX)
+                uint8_t modrm = 0x04 | (get_reg_index(data_reg) << 3);
+                uint8_t sib = 0x20;  // [EAX] with no index
+                uint8_t mov[] = {0x8B, modrm, sib};
                 buffer_append(b, mov, 3);
             } else {
                 uint8_t mov[] = {0x8B, 0x00 | (get_reg_index(data_reg) << 3) | get_reg_index(temp)};
@@ -441,7 +451,13 @@ static void generate_mov_mem_disp_null(struct buffer *b, cs_insn *insn) {
         // MOV data_reg, [temp] or MOV [temp], data_reg
         if (mem_is_dst) {
             if (temp == X86_REG_EAX) {
-                uint8_t mov[] = {0x89, 0x04, 0x20 | get_reg_index(data_reg) << 3};
+                // Use SIB to avoid [EAX] which encodes as 00
+                // 89 /r: MOV r/m32, r32
+                // ModR/M: 00 (mod) | reg_index<<3 | 100 (r/m means SIB follows)
+                // SIB: 00 (scale) | 100 (index means no index) | 000 (base means EAX)
+                uint8_t modrm = 0x04 | (get_reg_index(data_reg) << 3);
+                uint8_t sib = 0x20;  // [EAX] with no index
+                uint8_t mov[] = {0x89, modrm, sib};
                 buffer_append(b, mov, 3);
             } else {
                 uint8_t mov[] = {0x89, 0x00 | (get_reg_index(data_reg) << 3) | get_reg_index(temp)};
@@ -449,7 +465,13 @@ static void generate_mov_mem_disp_null(struct buffer *b, cs_insn *insn) {
             }
         } else {
             if (temp == X86_REG_EAX) {
-                uint8_t mov[] = {0x8B, 0x04, 0x20 | get_reg_index(data_reg) << 3};
+                // Use SIB encoding
+                // 8B /r: MOV r32, r/m32
+                // ModR/M: 00 (mod) | reg_index<<3 | 100 (r/m means SIB follows)
+                // SIB: 00 (scale) | 100 (index means no index) | 000 (base means EAX)
+                uint8_t modrm = 0x04 | (get_reg_index(data_reg) << 3);
+                uint8_t sib = 0x20;  // [EAX] with no index
+                uint8_t mov[] = {0x8B, modrm, sib};
                 buffer_append(b, mov, 3);
             } else {
                 uint8_t mov[] = {0x8B, 0x00 | (get_reg_index(data_reg) << 3) | get_reg_index(temp)};

@@ -127,13 +127,10 @@ int can_handle_arithmetic_xor(cs_insn *insn) {
     uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
     uint32_t xor_key;
     if (find_xor_key(target, &xor_key)) {
-        // Additional check: make sure the XOR approach won't introduce more nulls
-        uint32_t val1 = ~target;  // First part would be ~target
-        uint32_t val2 = xor_key;  // Second part would be key
-
-        // Check if both values are null-free, or we have a viable alternative
-        return (is_null_free(val1) && is_null_free(val2)) ||
-               find_xor_key(target, &xor_key);  // If find_xor_key exists, there's likely an alternative
+        // find_xor_key finds key such that both key and (target^key) are null-free
+        // So we'll generate: MOV reg, (target^key); XOR reg, key
+        uint32_t encoded_val = target ^ xor_key;
+        return is_null_free(xor_key) && is_null_free(encoded_val);
     }
     return 0;
 }
@@ -172,16 +169,20 @@ void generate_arithmetic_xor(struct buffer *b, cs_insn *insn) {
         return;
     }
 
-    // Use XOR decomposition: MOV reg, ~imm; XOR reg, xor_key
-    // First, move ~imm to the target register
+    // Correct XOR decomposition based on how find_xor_key actually works:
+    // find_xor_key finds a key such that: (target ^ key) ^ key = target
+    // So we do: MOV reg, (target ^ xor_key); XOR reg, xor_key
+    uint32_t encoded_val = imm ^ xor_key;
+
+    // Use the decomposition: MOV reg, encoded_val; XOR reg, xor_key
     if (reg == X86_REG_EAX) {
-        generate_mov_eax_imm(b, ~imm);
+        generate_mov_eax_imm(b, encoded_val);
     } else {
         // Save EAX first
         uint8_t push_eax[] = {0x50};
         buffer_append(b, push_eax, 1);
 
-        generate_mov_eax_imm(b, ~imm);
+        generate_mov_eax_imm(b, encoded_val);
 
         // MOV reg, EAX
         uint8_t mov_reg_eax[] = {0x89, 0xC0};
@@ -193,7 +194,7 @@ void generate_arithmetic_xor(struct buffer *b, cs_insn *insn) {
         buffer_append(b, pop_eax, 1);
     }
 
-    // Then XOR with the key
+    // Then XOR with xor_key
     if (is_null_free(xor_key)) {
         // Use immediate XOR
         if (xor_key <= 0xFF) {
@@ -210,11 +211,11 @@ void generate_arithmetic_xor(struct buffer *b, cs_insn *insn) {
             buffer_append(b, xor32_code, 6);
         }
     } else {
-        // Key has nulls, need to load via EAX
+        // xor_key has nulls, need to load via EAX (though this shouldn't happen due to can_handle check)
         uint8_t push_eax[] = {0x50};  // Save EAX
         buffer_append(b, push_eax, 1);
 
-        generate_mov_eax_imm(b, xor_key);  // Load key into EAX (null-free)
+        generate_mov_eax_imm(b, xor_key);  // Load xor_key into EAX (null-free)
 
         // XOR reg, EAX
         uint8_t xor_reg_eax[] = {0x31, 0xC0};

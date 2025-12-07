@@ -198,3 +198,8 @@ strategy_t socketcall_constant_strategy = {
     .generate = generate_socketcall_constant,
     .priority = 72  // High priority for socket operations
 };
+
+void register_linux_socketcall_strategies() {
+    register_strategy(&socketcall_argument_array_strategy);
+    register_strategy(&socketcall_constant_strategy);
+}

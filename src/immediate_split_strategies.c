@@ -351,7 +351,7 @@ static void generate_arithmetic_split(struct buffer *b, uint8_t reg_num, uint32_
     generate_mov_eax_imm(b, base);
 
     // If target register is not EAX, move it
-    if (reg_num != 0) { // 0 = EAX
+    if (reg_num != get_reg_index(X86_REG_EAX)) { // 0 = EAX
         // MOV reg, EAX (89 C0+reg)
         buffer_write_byte(b, 0x89);
         buffer_write_byte(b, 0xC0 + reg_num);
@@ -361,7 +361,7 @@ static void generate_arithmetic_split(struct buffer *b, uint8_t reg_num, uint32_
     // Use null-safe construction for remainder
     if (remainder != 0) {
         // PUSH EAX to save if we need to use it
-        if (reg_num != 0) {
+        if (reg_num != get_reg_index(X86_REG_EAX)) {
             buffer_write_byte(b, 0x50); // PUSH EAX
         }
 
@@ -373,7 +373,7 @@ static void generate_arithmetic_split(struct buffer *b, uint8_t reg_num, uint32_
         buffer_write_byte(b, 0xC0 + reg_num); // ModR/M: ADD reg, EAX
 
         // POP EAX to restore if we saved it
-        if (reg_num != 0) {
+        if (reg_num != get_reg_index(X86_REG_EAX)) {
             buffer_write_byte(b, 0x58); // POP EAX
         }
     }
@@ -391,33 +391,30 @@ void generate_immediate_split(struct buffer *b, cs_insn *insn) {
         uint32_t base, remainder;
         if (find_split_arithmetic(imm, &base, &remainder)) {
             // Arithmetic splitting for PUSH
-            // PUSH base (using null-safe construction)
-            generate_push_imm32(b, base); // This should handle nulls
+            // Generate the full value using arithmetic then push
+            // MOV EAX, base (null-safe)
+            generate_mov_eax_imm(b, base);
 
-            // MOV EAX, [ESP] (8B 04 24 with SIB)
-            buffer_write_byte(b, 0x8B); // MOV opcode
-            buffer_write_byte(b, 0x04); // ModR/M: [--][--] with SIB
-            buffer_write_byte(b, 0x24); // SIB: [ESP]
+            // ADD EAX, remainder (null-safe) - if remainder is not zero
+            if (remainder != 0) {
+                // Use null-safe construction for the add immediate
+                buffer_write_byte(b, 0x51); // PUSH ECX
+                generate_mov_eax_imm(b, remainder); // MOV EAX, remainder (null-safe)
+                buffer_write_byte(b, 0x91); // XCHG ECX, EAX - remainder now in ECX
+                buffer_write_byte(b, 0x01); // ADD EAX, ECX
+                buffer_write_byte(b, 0xD0); // ModR/M for ADD EAX, ECX
+                buffer_write_byte(b, 0x59); // POP ECX
+            }
 
-            // Generate remainder in EAX using null-safe construction
             // PUSH EAX
             buffer_write_byte(b, 0x50);
-            generate_mov_eax_imm(b, remainder);
-
-            // ADD [ESP+4], EAX (01 44 24 04)
-            buffer_write_byte(b, 0x01); // ADD r/m32, r32
-            buffer_write_byte(b, 0x44); // ModR/M: [--][--] + disp8
-            buffer_write_byte(b, 0x24); // SIB: [ESP]
-            buffer_write_byte(b, 0x04); // disp8: +4
-
-            // POP EAX
-            buffer_write_byte(b, 0x58);
         } else {
-            // Fallback: use bit manipulation in temp register, then PUSH
-            // XOR EAX, EAX
+            // Fallback: use bit manipulation in EAX, then PUSH
+            // XOR EAX, EAX to clear
             buffer_write_byte(b, 0x31);
             buffer_write_byte(b, 0xC0);
 
+            // Generate the value in EAX using bit manipulation
             generate_bit_manipulation(b, 0, imm); // Build in EAX
 
             // PUSH EAX
@@ -430,7 +427,7 @@ void generate_immediate_split(struct buffer *b, cs_insn *insn) {
         cs_x86_op *src = &insn->detail->x86.operands[1];
 
         uint32_t imm = (uint32_t)src->imm;
-        uint8_t reg_num = dst->reg - X86_REG_EAX;
+        uint8_t reg_num = get_reg_index(dst->reg);
 
         if (prefer_bit_manipulation(imm)) {
             generate_bit_manipulation(b, reg_num, imm);
@@ -444,10 +441,10 @@ void generate_immediate_split(struct buffer *b, cs_insn *insn) {
         cs_x86_op *src = &insn->detail->x86.operands[1];
 
         uint32_t imm = (uint32_t)src->imm;
-        uint8_t reg_num = dst->reg - X86_REG_EAX;
+        uint8_t reg_num = get_reg_index(dst->reg);
 
         // Use a temporary register (ECX if dst is not ECX, else EDX)
-        uint8_t temp_reg = (reg_num == 1) ? 2 : 1; // ECX=1, EDX=2
+        uint8_t temp_reg = (reg_num == get_reg_index(X86_REG_ECX)) ? get_reg_index(X86_REG_EDX) : get_reg_index(X86_REG_ECX); // ECX=1, EDX=2
 
         // PUSH temp_reg
         buffer_write_byte(b, 0x50 + temp_reg);
@@ -472,10 +469,10 @@ void generate_immediate_split(struct buffer *b, cs_insn *insn) {
         cs_x86_op *src = &insn->detail->x86.operands[1];
 
         uint32_t imm = (uint32_t)src->imm;
-        uint8_t reg_num = dst->reg - X86_REG_EAX;
+        uint8_t reg_num = get_reg_index(dst->reg);
 
         // Use a temporary register (ECX if dst is not ECX, else EDX)
-        uint8_t temp_reg = (reg_num == 1) ? 2 : 1; // ECX=1, EDX=2
+        uint8_t temp_reg = (reg_num == get_reg_index(X86_REG_ECX)) ? get_reg_index(X86_REG_EDX) : get_reg_index(X86_REG_ECX); // ECX=1, EDX=2
 
         // PUSH temp_reg
         buffer_write_byte(b, 0x50 + temp_reg);

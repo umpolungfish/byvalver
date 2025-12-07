@@ -66,9 +66,8 @@ int can_handle_mov_neg(cs_insn *insn) {
 
     uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
     uint32_t negated_val;
-    if (find_neg_equivalent(target, &negated_val)) {
-        // Additional check: make sure negated value itself is null-free
-        return is_null_free(negated_val);
+    if (find_neg_equivalent(target, &negated_val) && is_null_free(negated_val)) {
+        return 1; // Can handle with NEG
     }
     return 0;
 }
@@ -148,9 +147,16 @@ int can_handle_mov_not(cs_insn *insn) {
 
     uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
     uint32_t not_val;
-    if (find_not_equivalent(target, &not_val)) {
-        // Additional check: make sure not value itself is null-free
-        return is_null_free(not_val);
+    if (find_not_equivalent(target, &not_val) && is_null_free(not_val)) {
+        // Check if other higher-priority strategies can handle it first
+        uint32_t neg_val;
+
+        // Don't handle if NEG strategy can handle it (NEG is more efficient than NOT)
+        if (find_neg_equivalent(target, &neg_val) && is_null_free(neg_val)) {
+            return 0;
+        }
+
+        return 1; // Can handle with NOT
     }
     return 0;
 }
@@ -193,13 +199,27 @@ int can_handle_mov_xor(cs_insn *insn) {
     uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
     uint32_t xor_key;
     if (find_xor_key(target, &xor_key)) {
-        // Additional check: make sure the XOR approach won't introduce more nulls
-        uint32_t val1 = ~target;  // First part would be ~target
-        uint32_t val2 = xor_key;  // Second part would be key
+        // Check if other higher-priority strategies can handle it first
+        uint32_t not_val, neg_val;
+        uint32_t val1, val2;
+        int is_add;
 
-        // Check if both values are null-free, or we have a viable alternative
-        return (is_null_free(val1) && is_null_free(val2)) ||
-               find_xor_key(target, &xor_key);  // If find_xor_key exists, there's likely an alternative
+        // Don't handle if NOT strategy can handle it
+        if (find_not_equivalent(target, &not_val) && is_null_free(not_val)) {
+            return 0;
+        }
+
+        // Don't handle if NEG strategy can handle it
+        if (find_neg_equivalent(target, &neg_val) && is_null_free(neg_val)) {
+            return 0;
+        }
+
+        // Don't handle if ADD/SUB strategy can handle it
+        if (find_addsub_key(target, &val1, &val2, &is_add) && is_null_free(val1) && is_null_free(val2)) {
+            return 0;
+        }
+
+        return 1; // Can handle with XOR
     }
     return 0;
 }
@@ -239,9 +259,29 @@ int can_handle_mov_shift(cs_insn *insn) {
         return 0;
     }
 
-    // Check if we can potentially construct this value using shifts
-    // (For now, just return true if it has nulls and the operands are correct)
-    // The actual shift logic will be done in the generate function
+    // Check if other higher-priority strategies can handle it first
+    // to avoid unnecessary attempts
+    uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
+    uint32_t not_val, neg_val;
+    uint32_t val1, val2;
+    int is_add;
+
+    // Don't handle if NOT strategy can handle it
+    if (find_not_equivalent(target, &not_val) && is_null_free(not_val)) {
+        return 0;
+    }
+
+    // Don't handle if NEG strategy can handle it
+    if (find_neg_equivalent(target, &neg_val) && is_null_free(neg_val)) {
+        return 0;
+    }
+
+    // Don't handle if ADD/SUB strategy can handle it
+    if (find_addsub_key(target, &val1, &val2, &is_add) && is_null_free(val1) && is_null_free(val2)) {
+        return 0;
+    }
+
+    // If no other strategies can handle it efficiently, this strategy can try
     return 1;
 }
 
@@ -279,24 +319,47 @@ void generate_mov_shift(struct buffer *b, cs_insn *insn) {
         // So we'll focus on left shifts which are more straightforward
     }
 
-    // Try the reverse: see if shifting a null-free value can produce our target
+    // Try the reverse: shift a null-free value to get our target
     for (int shift_amount = 1; shift_amount <= 24; shift_amount++) {
-        // For right shifts: shifted_value >> shift_amount = target
-        // So shifted_value = target << shift_amount (with potential issues)
-        // Instead, let's try: if target << shift produces a null-free value, we can shift right
-        uint32_t shifted = target << shift_amount;
-        if (is_null_free(shifted)) {
-            // MOV reg, shifted_value (null-free)
-            cs_insn temp_insn = *insn;
-            temp_insn.detail->x86.operands[1].imm = shifted;
-            generate_mov_reg_imm(b, &temp_insn);
+        // Try to find if we can shift RIGHT to get our target: null_free_val >> shift = target
+        // This means null_free_val = target << shift (we shift the target left and then shift it back right)
+        uint32_t candidate = target << shift_amount;
+        // Check if this recreates target when shifted back (to avoid issues with shifted out bits)
+        if ((candidate >> shift_amount) == target) {  // Ensure shifting back gives original target
+            if (is_null_free(candidate)) {
+                // MOV reg, candidate (null-free)
+                cs_insn temp_insn = *insn;
+                temp_insn.detail->x86.operands[1].imm = candidate;
+                generate_mov_reg_imm(b, &temp_insn);
 
-            // SHR reg, shift_amount (to get target value back)
-            uint8_t code[] = {0xC1, 0xE8, 0};
-            code[1] = 0xE8 + get_reg_index(reg);
-            code[2] = shift_amount;
-            buffer_append(b, code, 3);
-            return;
+                // SHR reg, shift_amount (to get target value)
+                uint8_t code[] = {0xC1, 0xE8, 0};
+                code[1] = 0xE8 + get_reg_index(reg); // SHR reg, imm8
+                code[2] = shift_amount;
+                buffer_append(b, code, 3);
+                return;
+            }
+        }
+
+        // Also try: null_free_val << shift = target, so null_free_val = target >> shift
+        if (shift_amount < 32) {  // Avoid undefined behavior
+            uint32_t candidate = target >> shift_amount;
+            // Check if this recreates target when shifted back left (to avoid issues with shifted out bits)
+            if ((candidate << shift_amount) == target) {  // Ensure shifting back gives original target
+                if (is_null_free(candidate)) {
+                    // MOV reg, candidate (null-free)
+                    cs_insn temp_insn = *insn;
+                    temp_insn.detail->x86.operands[1].imm = candidate;
+                    generate_mov_reg_imm(b, &temp_insn);
+
+                    // SHL reg, shift_amount (to get target value)
+                    uint8_t code[] = {0xC1, 0xE0, 0};
+                    code[1] = 0xE0 + get_reg_index(reg); // SHL reg, imm8
+                    code[2] = shift_amount;
+                    buffer_append(b, code, 3);
+                    return;
+                }
+            }
         }
     }
 
@@ -334,9 +397,21 @@ int can_handle_mov_addsub(cs_insn *insn) {
     uint32_t target = (uint32_t)insn->detail->x86.operands[1].imm;
     uint32_t val1, val2;
     int is_add;
-    if (find_addsub_key(target, &val1, &val2, &is_add)) {
-        // Additional check: make sure both values are null-free
-        return is_null_free(val1) && is_null_free(val2);
+    if (find_addsub_key(target, &val1, &val2, &is_add) && is_null_free(val1) && is_null_free(val2)) {
+        // Check if other higher-priority strategies can handle it first
+        uint32_t not_val, neg_val;
+
+        // Don't handle if NOT strategy can handle it
+        if (find_not_equivalent(target, &not_val) && is_null_free(not_val)) {
+            return 0;
+        }
+
+        // Don't handle if NEG strategy can handle it
+        if (find_neg_equivalent(target, &neg_val) && is_null_free(neg_val)) {
+            return 0;
+        }
+
+        return 1; // Can handle with ADD/SUB
     }
     return 0;
 }
@@ -381,6 +456,9 @@ void generate_mov_addsub(struct buffer *b, cs_insn *insn) {
         buffer_append(b, push_eax, 1);
 
         // MOV EAX, val1 using null-free construction
+        // The function find_addsub_key finds val1, val2 such that:
+        // if is_add: val1 + val2 = target  =>  MOV EAX, val1; ADD EAX, val2
+        // if !is_add: val1 - val2 = target  =>  MOV EAX, val1; SUB EAX, val2
         generate_mov_eax_imm(b, val1);
 
         // ADD/SUB EAX, val2 (where val2 is null-free)
@@ -390,7 +468,8 @@ void generate_mov_addsub(struct buffer *b, cs_insn *insn) {
         buffer_append(b, code, 5);
 
         // MOV target_reg, EAX
-        uint8_t mov_reg_eax[] = {0x89, 0xC0 + get_reg_index(target_reg)};
+        uint8_t mov_reg_eax[] = {0x89, 0xC0};
+        mov_reg_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(target_reg);
         buffer_append(b, mov_reg_eax, 2);
 
         // Restore original EAX

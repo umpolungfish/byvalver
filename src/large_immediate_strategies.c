@@ -193,7 +193,7 @@ void generate_large_immediate_optimization(struct buffer *b, cs_insn *insn) {
     uint8_t reg_num = 0;
 
     if (dst_op->type == X86_OP_REG) {
-        reg_num = dst_op->reg - X86_REG_EAX;  // 0 for EAX, 1 for ECX, etc.
+        reg_num = get_reg_index(dst_op->reg);
     }
 
     // Strategy selection based on the immediate value
@@ -204,8 +204,7 @@ void generate_large_immediate_optimization(struct buffer *b, cs_insn *insn) {
             buffer_write_byte(b, 0x31);
             buffer_write_byte(b, 0xC0 + (reg_num << 3) + reg_num);
             
-            // INC reg 
-            // Use FF C1 encoding instead of 40+reg_num to avoid potential null issues
+            // INC reg - use FF /0 form to avoid nulls in register encoding
             buffer_write_byte(b, 0xFF);
             buffer_write_byte(b, 0xC0 + reg_num);
         } else if (dst_op->type == X86_OP_MEM) {
@@ -252,3 +251,10 @@ strategy_t large_immediate_strategy = {
     .generate = generate_large_immediate_optimization,
     .priority = 85  // High priority
 };
+
+/**
+ * Registration function for large immediate value optimization strategy
+ */
+void register_large_immediate_strategies(void) {
+    register_strategy(&large_immediate_strategy);
+}

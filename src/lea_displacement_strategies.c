@@ -96,19 +96,19 @@ void generate_lea_complex_displacement(struct buffer *b, cs_insn *insn) {
         // Scale EAX by the scale factor (SHL operations)
         if (src_op->mem.scale == 2) {
             uint8_t shl_eax[] = {0xD1, 0xE0};
-            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);
+            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);  // SHL EAX, 1
             buffer_append(b, shl_eax, 2);
         } else if (src_op->mem.scale == 4) {
             uint8_t shl_eax[] = {0xD1, 0xE0};
-            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);
+            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);  // SHL EAX, 1
             buffer_append(b, shl_eax, 2);
-            buffer_append(b, shl_eax, 2); // Double shift for x4
+            buffer_append(b, shl_eax, 2); // Double shift for x4 (SHL EAX, 1 twice)
         } else if (src_op->mem.scale == 8) {
             uint8_t shl_eax[] = {0xD1, 0xE0};
-            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);
+            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);  // SHL EAX, 1
             buffer_append(b, shl_eax, 2);
-            buffer_append(b, shl_eax, 2); // Triple shift for x8
-            buffer_append(b, shl_eax, 2);
+            buffer_append(b, shl_eax, 2); // SHL EAX, 1
+            buffer_append(b, shl_eax, 2); // SHL EAX, 1 (x8 = shift 3 times)
         }
 
         // Add the base value back from ECX
@@ -141,8 +141,8 @@ void generate_lea_complex_displacement(struct buffer *b, cs_insn *insn) {
         buffer_append(b, add_eax_edx, 2);
 
         // Restore stack
-        uint8_t push_edx[] = {0x52};
-        buffer_append(b, push_edx, 1);
+        uint8_t pop_edx[] = {0x5A};
+        buffer_append(b, pop_edx, 1);
     }
 
     // Move result to target register
@@ -246,19 +246,19 @@ void generate_lea_displacement_adjusted(struct buffer *b, cs_insn *insn) {
         // Scale EAX by the scale factor (SHL operations)
         if (src_op->mem.scale == 2) {
             uint8_t shl_eax[] = {0xD1, 0xE0};
-            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);
+            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);  // SHL EAX, 1
             buffer_append(b, shl_eax, 2);
         } else if (src_op->mem.scale == 4) {
             uint8_t shl_eax[] = {0xD1, 0xE0};
-            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);
+            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);  // SHL EAX, 1
             buffer_append(b, shl_eax, 2);
-            buffer_append(b, shl_eax, 2); // Double shift for x4
+            buffer_append(b, shl_eax, 2); // Double shift for x4 (SHL EAX, 1 twice)
         } else if (src_op->mem.scale == 8) {
             uint8_t shl_eax[] = {0xD1, 0xE0};
-            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);
+            shl_eax[1] = 0xE0 + get_reg_index(X86_REG_EAX);  // SHL EAX, 1
             buffer_append(b, shl_eax, 2);
-            buffer_append(b, shl_eax, 2); // Triple shift for x8
-            buffer_append(b, shl_eax, 2);
+            buffer_append(b, shl_eax, 2); // SHL EAX, 1
+            buffer_append(b, shl_eax, 2); // SHL EAX, 1 (x8 = shift 3 times)
         }
 
         // Add the base value back from ECX
@@ -291,8 +291,8 @@ void generate_lea_displacement_adjusted(struct buffer *b, cs_insn *insn) {
         buffer_append(b, add_eax_edx, 2);
 
         // Restore stack
-        uint8_t push_edx[] = {0x52};
-        buffer_append(b, push_edx, 1);
+        uint8_t pop_edx[] = {0x5A};
+        buffer_append(b, pop_edx, 1);
     }
 
     // Move result to target register

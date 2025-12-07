@@ -92,25 +92,25 @@ void generate_cmp_reg_imm_null(struct buffer *b, cs_insn *insn) {
         // This preserves all flags correctly
 
         // PUSH temp_reg
-        buffer_write_byte(b, 0x50 + (temp_reg - X86_REG_EAX));
+        buffer_write_byte(b, 0x50 + get_reg_index(temp_reg));
 
         // XOR temp_reg, temp_reg (sets temp to 0)
         buffer_write_byte(b, 0x31);
-        buffer_write_byte(b, 0xC0 + ((temp_reg - X86_REG_EAX) * 9));
+        buffer_write_byte(b, 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(temp_reg));
 
         // CMP dest_reg, temp_reg
         buffer_write_byte(b, 0x39);
-        uint8_t modrm = 0xC0 + ((temp_reg - X86_REG_EAX) * 8) + (dest_reg - X86_REG_EAX);
+        uint8_t modrm = 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(dest_reg);
         buffer_write_byte(b, modrm);
 
         // POP temp_reg
-        buffer_write_byte(b, 0x58 + (temp_reg - X86_REG_EAX));
+        buffer_write_byte(b, 0x58 + get_reg_index(temp_reg));
     } else {
         // For non-zero null-containing immediates
         // PUSH temp; construct value in temp; CMP dest, temp; POP temp
 
         // PUSH temp_reg
-        buffer_write_byte(b, 0x50 + (temp_reg - X86_REG_EAX));
+        buffer_write_byte(b, 0x50 + get_reg_index(temp_reg));
 
         // MOV temp_reg, imm (construct null-free)
         uint32_t val = (uint32_t)imm;
@@ -122,19 +122,37 @@ void generate_cmp_reg_imm_null(struct buffer *b, cs_insn *insn) {
             if (find_arithmetic_equivalent(val, &base, &offset, &operation)) {
                 if (operation == 0) {
                     // Addition: MOV temp, base; ADD temp, offset
-                    buffer_write_byte(b, 0xB8 + (temp_reg - X86_REG_EAX));
-                    buffer_write_dword(b, base);
+                    if (temp_reg == X86_REG_EAX) {
+                        generate_mov_eax_imm(b, base);
+                    } else {
+                        buffer_write_byte(b, 0x50); // PUSH EAX to save
+                        generate_mov_eax_imm(b, base);
+                        // MOV temp_reg, EAX
+                        uint8_t mov_code[] = {0x89, 0xC0};
+                        mov_code[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(temp_reg);
+                        buffer_append(b, mov_code, 2);
+                        buffer_write_byte(b, 0x58); // POP EAX
+                    }
 
                     buffer_write_byte(b, 0x81);
-                    buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
+                    buffer_write_byte(b, 0xC0 + get_reg_index(temp_reg));
                     buffer_write_dword(b, offset);
                 } else {
                     // Subtraction: MOV temp, base; SUB temp, offset
-                    buffer_write_byte(b, 0xB8 + (temp_reg - X86_REG_EAX));
-                    buffer_write_dword(b, base);
+                    if (temp_reg == X86_REG_EAX) {
+                        generate_mov_eax_imm(b, base);
+                    } else {
+                        buffer_write_byte(b, 0x50); // PUSH EAX to save
+                        generate_mov_eax_imm(b, base);
+                        // MOV temp_reg, EAX
+                        uint8_t mov_code[] = {0x89, 0xC0};
+                        mov_code[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(temp_reg);
+                        buffer_append(b, mov_code, 2);
+                        buffer_write_byte(b, 0x58); // POP EAX
+                    }
 
                     buffer_write_byte(b, 0x81);
-                    buffer_write_byte(b, 0xE8 + (temp_reg - X86_REG_EAX));
+                    buffer_write_byte(b, 0xE8 + get_reg_index(temp_reg));
                     buffer_write_dword(b, offset);
                 }
             } else {
@@ -142,16 +160,25 @@ void generate_cmp_reg_imm_null(struct buffer *b, cs_insn *insn) {
                 uint32_t negated_val;
                 if (find_neg_equivalent(val, &negated_val)) {
                     // MOV temp, -val; NEG temp
-                    buffer_write_byte(b, 0xB8 + (temp_reg - X86_REG_EAX));
-                    buffer_write_dword(b, negated_val);
+                    if (temp_reg == X86_REG_EAX) {
+                        generate_mov_eax_imm(b, negated_val);
+                    } else {
+                        buffer_write_byte(b, 0x50); // PUSH EAX to save
+                        generate_mov_eax_imm(b, negated_val);
+                        // MOV temp_reg, EAX
+                        uint8_t mov_code[] = {0x89, 0xC0};
+                        mov_code[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(temp_reg);
+                        buffer_append(b, mov_code, 2);
+                        buffer_write_byte(b, 0x58); // POP EAX
+                    }
 
                     buffer_write_byte(b, 0xF7);
-                    buffer_write_byte(b, 0xD8 + (temp_reg - X86_REG_EAX));
+                    buffer_write_byte(b, 0xD8 + get_reg_index(temp_reg));
                 } else {
                     // Last resort: byte-by-byte construction
                     // XOR temp, temp
                     buffer_write_byte(b, 0x31);
-                    buffer_write_byte(b, 0xC0 + ((temp_reg - X86_REG_EAX) * 9));
+                    buffer_write_byte(b, 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(temp_reg));
 
                     // Build value byte by byte using SHL + OR
                     for (int i = 0; i < 4; i++) {
@@ -160,17 +187,17 @@ void generate_cmp_reg_imm_null(struct buffer *b, cs_insn *insn) {
                             if (i > 0) {
                                 // SHL temp, 8
                                 buffer_write_byte(b, 0xC1);
-                                buffer_write_byte(b, 0xE0 + (temp_reg - X86_REG_EAX));
+                                buffer_write_byte(b, 0xE0 + get_reg_index(temp_reg));
                                 buffer_write_byte(b, 8);
                             }
                             // OR temp_low, byte
                             buffer_write_byte(b, 0x80);
-                            buffer_write_byte(b, 0xC8 + (temp_reg - X86_REG_EAX));
+                            buffer_write_byte(b, 0xC8 + get_reg_index(temp_reg));
                             buffer_write_byte(b, byte);
                         } else if (i > 0) {
                             // Shift for null bytes too
                             buffer_write_byte(b, 0xC1);
-                            buffer_write_byte(b, 0xE0 + (temp_reg - X86_REG_EAX));
+                            buffer_write_byte(b, 0xE0 + get_reg_index(temp_reg));
                             buffer_write_byte(b, 8);
                         }
                     }
@@ -178,17 +205,26 @@ void generate_cmp_reg_imm_null(struct buffer *b, cs_insn *insn) {
             }
         } else {
             // Value is null-free, use direct MOV
-            buffer_write_byte(b, 0xB8 + (temp_reg - X86_REG_EAX));
-            buffer_write_dword(b, val);
+            if (temp_reg == X86_REG_EAX) {
+                generate_mov_eax_imm(b, val);
+            } else {
+                buffer_write_byte(b, 0x50); // PUSH EAX to save
+                generate_mov_eax_imm(b, val);
+                // MOV temp_reg, EAX
+                uint8_t mov_code[] = {0x89, 0xC0};
+                mov_code[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(temp_reg);
+                buffer_append(b, mov_code, 2);
+                buffer_write_byte(b, 0x58); // POP EAX
+            }
         }
 
         // CMP dest_reg, temp_reg
         buffer_write_byte(b, 0x39);
-        uint8_t modrm = 0xC0 + ((temp_reg - X86_REG_EAX) * 8) + (dest_reg - X86_REG_EAX);
+        uint8_t modrm = 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(dest_reg);
         buffer_write_byte(b, modrm);
 
         // POP temp_reg
-        buffer_write_byte(b, 0x58 + (temp_reg - X86_REG_EAX));
+        buffer_write_byte(b, 0x58 + get_reg_index(temp_reg));
     }
 }
 
@@ -257,31 +293,31 @@ void generate_cmp_byte_mem_imm_null(struct buffer *b, cs_insn *insn) {
         // Transform: PUSH temp; XOR temp, temp; CMP [reg+disp], temp_low; POP temp
 
         // PUSH temp_reg
-        buffer_write_byte(b, 0x50 + (temp_reg - X86_REG_EAX));
+        buffer_write_byte(b, 0x50 + get_reg_index(temp_reg));
 
         // XOR temp_reg, temp_reg
         buffer_write_byte(b, 0x31);
-        buffer_write_byte(b, 0xC0 + ((temp_reg - X86_REG_EAX) * 9));
+        buffer_write_byte(b, 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(temp_reg));
 
         // CMP BYTE [base_reg+disp], temp_reg_low (AL, CL, DL, BL)
         buffer_write_byte(b, 0x38); // CMP r/m8, r8
 
         // Build ModR/M byte
-        uint8_t base_idx = base_reg - X86_REG_EAX;
-        uint8_t temp_idx = temp_reg - X86_REG_EAX;
+        uint8_t base_idx = get_reg_index(base_reg);
+        uint8_t temp_idx = get_reg_index(temp_reg);
 
         if (disp == 0 && base_reg != X86_REG_EBP) {
             // [reg] mode
-            uint8_t modrm = 0x00 + (temp_idx * 8) + base_idx;
+            uint8_t modrm = 0x00 + (temp_idx << 3) + base_idx;
             buffer_write_byte(b, modrm);
         } else if (disp >= -128 && disp <= 127 && !is_disp8_null(disp)) {
             // [reg+disp8] mode (displacement fits in 8 bits and isn't null)
-            uint8_t modrm = 0x40 + (temp_idx * 8) + base_idx;
+            uint8_t modrm = 0x40 + (temp_idx << 3) + base_idx;
             buffer_write_byte(b, modrm);
             buffer_write_byte(b, (uint8_t)disp);
         } else {
             // [reg+disp32] mode - may need null-free displacement
-            uint8_t modrm = 0x80 + (temp_idx * 8) + base_idx;
+            uint8_t modrm = 0x80 + (temp_idx << 3) + base_idx;
             buffer_write_byte(b, modrm);
 
             // Try to use null-free displacement
@@ -294,15 +330,15 @@ void generate_cmp_byte_mem_imm_null(struct buffer *b, cs_insn *insn) {
         }
 
         // POP temp_reg
-        buffer_write_byte(b, 0x58 + (temp_reg - X86_REG_EAX));
+        buffer_write_byte(b, 0x58 + get_reg_index(temp_reg));
     } else {
         // Non-zero immediate - similar approach
         // For simplicity, use same pattern
-        buffer_write_byte(b, 0x50 + (temp_reg - X86_REG_EAX));
+        buffer_write_byte(b, 0x50 + get_reg_index(temp_reg));
 
         // Get indices
-        uint8_t base_idx = base_reg - X86_REG_EAX;
-        uint8_t temp_idx = temp_reg - X86_REG_EAX;
+        uint8_t base_idx = get_reg_index(base_reg);
+        uint8_t temp_idx = get_reg_index(temp_reg);
 
         // MOV temp_reg_low, imm8
         buffer_write_byte(b, 0xB0 + temp_idx); // MOV AL/CL/DL/BL, imm8
@@ -312,19 +348,19 @@ void generate_cmp_byte_mem_imm_null(struct buffer *b, cs_insn *insn) {
         buffer_write_byte(b, 0x38);
 
         if (disp == 0 && base_reg != X86_REG_EBP) {
-            uint8_t modrm = 0x00 + (temp_idx * 8) + base_idx;
+            uint8_t modrm = 0x00 + (temp_idx << 3) + base_idx;
             buffer_write_byte(b, modrm);
         } else if (disp >= -128 && disp <= 127 && !is_disp8_null(disp)) {
-            uint8_t modrm = 0x40 + (temp_idx * 8) + base_idx;
+            uint8_t modrm = 0x40 + (temp_idx << 3) + base_idx;
             buffer_write_byte(b, modrm);
             buffer_write_byte(b, (uint8_t)disp);
         } else {
-            uint8_t modrm = 0x80 + (temp_idx * 8) + base_idx;
+            uint8_t modrm = 0x80 + (temp_idx << 3) + base_idx;
             buffer_write_byte(b, modrm);
             buffer_write_dword(b, (uint32_t)disp);
         }
 
-        buffer_write_byte(b, 0x58 + (temp_reg - X86_REG_EAX));
+        buffer_write_byte(b, 0x58 + get_reg_index(temp_reg));
     }
 }
 
@@ -388,11 +424,11 @@ void generate_cmp_mem_reg_null(struct buffer *b, cs_insn *insn) {
     if (temp_reg == cmp_reg || temp_reg == base_reg) temp_reg = X86_REG_EDX;
 
     // PUSH temp
-    buffer_write_byte(b, 0x50 + (temp_reg - X86_REG_EAX));
+    buffer_write_byte(b, 0x50 + get_reg_index(temp_reg));
 
     // MOV temp, base
     buffer_write_byte(b, 0x89);
-    uint8_t modrm = 0xC0 + ((base_reg - X86_REG_EAX) * 8) + (temp_reg - X86_REG_EAX);
+    uint8_t modrm = 0xC0 + (get_reg_index(base_reg) << 3) + get_reg_index(temp_reg);
     buffer_write_byte(b, modrm);
 
     // ADD temp, disp (if disp != 0)
@@ -400,12 +436,12 @@ void generate_cmp_mem_reg_null(struct buffer *b, cs_insn *insn) {
         if (disp >= -128 && disp <= 127 && !is_disp8_null(disp)) {
             // ADD temp, imm8 (displacement fits in 8 bits and isn't null)
             buffer_write_byte(b, 0x83);
-            buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
+            buffer_write_byte(b, 0xC0 + get_reg_index(temp_reg));
             buffer_write_byte(b, (uint8_t)disp);
         } else if (!has_null_in_displacement(disp)) {
             // ADD temp, imm32 (displacement is null-free as 32-bit)
             buffer_write_byte(b, 0x81);
-            buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
+            buffer_write_byte(b, 0xC0 + get_reg_index(temp_reg));
             buffer_write_dword(b, (uint32_t)disp);
         } else {
             // Try to break into multiple smaller displacements to avoid nulls
@@ -416,26 +452,26 @@ void generate_cmp_mem_reg_null(struct buffer *b, cs_insn *insn) {
                 if (operation == 0) {
                     // Addition: ADD temp, base; ADD temp, offset
                     buffer_write_byte(b, 0x81);
-                    buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
+                    buffer_write_byte(b, 0xC0 + get_reg_index(temp_reg));
                     buffer_write_dword(b, base);
 
                     buffer_write_byte(b, 0x81);
-                    buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
+                    buffer_write_byte(b, 0xC0 + get_reg_index(temp_reg));
                     buffer_write_dword(b, offset);
                 } else {
                     // Subtraction: ADD temp, base; SUB temp, offset
                     buffer_write_byte(b, 0x81);
-                    buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
+                    buffer_write_byte(b, 0xC0 + get_reg_index(temp_reg));
                     buffer_write_dword(b, base);
 
                     buffer_write_byte(b, 0x81);
-                    buffer_write_byte(b, 0xE8 + (temp_reg - X86_REG_EAX));  // SUB
+                    buffer_write_byte(b, 0xE8 + get_reg_index(temp_reg));  // SUB
                     buffer_write_dword(b, offset);
                 }
             } else {
                 // Fallback: use displacement as-is (may have nulls but rare)
                 buffer_write_byte(b, 0x81);
-                buffer_write_byte(b, 0xC0 + (temp_reg - X86_REG_EAX));
+                buffer_write_byte(b, 0xC0 + get_reg_index(temp_reg));
                 buffer_write_dword(b, (uint32_t)disp);
             }
         }
@@ -450,11 +486,11 @@ void generate_cmp_mem_reg_null(struct buffer *b, cs_insn *insn) {
         buffer_write_byte(b, 0x39);
     }
 
-    modrm = 0x00 + ((cmp_reg - X86_REG_EAX) * 8) + (temp_reg - X86_REG_EAX);
+    modrm = 0x00 + (get_reg_index(cmp_reg) << 3) + get_reg_index(temp_reg);
     buffer_write_byte(b, modrm);
 
     // POP temp
-    buffer_write_byte(b, 0x58 + (temp_reg - X86_REG_EAX));
+    buffer_write_byte(b, 0x58 + get_reg_index(temp_reg));
 }
 
 strategy_t cmp_mem_reg_null_strategy = {
