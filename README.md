@@ -125,10 +125,6 @@ byvalver -r --no-continue-on-error input/ output/
 
 ### Implementation Details
 
-**New Files:**
-- `src/batch_processing.h` - Batch processing API
-- `src/batch_processing.c` - Directory traversal, file discovery, and statistics
-
 **Key Features:**
 - **Automatic directory creation** - Parent directories created automatically (preserves existing functionality)
 - **Pattern matching** - Uses fnmatch for flexible file pattern matching
