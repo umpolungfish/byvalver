@@ -284,125 +284,6 @@ int has_null_bytes(cs_insn *insn) {
     // printf("has_null_bytes: insn->id=0x%x, has_null=%d\n", insn->id, has_null); // Removed debug print
     return has_null;
 }
-// Register the shift strategy
-void register_shift_strategy() {
-    extern strategy_t shift_based_strategy;
-    register_strategy(&shift_based_strategy);
-}
-
-// Register the RIP-relative strategy
-void register_rip_relative_strategies() {
-    extern strategy_t rip_relative_strategy;
-    register_strategy(&rip_relative_strategy);
-}
-
-// Register the multi-byte NOP strategy
-void register_multibyte_nop_strategies() {
-    extern strategy_t multibyte_nop_strategy;
-    register_strategy(&multibyte_nop_strategy);
-}
-
-// Register the small immediate strategy
-void register_small_immediate_strategies() {
-    extern strategy_t small_immediate_strategy;
-    register_strategy(&small_immediate_strategy);
-}
-
-// Register the relative jump strategy
-void register_relative_jump_strategies() {
-    extern strategy_t relative_jump_strategy;
-    register_strategy(&relative_jump_strategy);
-}
-
-// Register the large immediate strategy
-void register_large_immediate_strategies() {
-    extern strategy_t large_immediate_strategy;
-    register_strategy(&large_immediate_strategy);
-}
-
-// Register the ROR13 hash strategy
-void register_ror13_hash_strategies() {
-    extern strategy_t ror13_hash_strategy;
-    register_strategy(&ror13_hash_strategy);
-}
-
-// Register the syscall strategy
-void register_syscall_strategies() {
-    extern strategy_t syscall_number_mov_strategy;
-    register_strategy(&syscall_number_mov_strategy);
-}
-
-// Register the REP STOSB strategy
-void register_rep_stosb_strategies() {
-    extern strategy_t rep_stosb_count_setup_strategy;
-    register_strategy(&rep_stosb_count_setup_strategy);
-}
-
-// Register the SALC strategy
-void register_salc_strategies() {
-    extern strategy_t salc_zero_al_strategy;
-    register_strategy(&salc_zero_al_strategy);
-}
-
-// Register the PUSH immediate optimization strategy
-void register_xchg_preservation_strategies() {
-    extern strategy_t push_imm_preservation_strategy;
-    register_strategy(&push_imm_preservation_strategy);
-}
-
-// Register the MOV arithmetic decomposition strategy
-void register_arithmetic_decomposition_strategies() {
-    extern strategy_t mov_arith_decomp_strategy;
-    register_strategy(&mov_arith_decomp_strategy);
-}
-
-// Register the custom hash algorithm strategy
-void register_custom_hash_strategies() {
-    extern strategy_t custom_hash_pattern_strategy;
-    extern strategy_t xor_encoded_hash_strategy;
-    register_strategy(&custom_hash_pattern_strategy);
-    register_strategy(&xor_encoded_hash_strategy);
-}
-
-// Register the API hashing with non-null values strategy
-void register_api_hashing_strategies() {
-    extern strategy_t hash_verification_adjustment_strategy;
-    extern strategy_t null_safe_hash_storage_strategy;
-    register_strategy(&hash_verification_adjustment_strategy);
-    register_strategy(&null_safe_hash_storage_strategy);
-}
-
-// Register the register chaining strategy
-void register_register_chaining_strategies() {
-    extern strategy_t register_chaining_immediate_strategy;
-    extern strategy_t cross_register_operation_strategy;
-    register_strategy(&register_chaining_immediate_strategy);
-    register_strategy(&cross_register_operation_strategy);
-}
-
-// Register the Linux socketcall strategy
-void register_linux_socketcall_strategies() {
-    extern strategy_t socketcall_argument_array_strategy;
-    extern strategy_t socketcall_constant_strategy;
-    register_strategy(&socketcall_argument_array_strategy);
-    register_strategy(&socketcall_constant_strategy);
-}
-
-// Register the Linux string push strategy
-void register_linux_string_push_strategies() {
-    extern strategy_t safe_string_push_strategy;
-    extern strategy_t null_free_path_construction_strategy;
-    register_strategy(&safe_string_push_strategy);
-    register_strategy(&null_free_path_construction_strategy);
-}
-
-// Register the Linux syscall number strategies
-void register_syscall_number_strategies() {
-    extern strategy_t syscall_number_byte_based_strategy;
-    extern strategy_t syscall_number_push_pop_strategy;
-    register_strategy(&syscall_number_byte_based_strategy);
-    register_strategy(&syscall_number_push_pop_strategy);
-}
 
 // Register the new strategies
 void register_new_strategies() {
@@ -459,6 +340,61 @@ int save_ml_model(const char* path) {
     return ml_strategist_save_model(&g_ml_strategist, path);
 }
 
+// Register the shift strategy (missing from shift_strategy.c)
+void register_shift_strategy() {
+    extern strategy_t shift_based_strategy;
+    register_strategy(&shift_based_strategy);
+}
+
+// Register the RIP-relative strategy (missing from rip_relative_strategies.c)
+void register_rip_relative_strategies() {
+    extern strategy_t rip_relative_strategy;
+    register_strategy(&rip_relative_strategy);
+}
+
+// Register the multi-byte NOP strategy (missing from multi_byte_nop_strategies.c)
+void register_multibyte_nop_strategies() {
+    extern strategy_t multibyte_nop_strategy;
+    register_strategy(&multibyte_nop_strategy);
+}
+
+// Register the small immediate strategy (missing from small_immediate_strategies.c)
+void register_small_immediate_strategies() {
+    extern strategy_t small_immediate_strategy;
+    register_strategy(&small_immediate_strategy);
+}
+
+// Register the relative jump strategy (missing from relative_jump_strategies.c)
+void register_relative_jump_strategies() {
+    extern strategy_t relative_jump_strategy;
+    register_strategy(&relative_jump_strategy);
+}
+
+// Register the REP STOSB strategy (missing from rep_stosb_strategies.c)
+void register_rep_stosb_strategies() {
+    extern strategy_t rep_stosb_count_setup_strategy;
+    register_strategy(&rep_stosb_count_setup_strategy);
+}
+
+// Register the SALC strategy (missing from salc_strategies.c)
+void register_salc_strategies() {
+    extern strategy_t salc_zero_al_strategy;
+    register_strategy(&salc_zero_al_strategy);
+}
+
+// Register the PUSH immediate optimization strategy (missing from xchg_preservation_strategies.c)
+void register_xchg_preservation_strategies() {
+    extern strategy_t push_imm_preservation_strategy;
+    register_strategy(&push_imm_preservation_strategy);
+}
+
+// Register the Linux string push strategy (missing from linux_string_push_strategies.c)
+void register_linux_string_push_strategies() {
+    extern strategy_t safe_string_push_strategy;
+    extern strategy_t null_free_path_construction_strategy;
+    register_strategy(&safe_string_push_strategy);
+    register_strategy(&null_free_path_construction_strategy);
+}
 
 
 

@@ -109,7 +109,6 @@ static size_t get_size_syscall_number_push_pop(cs_insn *insn) {
 
 static void generate_syscall_number_push_pop(struct buffer *b, cs_insn *insn) {
     uint64_t imm = insn->detail->x86.operands[1].imm;
-    uint8_t imm8 = (uint8_t)imm;
 
     // Get the destination register
     x86_reg dest_reg = insn->detail->x86.operands[0].reg;
