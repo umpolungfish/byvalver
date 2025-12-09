@@ -69,6 +69,7 @@ void buffer_append(struct buffer *b, const uint8_t *data, size_t size) {
 uint8_t get_reg_index(uint8_t reg) {
     // Map x86 registers to indices 0-7 for EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI
     switch (reg) {
+        // 32-bit registers
         case X86_REG_EAX: return 0;
         case X86_REG_ECX: return 1;
         case X86_REG_EDX: return 2;
@@ -77,6 +78,34 @@ uint8_t get_reg_index(uint8_t reg) {
         case X86_REG_EBP: return 5;
         case X86_REG_ESI: return 6;
         case X86_REG_EDI: return 7;
+        // 64-bit registers (map to their 32-bit equivalents)
+        case X86_REG_RAX: return 0;
+        case X86_REG_RCX: return 1;
+        case X86_REG_RDX: return 2;
+        case X86_REG_RBX: return 3;
+        case X86_REG_RSP: return 4;
+        case X86_REG_RBP: return 5;
+        case X86_REG_RSI: return 6;
+        case X86_REG_RDI: return 7;
+        // 16-bit registers (map to their 32-bit equivalents)
+        case X86_REG_AX: return 0;
+        case X86_REG_CX: return 1;
+        case X86_REG_DX: return 2;
+        case X86_REG_BX: return 3;
+        case X86_REG_SP: return 4;
+        case X86_REG_BP: return 5;
+        case X86_REG_SI: return 6;
+        case X86_REG_DI: return 7;
+        // 8-bit low registers (map to base register)
+        case X86_REG_AL: return 0;
+        case X86_REG_CL: return 1;
+        case X86_REG_DL: return 2;
+        case X86_REG_BL: return 3;
+        // 8-bit high registers (map to base register for 32-bit context)
+        case X86_REG_AH: return 0;  // AH -> EAX
+        case X86_REG_CH: return 1;  // CH -> ECX
+        case X86_REG_DH: return 2;  // DH -> EDX
+        case X86_REG_BH: return 3;  // BH -> EBX
         default:
             fprintf(stderr, "[WARNING] Unknown register in get_reg_index: %d\n", reg);
             return 0;  // Return EAX index as default, but log the issue

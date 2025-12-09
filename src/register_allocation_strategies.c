@@ -18,41 +18,8 @@
  * that get combined with the register.
  */
 int can_handle_register_remap_nulls(cs_insn *insn) {
-    // Check the instruction encoding for null bytes
-    for (int i = 0; i < insn->size; i++) {
-        if (insn->bytes[i] == 0x00) {
-            return 1;
-        }
-    }
-
-    // Check if any register operands are part of an expression that could generate nulls
-    // For example, if we're dealing with instructions that involve ESP/EBP in certain contexts
-    // where they generate null bytes in the ModR/M byte
-    
-    // Look for operations on specific registers that might generate nulls
-    // in the ModR/M or SIB bytes
-    for (int i = 0; i < insn->detail->x86.op_count; i++) {
-        if (insn->detail->x86.operands[i].type == X86_OP_REG) {
-            x86_reg reg = insn->detail->x86.operands[i].reg;
-            
-            // Check if this is a register that could be problematic in certain contexts
-            // For example, when used in [reg] addressing mode, EBP and R13 need displacement 
-            // which could introduce nulls
-            if (reg == X86_REG_EBP || reg == X86_REG_R13) {
-                // If this register is used in addressing mode without displacement,
-                // it will require a zero displacement byte
-                for (int j = 0; j < insn->detail->x86.op_count; j++) {
-                    if (insn->detail->x86.operands[j].type == X86_OP_MEM) {
-                        if (insn->detail->x86.operands[j].mem.base == reg && 
-                            insn->detail->x86.operands[j].mem.disp == 0) {
-                            return 1;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
+    // Disable this broken strategy - it appends original instruction with nulls
+    (void)insn;
     return 0;
 }
 
@@ -60,28 +27,8 @@ int can_handle_register_remap_nulls(cs_insn *insn) {
  * Detection for MOV instructions where source/destination registers might be problematic
  */
 int can_handle_mov_register_remap(cs_insn *insn) {
-    if (insn->id != X86_INS_MOV) {
-        return 0;
-    }
-    
-    // Check for null bytes in the instruction
-    for (int i = 0; i < insn->size; i++) {
-        if (insn->bytes[i] == 0x00) {
-            return 1;
-        }
-    }
-
-    // Check for memory addressing with EBP/R13 without displacement
-    for (int i = 0; i < insn->detail->x86.op_count; i++) {
-        if (insn->detail->x86.operands[i].type == X86_OP_MEM) {
-            if ((insn->detail->x86.operands[i].mem.base == X86_REG_EBP || 
-                 insn->detail->x86.operands[i].mem.base == X86_REG_R13) &&
-                insn->detail->x86.operands[i].mem.disp == 0) {
-                return 1;
-            }
-        }
-    }
-    
+    // Disable this broken strategy - it appends original instruction with nulls
+    (void)insn;
     return 0;
 }
 
@@ -100,45 +47,9 @@ size_t get_size_mov_register_remap(__attribute__((unused)) cs_insn *insn) {
  * Generate register remapping to avoid null-byte patterns in addressing
  */
 void generate_register_remap_nulls(struct buffer *b, cs_insn *insn) {
-    // For memory addressing with EBP/R13 that requires zero displacement
-    // We should remap to a different register if possible
-    
-    // Check if this is a memory operation with EBP/R13 and zero displacement
-    for (int i = 0; i < insn->detail->x86.op_count; i++) {
-        if (insn->detail->x86.operands[i].type == X86_OP_MEM) {
-            x86_reg problematic_reg = insn->detail->x86.operands[i].mem.base;
-            if ((problematic_reg == X86_REG_EBP || problematic_reg == X86_REG_R13) &&
-                insn->detail->x86.operands[i].mem.disp == 0) {
-                
-                // Find an alternative register to replace the problematic one
-                x86_reg alt_reg = X86_REG_EAX; // Default alternative
-                // Make sure we don't use the same register as the other operand
-                for (int j = 0; j < insn->detail->x86.op_count; j++) {
-                    if (insn->detail->x86.operands[j].type == X86_OP_REG) {
-                        if (insn->detail->x86.operands[j].reg == X86_REG_EAX) {
-                            alt_reg = X86_REG_ECX;
-                            if (insn->detail->x86.operands[j].reg == X86_REG_ECX) {
-                                alt_reg = X86_REG_EDX;
-                            }
-                        }
-                    }
-                }
-                
-                // Copy the problematic register's value to the alternative register
-                // MOV alt_reg, problematic_reg
-                uint8_t mov_reg[] = {0x89, 0xC0 + (get_reg_index(problematic_reg) << 3) + get_reg_index(alt_reg)};
-                buffer_append(b, mov_reg, 2);
-                
-                // Now modify the original instruction to use the new register
-                // This is complex to do generically, so we'll use a simplified approach
-                // For now, append the original instruction as a fallback
-                buffer_append(b, insn->bytes, insn->size);
-                return;
-            }
-        }
-    }
-    
-    // If no specific register remapping needed, just append original
+    // This strategy is incomplete and introduces nulls
+    // Disable it by just appending the original instruction
+    // TODO: Implement proper register remapping that reconstructs the instruction
     buffer_append(b, insn->bytes, insn->size);
 }
 
@@ -146,42 +57,9 @@ void generate_register_remap_nulls(struct buffer *b, cs_insn *insn) {
  * Generate register remapping specifically for MOV instructions
  */
 void generate_mov_register_remap(struct buffer *b, cs_insn *insn) {
-    // For MOV instructions, try to remap if it helps avoid nulls
-    
-    // Check if this MOV has problematic register addressing
-    for (int i = 0; i < insn->detail->x86.op_count; i++) {
-        if (insn->detail->x86.operands[i].type == X86_OP_MEM) {
-            x86_reg base_reg = insn->detail->x86.operands[i].mem.base;
-            if ((base_reg == X86_REG_EBP || base_reg == X86_REG_R13) &&
-                insn->detail->x86.operands[i].mem.disp == 0) {
-                
-                // Find alternative register
-                x86_reg dst_reg = (insn->detail->x86.operands[0].type == X86_OP_REG) ? 
-                                 insn->detail->x86.operands[0].reg : X86_REG_INVALID;
-                
-                x86_reg alt_reg = X86_REG_EAX;
-                if (dst_reg == X86_REG_EAX || (insn->detail->x86.operands[1].type == X86_OP_REG && 
-                                              insn->detail->x86.operands[1].reg == X86_REG_EAX)) {
-                    alt_reg = X86_REG_ECX;
-                    if (dst_reg == X86_REG_ECX || (insn->detail->x86.operands[1].type == X86_OP_REG && 
-                                                  insn->detail->x86.operands[1].reg == X86_REG_ECX)) {
-                        alt_reg = X86_REG_EDX;
-                    }
-                }
-                
-                // MOV alt_reg, base_reg (copy the address)
-                uint8_t mov_addr[] = {0x89, 0xC0 + (get_reg_index(base_reg) << 3) + get_reg_index(alt_reg)};
-                buffer_append(b, mov_addr, 2);
-                
-                // Now we'd need to recreate the MOV with the new register
-                // This is complex, so we'll append original as fallback for now
-                buffer_append(b, insn->bytes, insn->size);
-                return;
-            }
-        }
-    }
-    
-    // If no change needed, append original
+    // This strategy is incomplete and introduces nulls
+    // Disable it by just appending the original instruction
+    // TODO: Implement proper register remapping that reconstructs the instruction
     buffer_append(b, insn->bytes, insn->size);
 }
 
@@ -189,20 +67,8 @@ void generate_mov_register_remap(struct buffer *b, cs_insn *insn) {
  * More sophisticated register allocation that considers the whole instruction context
  */
 int can_handle_contextual_register_swap(cs_insn *insn) {
-    // Check if any register usage could potentially create nulls when combined
-    // with other parts of the instruction
-    
-    // Look for common patterns in shellcode that create null-bytes:
-    // - Using EBP as base without displacement (requires 00 displacement byte)
-    // - Using R13 as base without displacement (requires 00 displacement byte in x64)
-    // - Specific register + immediate combinations
-    
-    for (int i = 0; i < insn->size; i++) {
-        if (insn->bytes[i] == 0x00) {
-            return 1;
-        }
-    }
-    
+    // Disable this broken strategy - it introduces nulls instead of eliminating them
+    (void)insn;
     return 0;
 }
 

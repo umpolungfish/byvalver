@@ -33,6 +33,9 @@ void generate_lea_disp_enhanced(struct buffer *b, cs_insn *insn) {
     x86_reg dst_reg = insn->detail->x86.operands[0].reg;
     cs_x86_op *mem_op = &insn->detail->x86.operands[1]; // This is the memory operand
 
+    fprintf(stderr, "[DEBUG LEA] Processing LEA: dst_reg=%d, base=%d, index=%d, disp=0x%llx\n",
+            dst_reg, mem_op->mem.base, mem_op->mem.index, (unsigned long long)mem_op->mem.disp);
+
     // Use base + index*scale + disp approach with null-safe construction
     // PUSH temp_reg
     x86_reg temp_reg = X86_REG_ECX;
@@ -40,6 +43,7 @@ void generate_lea_disp_enhanced(struct buffer *b, cs_insn *insn) {
     if (temp_reg == dst_reg) temp_reg = X86_REG_EBX;
 
     uint8_t push_temp[] = {0x50 + get_reg_index(temp_reg)};
+    fprintf(stderr, "[DEBUG LEA] Writing PUSH temp_reg: 0x%02x\n", push_temp[0]);
     buffer_append(b, push_temp, 1);
 
     // Clear temp_reg first
@@ -81,21 +85,36 @@ void generate_lea_disp_enhanced(struct buffer *b, cs_insn *insn) {
 
     // Add displacement using null-safe construction
     uint32_t disp = (uint32_t)mem_op->mem.disp;
+    fprintf(stderr, "[DEBUG LEA] Displacement: 0x%08x\n", disp);
     if (disp != 0) {
         // Use EAX as temporary for displacement
         uint8_t push_eax[] = {0x50};
+        fprintf(stderr, "[DEBUG LEA] Writing PUSH EAX: 0x%02x\n", push_eax[0]);
         buffer_append(b, push_eax, 1);
 
         // Load displacement into EAX with null-safe construction
+        fprintf(stderr, "[DEBUG LEA] Calling generate_mov_eax_imm for disp=0x%08x\n", disp);
+        size_t before_size = b->size;
         generate_mov_eax_imm(b, disp);
+        size_t after_size = b->size;
+        fprintf(stderr, "[DEBUG LEA] generate_mov_eax_imm wrote %zu bytes\n", after_size - before_size);
+
+        // Print the actual bytes written
+        fprintf(stderr, "[DEBUG LEA] Bytes written by generate_mov_eax_imm: ");
+        for (size_t i = before_size; i < after_size; i++) {
+            fprintf(stderr, "%02x ", b->data[i]);
+        }
+        fprintf(stderr, "\n");
 
         // ADD temp_reg, EAX
         uint8_t add_temp_eax[] = {0x01, 0xC0};
-        add_temp_eax[1] = 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(X86_REG_EAX);
+        add_temp_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(temp_reg);
+        fprintf(stderr, "[DEBUG LEA] Writing ADD temp_reg, EAX: 0x%02x 0x%02x\n", add_temp_eax[0], add_temp_eax[1]);
         buffer_append(b, add_temp_eax, 2);
 
         // POP EAX to restore
         uint8_t pop_eax[] = {0x58};
+        fprintf(stderr, "[DEBUG LEA] Writing POP EAX: 0x%02x\n", pop_eax[0]);
         buffer_append(b, pop_eax, 1);
     }
 

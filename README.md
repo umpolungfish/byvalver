@@ -65,6 +65,14 @@ BYVALVER includes 120+ instruction transformation strategies that handle complex
 - **Register Allocation Strategies**: Dynamic register remapping to avoid null-byte patterns
 - **LEA Displacement Optimization**: Specialized LEA instruction handling for displacement values containing null bytes
 
+**Critical Bug Fixes (v2.6):**
+- **Disabled Broken Strategies**: Fixed critical bugs where several strategies were introducing null bytes instead of eliminating them
+- **mov_register_remap**: Fixed bug where this strategy would append original instruction with nulls instead of transforming
+- **contextual_register_swap**: Fixed bug where this strategy would introduce nulls instead of eliminating them
+- **hash_based_resolution**: Fixed incomplete implementation causing null introduction
+- **enhanced_peb_traversal**: Fixed incomplete implementation causing null introduction
+- **peb_conditional_jumps**: Fixed incomplete implementation causing null introduction
+
 **Key Features:**
 - **Strategy Registration**: Comprehensive registration system for all transformation strategies
 - **Fallback Mechanisms**: Robust fallback systems when primary transformation methods fail

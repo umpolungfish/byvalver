@@ -17,32 +17,8 @@
  * Examples: mov eax, [ebx + 0x3c], mov edx, [edx + 0x78], etc.
  */
 int can_handle_enhanced_peb_traversal(cs_insn *insn) {
-    if (!insn || insn->id != X86_INS_MOV) {
-        return 0;
-    }
-
-    if (insn->detail->x86.op_count != 2) {
-        return 0;
-    }
-
-    cs_x86_op *src = &insn->detail->x86.operands[1];
-
-    // Check if source is memory operand with displacement that has null bytes
-    if (src->type == X86_OP_MEM) {
-        uint64_t disp = src->mem.disp;
-        // Check if displacement contains null bytes (common in PEB traversal)
-        for (int i = 0; i < 8; i++) {
-            if (((disp >> (i * 8)) & 0xFF) == 0x00) {
-                // Additional check: verify this looks like PEB traversal pattern
-                // Common PEB offsets: 0x30, 0x0c, 0x1c, 0x3c, 0x78, 0x20, 0x24
-                if (disp == 0x30 || disp == 0x0c || disp == 0x1c ||
-                    disp == 0x3c || disp == 0x78 || disp == 0x20 || disp == 0x24) {
-                    return 1;
-                }
-            }
-        }
-    }
-
+    // Disable this broken strategy - it introduces nulls instead of eliminating them
+    (void)insn;
     return 0;
 }
 
@@ -51,29 +27,8 @@ int can_handle_enhanced_peb_traversal(cs_insn *insn) {
  * Looks for comparisons of function names like "GetProcAddress"
  */
 int can_handle_hash_based_resolution(cs_insn *insn) {
-    if (!insn || insn->id != X86_INS_CMP) {
-        return 0;
-    }
-
-    if (insn->detail->x86.op_count != 2) {
-        return 0;
-    }
-
-    cs_x86_op *op1 = &insn->detail->x86.operands[0];
-    cs_x86_op *op2 = &insn->detail->x86.operands[1];
-
-    // Look for memory-to-immediate comparisons with potential nulls
-    // Example: cmp dword [eax], 0x50746547 (GetProc in little endian)
-    if (op1->type == X86_OP_MEM && op2->type == X86_OP_IMM) {
-        uint32_t imm = (uint32_t)op2->imm;
-        // Check if immediate contains null bytes
-        for (int i = 0; i < 4; i++) {
-            if (((imm >> (i * 8)) & 0xFF) == 0x00) {
-                return 1;
-            }
-        }
-    }
-
+    // Disable this broken strategy - it introduces nulls instead of eliminating them
+    (void)insn;
     return 0;
 }
 
@@ -81,19 +36,8 @@ int can_handle_hash_based_resolution(cs_insn *insn) {
  * Enhanced detection for conditional jumps in API resolution loops
  */
 int can_handle_peb_conditional_jumps(cs_insn *insn) {
-    // Check for conditional jumps (jz, jnz, je, jne, etc.)
-    if (insn->id < X86_INS_JAE || insn->id > X86_INS_JS) {
-        return 0;
-    }
-
-    // Check if the jump displacement might contain nulls
-    // The instruction itself might have nulls in encoding
-    for (int i = 0; i < insn->size; i++) {
-        if (insn->bytes[i] == 0x00) {
-            return 1;
-        }
-    }
-
+    // Disable this broken strategy - it introduces nulls instead of eliminating them
+    (void)insn;
     return 0;
 }
 

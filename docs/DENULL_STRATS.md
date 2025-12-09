@@ -330,9 +330,57 @@ Strategies are registered in priority order, with higher priority strategies tak
 - **Transformation:** Alternative syscall number encoding.
 - **Generated code:** Syscall operations without null bytes.
 
+#### 38. Register Remap Nulls Strategy (DISABLED)
+- **Name:** `register_remap_nulls`
+- **Priority:** 75
+- **Description:** [DISABLED] Was intended to handle register usage that creates null bytes in encoding.
+- **Condition:** Applied to instructions where register usage could create null-byte patterns.
+- **Status:** DISABLED due to bug where it would append original instruction with nulls instead of properly transforming.
+- **Issue:** The strategy introduced null bytes instead of eliminating them.
+
+#### 39. MOV Register Remap Strategy (DISABLED)
+- **Name:** `mov_register_remap`
+- **Priority:** 78
+- **Description:** [DISABLED] Was intended for MOV register remapping to avoid addressing nulls.
+- **Condition:** Applied to MOV instructions where source/destination registers might be problematic.
+- **Status:** DISABLED due to bug where it would append original instruction with nulls instead of proper transformation.
+- **Issue:** The strategy introduced null bytes instead of eliminating them.
+
+#### 40. Contextual Register Swap Strategy (DISABLED)
+- **Name:** `contextual_register_swap`
+- **Priority:** 72
+- **Description:** [DISABLED] Was intended for context-aware register swapping to avoid nulls.
+- **Condition:** Applied to instructions where register usage could create null-byte patterns.
+- **Status:** DISABLED due to bug where it would introduce null bytes instead of eliminating them.
+- **Issue:** The strategy introduced null bytes instead of eliminating them.
+
+#### 41. Hash-Based Resolution Strategy (DISABLED)
+- **Name:** `hash_based_resolution`
+- **Priority:** 89
+- **Description:** [DISABLED] Was intended for hash-based API resolution patterns with null-byte handling.
+- **Condition:** Applied to CMP operations with function name comparisons containing null bytes.
+- **Status:** DISABLED due to incomplete/buggy implementation that introduced null bytes.
+- **Issue:** The strategy introduced null bytes instead of eliminating them.
+
+#### 42. Enhanced PEB Traversal Strategy (DISABLED)
+- **Name:** `enhanced_peb_traversal`
+- **Priority:** 88
+- **Description:** [DISABLED] Was intended for PEB traversal instructions with null-byte displacement handling.
+- **Condition:** Applied to MOV operations with PEB offset displacements containing nulls.
+- **Status:** DISABLED due to incomplete implementation that introduced null bytes.
+- **Issue:** The strategy introduced null bytes instead of eliminating them.
+
+#### 43. PEB Conditional Jump Strategy (DISABLED)
+- **Name:** `peb_conditional_jump`
+- **Priority:** 87
+- **Description:** [DISABLED] Was intended for conditional jumps in PEB traversal loops with null displacement.
+- **Condition:** Applied to conditional jump instructions in API resolution loops.
+- **Status:** DISABLED due to incomplete implementation that introduced null bytes.
+- **Issue:** The strategy introduced null bytes instead of eliminating them.
+
 ### Enhanced Strategies for Null-Byte Elimination
 
-#### 38. Enhanced MOV Memory Strategy
+#### 44. Enhanced MOV Memory Strategy
 - **Name:** `enhanced_mov_mem_strategies`
 - **Priority:** Medium
 - **Description:** Enhanced MOV memory operations with alternative addressing modes to avoid null bytes.
