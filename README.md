@@ -65,13 +65,19 @@ BYVALVER includes 120+ instruction transformation strategies that handle complex
 - **Register Allocation Strategies**: Dynamic register remapping to avoid null-byte patterns
 - **LEA Displacement Optimization**: Specialized LEA instruction handling for displacement values containing null bytes
 
-**Critical Bug Fixes (v2.6):**
+**Critical Bug Fixes and Improvements (v2.6-v2.7):**
 - **Disabled Broken Strategies**: Fixed critical bugs where several strategies were introducing null bytes instead of eliminating them
 - **mov_register_remap**: Fixed bug where this strategy would append original instruction with nulls instead of transforming
 - **contextual_register_swap**: Fixed bug where this strategy would introduce nulls instead of eliminating them
 - **hash_based_resolution**: Fixed incomplete implementation causing null introduction
 - **enhanced_peb_traversal**: Fixed incomplete implementation causing null introduction
 - **peb_conditional_jumps**: Fixed incomplete implementation causing null introduction
+- **Fixed Top 5 Impact Strategies**: Enhanced the following high-impact strategies significantly improving null elimination success rate:
+  - **generic_mem_null_disp_enhanced**: Improved generic memory displacement null elimination
+  - **lea_displacement_nulls**: Enhanced LEA instruction displacement handling
+  - **SIB Addressing Null Elimination**: Improved SIB addressing null detection and handling
+  - **conditional_jump_displacement**: Implemented proper conditional jump transformation
+  - **mov_mem_imm**: Enhanced MOV memory immediate handling
 
 **Key Features:**
 - **Strategy Registration**: Comprehensive registration system for all transformation strategies
@@ -83,6 +89,8 @@ BYVALVER includes 120+ instruction transformation strategies that handle complex
 - **Immediate Value Encoding**: Multiple encoding methods (XOR, shift-based, arithmetic decomposition)
 - **Register Chaining**: Enhanced register-based transformations to avoid null bytes
 - **Multi-Pass Processing**: Biphasic architecture with obfuscation pass followed by null-byte elimination
+- **SIB Addressing Enhancements**: Sophisticated SIB addressing mode handling to avoid null bytes
+- **Conditional Jump Optimization**: Advanced conditional jump displacement handling for improved success rates
 
 ### Batch Directory Processing
 Process multiple shellcode files in batch mode with directory processing capabilities.

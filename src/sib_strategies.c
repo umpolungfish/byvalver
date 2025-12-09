@@ -32,57 +32,6 @@
 extern void register_strategy(strategy_t *s);
 
 /*
- * Helper function to determine if an instruction uses SIB addressing with null bytes
- * Uses Capstone's detailed info to properly detect SIB addressing
- */
-static int has_sib_null_encoding(cs_insn *insn) {
-    if (!insn || !insn->detail) {
-        return 0;
-    }
-
-    cs_x86 *x86 = &insn->detail->x86;
-
-    // Check each memory operand for SIB addressing
-    for (int i = 0; i < x86->op_count; i++) {
-        if (x86->operands[i].type == X86_OP_MEM) {
-            cs_x86_op *op = &x86->operands[i];
-
-            // SIB addressing is used when:
-            // 1. There's an index register, OR
-            // 2. The scale factor is not 1 (scale > 1), OR
-            // 3. Base is ESP (special case where SIB is always used)
-            if (op->mem.index != X86_REG_INVALID ||  // Has index register
-                op->mem.scale != 1 ||                // Scale factor is not 1
-                op->mem.base == X86_REG_ESP) {       // Base is ESP (requires SIB)
-
-                // Now check if the original instruction contains null bytes
-                // which would be in the SIB byte or displacement
-                for (size_t j = 0; j < insn->size; j++) {
-                    if (insn->bytes[j] == 0x00) {
-                        return 1;  // Found null byte in instruction with SIB addressing
-                    }
-                }
-            }
-
-            // Special case: [EBP+disp32] always uses SIB byte for 32-bit displacement
-            if (op->mem.base == X86_REG_EBP &&
-                op->mem.index == X86_REG_INVALID &&
-                op->mem.disp != 0) {
-                // Check if displacement has null bytes
-                int32_t disp = (int32_t)op->mem.disp;
-                if (((disp >> 0) & 0xFF) == 0 ||
-                    ((disp >> 8) & 0xFF) == 0 ||
-                    ((disp >> 16) & 0xFF) == 0 ||
-                    ((disp >> 24) & 0xFF) == 0) {
-                    return 1;
-                }
-            }
-        }
-    }
-    return 0;
-}
-
-/*
  * Detect instructions with SIB bytes containing null bytes
  * This includes any memory operand that uses [base+index*scale] addressing
  */
@@ -91,24 +40,43 @@ static int can_handle_sib_null(cs_insn *insn) {
         return 0;
     }
 
-    // Check if this instruction actually has SIB addressing with null bytes
-    if (has_sib_null_encoding(insn)) {
-        return 1;
-    }
-
-    // Double check: if it has SIB addressing (index != INVALID) and null bytes in instruction
+    // Check if this instruction actually has SIB addressing with potential null bytes
     cs_x86 *x86 = &insn->detail->x86;
 
     for (int i = 0; i < x86->op_count; i++) {
         if (x86->operands[i].type == X86_OP_MEM) {
             cs_x86_op *op = &x86->operands[i];
 
-            // Check for SIB addressing pattern: base + index*scale
+            // SIB addressing is used when:
+            // 1. Has index register OR
+            // 2. Scale factor is not 1 OR
+            // 3. Base register is ESP (special case that always uses SIB)
             if (op->mem.index != X86_REG_INVALID || op->mem.base == X86_REG_ESP || op->mem.scale != 1) {
-                // This instruction uses SIB addressing
-                // If it also has null bytes, it's our target
+                // This instruction is using SIB addressing
+                // Check if the instruction encoding contains null bytes
                 if (has_null_bytes(insn)) {
-                    return 1;
+                    return 1;  // SIB addressing with null bytes in instruction encoding
+                }
+
+                // Also check if just the displacement part has null bytes (even if SIB byte itself doesn't)
+                // This catches cases where [EBP+disp32] or similar patterns produce nulls
+                if (op->mem.disp != 0) {
+                    uint64_t disp = op->mem.disp;
+                    for (int j = 0; j < 8; j++) {
+                        if (((disp >> (j * 8)) & 0xFF) == 0x00) {
+                            return 1;  // SIB addressing with null bytes in displacement
+                        }
+                    }
+                }
+            }
+            // Special case: [EBP+disp32] uses SIB byte for 32-bit displacement
+            else if (op->mem.base == X86_REG_EBP && op->mem.disp != 0) {
+                // Check if displacement has null bytes
+                uint64_t disp = op->mem.disp;
+                for (int j = 0; j < 8; j++) {
+                    if (((disp >> (j * 8)) & 0xFF) == 0x00) {
+                        return 1;  // [EBP+disp] with null bytes in displacement
+                    }
                 }
             }
         }

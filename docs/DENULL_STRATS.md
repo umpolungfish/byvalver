@@ -331,6 +331,48 @@ Strategies are registered in priority order, with higher priority strategies tak
 - **Generated code:** Syscall operations without null bytes.
 
 #### 38. Register Remap Nulls Strategy (DISABLED)
+
+#### 39. Generic Memory Null Displacement Enhanced Strategy
+- **Name:** `generic_mem_null_disp_enhanced`
+- **Priority:** 65
+- **Description:** Enhanced strategy for handling generic memory operations with null displacement values, using register-based addressing to avoid null bytes in displacement encoding.
+- **Condition:** Applies to any instruction with memory operands where displacement contains null bytes.
+- **Transformation:** MOV [disp32], reg → PUSH temp_reg; MOV temp_reg, disp32 (null-free construction); MOV [temp_reg], reg; POP temp_reg.
+- **Generated code:** Register-based addressing sequence to access memory without null displacement bytes.
+
+#### 40. LEA Displacement Nulls Strategy
+- **Name:** `lea_displacement_nulls`
+- **Priority:** 82
+- **Description:** Handles LEA instructions with displacement values containing null bytes by using register arithmetic to calculate addresses.
+- **Condition:** Applies to LEA operations where base+index*scale+disp addressing contains null bytes in displacement.
+- **Transformation:** LEA reg, [base + disp] → MOV reg, base; ADD reg, disp (constructed with null-free approach).
+- **Generated code:** Register arithmetic sequence to calculate effective address without null displacement.
+
+#### 41. SIB Addressing Null Elimination Strategy
+- **Name:** `SIB Addressing Null Elimination`
+- **Priority:** 65
+- **Description:** Handles SIB (Scale-Index-Base) addressing modes that create null bytes in SIB byte encoding.
+- **Condition:** Applies to memory operations with SIB addressing where index*scale+base addressing contains null bytes.
+- **Transformation:** [base + index*scale + disp] → PUSH temp_reg; calculate address in temp_reg; MOV/MEMOP [temp_reg]; POP temp_reg.
+- **Generated code:** Register-based addressing to avoid problematic SIB byte encoding.
+
+#### 42. Conditional Jump Displacement Strategy
+- **Name:** `conditional_jump_displacement`
+- **Priority:** 85
+- **Description:** Handles conditional jumps with null-byte displacement by using conditional set and return-based jumps.
+- **Condition:** Applies to conditional jumps (JE, JNE, JZ, JNZ, etc.) where displacement contains null bytes.
+- **Transformation:** JZ target → PUSH target_addr; SETZ CL; CMP CL, 0; JZ skip; RET; skip: (or similar pattern).
+- **Generated code:** Conditional operation sequence to avoid null-byte displacement in jump instructions.
+
+#### 43. MOV Memory Immediate Strategy
+- **Name:** `mov_mem_imm`
+- **Priority:** 8
+- **Description:** Handles MOV reg, [disp32] operations where the displacement address contains null bytes.
+- **Condition:** Applies to MOV operations where destination is register and source is memory address with null displacement.
+- **Transformation:** MOV reg, [disp32] → PUSH temp_reg; MOV temp_reg, disp32 (null-free construction); MOV reg, [temp_reg]; POP temp_reg.
+- **Generated code:** Register-based memory access to avoid null displacement addressing.
+
+#### 44. Register Remap Nulls Strategy (DISABLED)
 - **Name:** `register_remap_nulls`
 - **Priority:** 75
 - **Description:** [DISABLED] Was intended to handle register usage that creates null bytes in encoding.

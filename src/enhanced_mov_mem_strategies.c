@@ -301,28 +301,301 @@ size_t get_size_generic_mem_null_disp_enhanced(__attribute__((unused)) cs_insn *
 }
 
 void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
-    // This is a fallback strategy that loads address to a register and then uses that register
-    // This approach works for any instruction that has memory operands with null displacements
-    // However, we need to be careful about different instruction types
-    
-    // For now, we'll handle the most common cases by converting them to use register-based addressing
-    // instead of displacement-based addressing
-    
-    // This strategy is too general for direct implementation, so let's make it specific to MOV
-    // For this, we'll just use the original instruction as fallback since it's hard to 
-    // create a generic handler for all instruction types
-    
-    // Actually, implement a general approach for MOV instructions:
-    if (insn->id == X86_INS_MOV) {
-        // Use the enhanced mov_mem handler for MOV instructions with null displacement
-        // Since this is a generic handler, fall back to original instruction for now
-        // and let specific handlers handle it
+    // Find which operand has the memory displacement with nulls
+    int mem_operand_idx = -1;
+    for (int i = 0; i < insn->detail->x86.op_count; i++) {
+        if (insn->detail->x86.operands[i].type == X86_OP_MEM) {
+            if (insn->detail->x86.operands[i].mem.disp != 0) {
+                uint32_t disp = (uint32_t)insn->detail->x86.operands[i].mem.disp;
+                if (!is_null_free(disp)) {
+                    mem_operand_idx = i;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (mem_operand_idx == -1) {
+        // No memory operand with null displacement found, append original
         buffer_append(b, insn->bytes, insn->size);
+        return;
+    }
+
+    // Find a free register to use for address calculation (avoid conflicts with operands)
+    x86_reg addr_reg = X86_REG_ECX; // Default register
+    // Check if ECX is used in the instruction; if so, use another register
+    int j;
+    for (j = 0; j < insn->detail->x86.op_count; j++) {
+        if (insn->detail->x86.operands[j].type == X86_OP_REG &&
+            insn->detail->x86.operands[j].reg == addr_reg) {
+            addr_reg = X86_REG_EDX; // Use EDX instead
+            break;
+        }
+    }
+    if (j < insn->detail->x86.op_count) { // If EDX was also used
+        for (j = 0; j < insn->detail->x86.op_count; j++) {
+            if (insn->detail->x86.operands[j].type == X86_OP_REG &&
+                insn->detail->x86.operands[j].reg == addr_reg) {
+                addr_reg = X86_REG_EBX; // Use EBX instead
+                break;
+            }
+        }
+        if (j < insn->detail->x86.op_count) { // If EBX was also used
+            addr_reg = X86_REG_ESI; // Use ESI as fallback
+        }
+    }
+
+    // PUSH the chosen register to save its original value
+    uint8_t push_reg[] = {0x50 + get_reg_index(addr_reg)};
+    buffer_append(b, push_reg, 1);
+
+    // Calculate the effective address: base + index*scale + disp
+    cs_x86_op *mem_op = &insn->detail->x86.operands[mem_operand_idx];
+    uint32_t disp = (uint32_t)mem_op->mem.disp;
+
+    // MOV addr_reg, disp (null-free construction)
+    generate_mov_eax_imm(b, disp);
+
+    // MOV addr_reg, EAX (move the immediate to our address register)
+    uint8_t mov_addr_reg[] = {0x89, 0xC0};
+    mov_addr_reg[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(addr_reg);
+    buffer_append(b, mov_addr_reg, 2);
+
+    // If there's a base register, add it to the address
+    if (mem_op->mem.base != X86_REG_INVALID) {
+        // MOV EAX, base_reg
+        uint8_t mov_eax_base[] = {0x89, 0xC0};
+        mov_eax_base[1] = 0xC0 + (get_reg_index(mem_op->mem.base) << 3) + get_reg_index(X86_REG_EAX);
+        buffer_append(b, mov_eax_base, 2);
+
+        // ADD addr_reg, EAX
+        uint8_t add_addr_eax[] = {0x01, 0xC0};
+        add_addr_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(addr_reg);
+        buffer_append(b, add_addr_eax, 2);
+    }
+
+    // If there's an index register with scale, add it to the address
+    if (mem_op->mem.index != X86_REG_INVALID) {
+        // MOV EAX, index_reg
+        uint8_t mov_eax_index[] = {0x89, 0xC0};
+        mov_eax_index[1] = 0xC0 + (get_reg_index(mem_op->mem.index) << 3) + get_reg_index(X86_REG_EAX);
+        buffer_append(b, mov_eax_index, 2);
+
+        // Apply scaling if needed (scale 2, 4, or 8)
+        if (mem_op->mem.scale > 1) {
+            uint8_t log2_scale = 0;
+            switch(mem_op->mem.scale) {
+                case 2: log2_scale = 1; break;
+                case 4: log2_scale = 2; break;
+                case 8: log2_scale = 3; break;
+                default: log2_scale = 0; break;
+            }
+
+            if (log2_scale > 0) {
+                // SHL EAX, log2_scale
+                uint8_t shl_eax[] = {0xC1, 0xE0, log2_scale};
+                buffer_append(b, shl_eax, 3);
+            }
+        }
+
+        // ADD addr_reg, EAX
+        uint8_t add_addr_eax[] = {0x01, 0xC0};
+        add_addr_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(addr_reg);
+        buffer_append(b, add_addr_eax, 2);
+    }
+
+    // Now replace the memory operand with [addr_reg] and generate the corresponding instruction
+    // For now, let's handle the most common instruction types: MOV, ADD, SUB, CMP
+    if (insn->id == X86_INS_MOV) {
+        // Handle MOV instruction with memory operand replacement
+        if (mem_operand_idx == 0) { // Destination is memory
+            // The address is now in addr_reg, so we need to create MOV [addr_reg], source
+            if (insn->detail->x86.operands[1].type == X86_OP_REG) {
+                x86_reg src_reg = insn->detail->x86.operands[1].reg;
+                // MOV [addr_reg], src_reg
+                uint8_t modrm = 0x00 + (get_reg_index(src_reg) << 3) + get_reg_index(addr_reg);
+                if (modrm == 0x00) {
+                    // Use SIB to avoid null: MOV [EAX], reg -> becomes [EAX+SIB]
+                    uint8_t mov_sib[] = {0x89, 0x04, 0x20, 0x00};
+                    mov_sib[1] = 0x04 + (get_reg_index(src_reg) << 3); // ModR/M
+                    mov_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB: scale=0, index=ESP, base=addr_reg
+                    buffer_append(b, mov_sib, 4);
+                } else {
+                    uint8_t mov_reg[] = {0x89, modrm};
+                    buffer_append(b, mov_reg, 2);
+                }
+            } else if (insn->detail->x86.operands[1].type == X86_OP_IMM) {
+                uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
+                if (is_null_free(imm)) {
+                    // MOV [addr_reg], imm32
+                    uint8_t modrm = 0x80 + get_reg_index(addr_reg);
+                    if (modrm == 0x80) {
+                        // Use SIB to avoid null
+                        uint8_t mov_imm_sib[] = {0xC7, 0x04, 0x20, 0, 0, 0, 0};
+                        memcpy(mov_imm_sib + 3, &imm, 4);
+                        buffer_append(b, mov_imm_sib, 7);
+                    } else {
+                        uint8_t mov_imm[] = {0xC7, modrm, 0, 0, 0, 0};
+                        memcpy(mov_imm + 2, &imm, 4);
+                        buffer_append(b, mov_imm, 6);
+                    }
+                } else {
+                    // Use null-free construction for immediate: MOV EAX, imm; MOV [addr_reg], EAX
+                    generate_mov_eax_imm(b, imm);
+                    uint8_t modrm = 0x00 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(addr_reg);
+                    if (modrm == 0x00) {
+                        // Use SIB to avoid null
+                        uint8_t mov_eax_sib[] = {0x89, 0x04, 0x20};
+                        mov_eax_sib[1] = 0x04 + (get_reg_index(X86_REG_EAX) << 3); // ModR/M
+                        mov_eax_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB
+                        buffer_append(b, mov_eax_sib, 3);
+                    } else {
+                        uint8_t mov_eax[] = {0x89, modrm};
+                        buffer_append(b, mov_eax, 2);
+                    }
+                }
+            }
+        } else { // Source is memory (shouldn't happen in MOV, but for completeness)
+            // Handle MOV destination, [addr_reg]
+            if (insn->detail->x86.operands[0].type == X86_OP_REG) {
+                x86_reg dst_reg = insn->detail->x86.operands[0].reg;
+                // MOV dst_reg, [addr_reg]
+                uint8_t modrm = 0x00 + (get_reg_index(dst_reg) << 3) + get_reg_index(addr_reg);
+                if (modrm == 0x00) {
+                    // Use SIB to avoid null
+                    uint8_t mov_sib[] = {0x8B, 0x04, 0x20, 0x00};
+                    mov_sib[1] = 0x04 + (get_reg_index(dst_reg) << 3); // ModR/M
+                    mov_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB: scale=0, index=ESP, base=addr_reg
+                    buffer_append(b, mov_sib, 4);
+                } else {
+                    uint8_t mov[] = {0x8B, modrm};
+                    buffer_append(b, mov, 2);
+                }
+            }
+        }
+    } else if (insn->id == X86_INS_ADD) {
+        // Handle ADD instruction with memory operand replacement
+        if (mem_operand_idx == 0) { // Destination is memory
+            if (insn->detail->x86.operands[1].type == X86_OP_REG) {
+                x86_reg src_reg = insn->detail->x86.operands[1].reg;
+                // ADD [addr_reg], src_reg
+                uint8_t modrm = 0x00 + (get_reg_index(src_reg) << 3) + get_reg_index(addr_reg);
+                if (modrm == 0x00) {
+                    // Use SIB to avoid null
+                    uint8_t add_sib[] = {0x01, 0x04, 0x20};
+                    add_sib[1] = 0x04 + (get_reg_index(src_reg) << 3); // ModR/M
+                    add_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB
+                    buffer_append(b, add_sib, 3);
+                } else {
+                    uint8_t add[] = {0x01, modrm};
+                    buffer_append(b, add, 2);
+                }
+            } else if (insn->detail->x86.operands[1].type == X86_OP_IMM) {
+                uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
+                if (is_null_free(imm)) {
+                    // ADD [addr_reg], imm32
+                    uint8_t modrm = 0x80 + get_reg_index(addr_reg);
+                    if (modrm == 0x80) {
+                        // Use SIB to avoid null
+                        uint8_t add_imm_sib[] = {0x83, 0x04, 0x20, (uint8_t)imm};
+                        buffer_append(b, add_imm_sib, 4);
+                    } else {
+                        uint8_t add_imm[] = {0x83, modrm, (uint8_t)imm};
+                        buffer_append(b, add_imm, 3);
+                    }
+                } else {
+                    // Use null-free construction for immediate
+                    generate_mov_eax_imm(b, imm);
+                    // ADD [addr_reg], EAX
+                    uint8_t modrm = 0x00 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(addr_reg);
+                    if (modrm == 0x00) {
+                        // Use SIB to avoid null
+                        uint8_t add_sib[] = {0x01, 0x04, 0x20};
+                        add_sib[1] = 0x04 + (get_reg_index(X86_REG_EAX) << 3); // ModR/M
+                        add_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB
+                        buffer_append(b, add_sib, 3);
+                    } else {
+                        uint8_t add[] = {0x01, modrm};
+                        buffer_append(b, add, 2);
+                    }
+                }
+            }
+        }
+    } else if (insn->id == X86_INS_CMP) {
+        // Handle CMP instruction with memory operand replacement
+        if (mem_operand_idx == 0) { // First operand (memory) is compared with second
+            if (insn->detail->x86.operands[1].type == X86_OP_REG) {
+                x86_reg src_reg = insn->detail->x86.operands[1].reg;
+                // CMP [addr_reg], src_reg
+                uint8_t modrm = 0x00 + (get_reg_index(src_reg) << 3) + get_reg_index(addr_reg);
+                if (modrm == 0x00) {
+                    // Use SIB to avoid null
+                    uint8_t cmp_sib[] = {0x39, 0x04, 0x20};
+                    cmp_sib[1] = 0x04 + (get_reg_index(src_reg) << 3); // ModR/M
+                    cmp_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB
+                    buffer_append(b, cmp_sib, 3);
+                } else {
+                    uint8_t cmp[] = {0x39, modrm};
+                    buffer_append(b, cmp, 2);
+                }
+            } else if (insn->detail->x86.operands[1].type == X86_OP_IMM) {
+                uint32_t imm = (uint32_t)insn->detail->x86.operands[1].imm;
+                if (is_null_free(imm)) {
+                    // CMP [addr_reg], imm32
+                    uint8_t modrm = 0x80 + get_reg_index(addr_reg);
+                    if (modrm == 0x80) {
+                        // Use SIB to avoid null
+                        uint8_t cmp_imm_sib[] = {0x83, 0x3C, 0x20, (uint8_t)imm};
+                        buffer_append(b, cmp_imm_sib, 4);
+                    } else {
+                        uint8_t cmp_imm[] = {0x83, modrm, (uint8_t)imm};
+                        buffer_append(b, cmp_imm, 3);
+                    }
+                } else {
+                    // Use null-free construction for immediate
+                    generate_mov_eax_imm(b, imm);
+                    // CMP [addr_reg], EAX
+                    uint8_t modrm = 0x00 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(addr_reg);
+                    if (modrm == 0x00) {
+                        // Use SIB to avoid null
+                        uint8_t cmp_sib[] = {0x39, 0x04, 0x20};
+                        cmp_sib[1] = 0x04 + (get_reg_index(X86_REG_EAX) << 3); // ModR/M
+                        cmp_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB
+                        buffer_append(b, cmp_sib, 3);
+                    } else {
+                        uint8_t cmp[] = {0x39, modrm};
+                        buffer_append(b, cmp, 2);
+                    }
+                }
+            }
+        } else { // First operand is compared with memory operand
+            if (insn->detail->x86.operands[0].type == X86_OP_REG) {
+                x86_reg dst_reg = insn->detail->x86.operands[0].reg;
+                // CMP dst_reg, [addr_reg]
+                uint8_t modrm = 0x00 + (get_reg_index(dst_reg) << 3) + get_reg_index(addr_reg);
+                if (modrm == 0x00) {
+                    // Use SIB to avoid null
+                    uint8_t cmp_sib[] = {0x3B, 0x04, 0x20};
+                    cmp_sib[1] = 0x04 + (get_reg_index(dst_reg) << 3); // ModR/M
+                    cmp_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB
+                    buffer_append(b, cmp_sib, 3);
+                } else {
+                    uint8_t cmp[] = {0x3B, modrm};
+                    buffer_append(b, cmp, 2);
+                }
+            }
+        }
     } else {
-        // For other instruction types, we'll use the register-based approach
-        // For now, just append the original instruction as a fallback
+        // For other instructions, we will use the most common pattern:
+        // use register instead of memory displacement
+        // This is a general fallback that will handle a wide range of instructions
+        // For now, just append the original instruction as a fallback - but this should be expanded
         buffer_append(b, insn->bytes, insn->size);
     }
+
+    // POP the register to restore its original value
+    uint8_t pop_reg[] = {0x58 + get_reg_index(addr_reg)};
+    buffer_append(b, pop_reg, 1);
 }
 
 strategy_t generic_mem_null_disp_enhanced_strategy = {

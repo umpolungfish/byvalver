@@ -16,31 +16,66 @@ size_t get_size_mov_mem_imm(cs_insn *insn) {
 }
 
 void generate_mov_mem_imm(struct buffer *b, cs_insn *insn) {
-    // Handle MOV reg, [imm32] where imm32 contains nulls
+    // Handle MOV reg, [disp32] where disp32 contains nulls
     if (insn->detail->x86.operands[1].type != X86_OP_MEM) {
         return; // Safety check
     }
 
-    uint8_t dst_reg = insn->detail->x86.operands[0].reg;
+    x86_reg dst_reg = insn->detail->x86.operands[0].reg;
     uint32_t addr = (uint32_t)insn->detail->x86.operands[1].mem.disp;
 
-    // MOV EAX, addr (null-free construction)
+    // Find a temporary register that's different from the destination register
+    x86_reg temp_reg = X86_REG_ECX;
+    if (dst_reg == X86_REG_ECX) {
+        temp_reg = X86_REG_EDX;
+        if (dst_reg == X86_REG_EDX) {
+            temp_reg = X86_REG_EBX;
+            if (dst_reg == X86_REG_EBX) {
+                temp_reg = X86_REG_ESI;  // Fallback register
+            }
+        }
+    }
+
+    // PUSH the temp register to save its original value
+    uint8_t push_temp[] = {0x50 + get_reg_index(temp_reg)};
+    buffer_append(b, push_temp, 1);
+
+    // MOV temp_reg, addr (null-free construction using utilities)
     generate_mov_eax_imm(b, addr);
 
-    // MOV dst_reg, [EAX]
-    // Handle the case where dst_reg is EAX specially to avoid null bytes
-    if (dst_reg == X86_REG_EAX) {
-        // Use SIB byte to avoid null: MOV EAX, [EAX]
-        // This becomes: 8B 04 20 (where 04 is ModR/M with SIB, 20 is SIB for [EAX])
-        uint8_t code[] = {0x8B, 0x04, 0x20}; // MOV EAX, [EAX]
+    // MOV temp_reg, EAX (move the constructed address to our temp register)
+    uint8_t mov_temp_eax[] = {0x89, 0xC0};
+    mov_temp_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(temp_reg);
+    buffer_append(b, mov_temp_eax, 2);
+
+    // MOV dst_reg, [temp_reg] (read from the memory address stored in temp_reg)
+    if (dst_reg == temp_reg) {
+        // Special case: if dst_reg and temp_reg are the same, we need to be careful
+        // Use SIB addressing to avoid null bytes when both registers are the same
+        uint8_t code[] = {0x8B, 0x04, 0x20}; // MOV EAX, [EAX] type with SIB
+        code[1] = 0x04 + (get_reg_index(dst_reg) << 3);  // ModR/M with SIB byte
+        code[2] = (0 << 6) | (4 << 3) | get_reg_index(temp_reg);  // SIB: scale=0, index=ESP, base=temp_reg
         buffer_append(b, code, 3);
     } else {
-        // For other registers, the ModR/M byte is safe
-        uint8_t code[] = {0x8B, 0x00}; // MOV reg, [EAX] format
-        uint8_t reg_index = get_reg_index(dst_reg);
-        code[1] = (reg_index << 3) | 0;  // Encode reg in reg field, [EAX] in r/m field
-        buffer_append(b, code, 2);
+        // Standard case: MOV dst_reg, [temp_reg]
+        uint8_t modrm = 0x00 + (get_reg_index(dst_reg) << 3) + get_reg_index(temp_reg);
+
+        // Check if modrm creates a problematic byte (when both regs are EAX, it creates 0x00)
+        if (modrm == 0x00) {
+            // Use SIB to avoid nulls: [EAX] becomes 04 20 (ModR/M=SIB, SIB=[EAX])
+            uint8_t code[] = {0x8B, 0x04, 0x20};
+            code[1] = 0x04 + (get_reg_index(dst_reg) << 3);  // ModR/M
+            code[2] = 0x20 + get_reg_index(temp_reg);  // SIB: scale=0, index=ESP, base=temp_reg
+            buffer_append(b, code, 3);
+        } else {
+            uint8_t code[] = {0x8B, modrm};
+            buffer_append(b, code, 2);
+        }
     }
+
+    // POP the temp register to restore its original value
+    uint8_t pop_temp[] = {0x58 + get_reg_index(temp_reg)};
+    buffer_append(b, pop_temp, 1);
 }
 
 strategy_t mov_mem_imm_strategy = {

@@ -96,108 +96,112 @@ size_t get_size_lea_problematic_encoding(__attribute__((unused)) cs_insn *insn) 
 void generate_lea_displacement_nulls(struct buffer *b, cs_insn *insn) {
     cs_x86_op *dst = &insn->detail->x86.operands[0];
     cs_x86_op *src = &insn->detail->x86.operands[1];
-    
+
     x86_reg dst_reg = dst->reg;
     x86_reg base_reg = src->mem.base;
     x86_reg index_reg = src->mem.index;
     uint32_t scale = src->mem.scale;
     uint64_t disp = src->mem.disp;
-    
-    // If we have a simple LEA reg, [base + disp] where disp contains nulls:
-    if (index_reg == X86_REG_INVALID && scale == 1) {
-        // Alternative approach: use register arithmetic to avoid null displacement
-        // MOV dst_reg, base_reg; ADD dst_reg, displacement (constructed without nulls)
-        
-        // First, MOV dst_reg, base_reg
-        if (base_reg != dst_reg) {
-            uint8_t mov_reg[] = {0x89, 0xC0 + (get_reg_index(base_reg) << 3) + get_reg_index(dst_reg)};
-            buffer_append(b, mov_reg, 2);
+
+    // Find a temporary register that doesn't conflict with operands
+    x86_reg temp_reg = X86_REG_ECX;
+    if (dst_reg == X86_REG_ECX || base_reg == X86_REG_ECX ||
+        (index_reg != X86_REG_INVALID && index_reg == X86_REG_ECX)) {
+        temp_reg = X86_REG_EDX;
+        if (dst_reg == X86_REG_EDX || base_reg == X86_REG_EDX ||
+            (index_reg != X86_REG_INVALID && index_reg == X86_REG_EDX)) {
+            temp_reg = X86_REG_EBX;
         }
-        
-        // ADD dst_reg, displacement using utilities that handle nulls
-        generate_op_reg_imm(b, &(cs_insn){
-            .id = X86_INS_ADD,
-            .detail = &(cs_detail){
-                .x86 = {
-                    .op_count = 2,
-                    .operands = {{.type = X86_OP_REG, .reg = dst_reg}, {.type = X86_OP_IMM, .imm = disp}}
-                }
-            }
-        });
-    } 
-    else if (index_reg != X86_REG_INVALID) {
-        // For complex addressing [base + index*scale + disp], we need a different approach
-        x86_reg temp_reg = X86_REG_EAX;
-        if (dst_reg == X86_REG_EAX) {
-            temp_reg = X86_REG_ECX;
-            if (dst_reg == X86_REG_ECX) {
-                temp_reg = X86_REG_EDX;
-            }
+    }
+
+    // Strategy: Calculate the address [base + index*scale + disp] using register arithmetic
+    // PUSH the temp register to preserve its value
+    uint8_t push_temp[] = {0x50 + get_reg_index(temp_reg)};
+    buffer_append(b, push_temp, 1);
+
+    // If base register exists, start with it
+    if (base_reg != X86_REG_INVALID) {
+        // MOV dst_reg, base_reg (if different)
+        if (dst_reg != base_reg) {
+            uint8_t mov_dst_base[] = {0x89, 0xC0};
+            mov_dst_base[1] = 0xC0 + (get_reg_index(base_reg) << 3) + get_reg_index(dst_reg);
+            buffer_append(b, mov_dst_base, 2);
         }
-        
-        // MOV dst_reg, base_reg
-        if (base_reg != dst_reg) {
-            generate_mov_reg_imm(b, &(cs_insn){
-                .id = X86_INS_MOV,
-                .detail = &(cs_detail){
-                    .x86 = {
-                        .op_count = 2,
-                        .operands = {{.type = X86_OP_REG, .reg = dst_reg}, {.type = X86_OP_REG, .reg = base_reg}}
-                    }
-                }
-            });
-        }
-        
+    } else {
+        // If no base register, zero out dst_reg to start
+        uint8_t xor_dst_dst[] = {0x31, 0xC0};
+        xor_dst_dst[1] = 0xC0 + (get_reg_index(dst_reg) << 3) + get_reg_index(dst_reg); // XOR dst, dst
+        buffer_append(b, xor_dst_dst, 2);
+    }
+
+    // Handle index*scale part if present
+    if (index_reg != X86_REG_INVALID && scale != 0) {
         // MOV temp_reg, index_reg
-        generate_mov_reg_imm(b, &(cs_insn){
-            .id = X86_INS_MOV,
-            .detail = &(cs_detail){
-                .x86 = {
-                    .op_count = 2,
-                    .operands = {{.type = X86_OP_REG, .reg = temp_reg}, {.type = X86_OP_REG, .reg = index_reg}}
-                }
-            }
-        });
-        
-        // If scale > 1, multiply temp_reg by scale
+        uint8_t mov_temp_index[] = {0x89, 0xC0};
+        mov_temp_index[1] = 0xC0 + (get_reg_index(index_reg) << 3) + get_reg_index(temp_reg);
+        buffer_append(b, mov_temp_index, 2);
+
+        // Apply scale using multiplication
         if (scale > 1) {
-            generate_op_reg_imm(b, &(cs_insn){
-                .id = X86_INS_IMUL,
-                .detail = &(cs_detail){
-                    .x86 = {
-                        .op_count = 2,
-                        .operands = {{.type = X86_OP_REG, .reg = temp_reg}, {.type = X86_OP_IMM, .imm = scale}}
-                    }
-                }
-            });
+            // For known scales, use shifts for efficiency
+            if (scale == 2) {
+                uint8_t shl_temp_1[] = {0xC1, 0xE0 + get_reg_index(temp_reg), 1}; // SHL temp_reg, 1
+                buffer_append(b, shl_temp_1, 3);
+            } else if (scale == 4) {
+                uint8_t shl_temp_2[] = {0xC1, 0xE0 + get_reg_index(temp_reg), 2}; // SHL temp_reg, 2
+                buffer_append(b, shl_temp_2, 3);
+            } else if (scale == 8) {
+                uint8_t shl_temp_3[] = {0xC1, 0xE0 + get_reg_index(temp_reg), 3}; // SHL temp_reg, 3
+                buffer_append(b, shl_temp_3, 3);
+            } else {
+                // For other scales, multiply with null-free construction
+                // MOV dst_reg, scale
+                generate_mov_eax_imm(b, scale);
+                // MOV temp_reg, EAX (move scale to EAX)
+                uint8_t mov_temp_eax[] = {0x89, 0xC0};
+                mov_temp_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(temp_reg);
+                buffer_append(b, mov_temp_eax, 2);
+
+                // IMUL temp_reg, temp_reg (multiply index_reg by scale)
+                uint8_t imul_temp[] = {0x0F, 0xAF, 0xC0};
+                imul_temp[2] = 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(temp_reg);
+                buffer_append(b, imul_temp, 3);
+            }
         }
-        
-        // ADD dst_reg, temp_reg (add the scaled index)
-        generate_op_reg_imm(b, &(cs_insn){
-            .id = X86_INS_ADD,
-            .detail = &(cs_detail){
-                .x86 = {
-                    .op_count = 2,
-                    .operands = {{.type = X86_OP_REG, .reg = dst_reg}, {.type = X86_OP_REG, .reg = temp_reg}}
-                }
-            }
-        });
-        
-        // ADD dst_reg, displacement (constructed without nulls)
-        generate_op_reg_imm(b, &(cs_insn){
-            .id = X86_INS_ADD,
-            .detail = &(cs_detail){
-                .x86 = {
-                    .op_count = 2,
-                    .operands = {{.type = X86_OP_REG, .reg = dst_reg}, {.type = X86_OP_IMM, .imm = disp}}
-                }
-            }
-        });
+
+        // ADD dst_reg, temp_reg (add scaled index to base)
+        uint8_t add_dst_temp[] = {0x01, 0xC0};
+        add_dst_temp[1] = 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(dst_reg);
+        buffer_append(b, add_dst_temp, 2);
     }
-    else {
-        // Fallback: append original if we can't handle it effectively
-        buffer_append(b, insn->bytes, insn->size);
+
+    // Add displacement using null-free construction
+    if (disp != 0) {
+        if (is_null_free((uint32_t)disp) && (int32_t)disp >= -128 && (int32_t)disp <= 127) {
+            // If displacement is null-free and fits in signed 8-bit, add it directly with ADD reg, imm8
+            uint8_t add_dst_disp[] = {0x83, 0xC0, (uint8_t)disp};
+            add_dst_disp[1] = 0xC0 + (get_reg_index(dst_reg) << 3) + get_reg_index(dst_reg);
+            buffer_append(b, add_dst_disp, 3);
+        } else {
+            // If displacement has null bytes or doesn't fit in imm8, construct it with null-free approach
+            // MOV temp_reg, displacement value (null-free construction)
+            generate_mov_eax_imm(b, (uint32_t)disp);
+
+            // MOV temp_reg, EAX (move the constructed value to temp_reg)
+            uint8_t mov_temp_eax[] = {0x89, 0xC0};
+            mov_temp_eax[1] = 0xC0 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(temp_reg);
+            buffer_append(b, mov_temp_eax, 2);
+
+            // ADD dst_reg, temp_reg (add the displacement)
+            uint8_t add_dst_temp[] = {0x01, 0xC0};
+            add_dst_temp[1] = 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(dst_reg);
+            buffer_append(b, add_dst_temp, 2);
+        }
     }
+
+    // POP the temp register to restore its original value
+    uint8_t pop_temp[] = {0x58 + get_reg_index(temp_reg)};
+    buffer_append(b, pop_temp, 1);
 }
 
 /*
