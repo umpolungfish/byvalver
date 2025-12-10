@@ -12,7 +12,6 @@
   <img src="https://img.shields.io/badge/Shellcode-Analysis-%23FF6B6B.svg?style=for-the-badge" alt="Shellcode Analysis">
   <img src="https://img.shields.io/badge/Cross--Platform-Windows%20%7C%20Linux%20%7C%20macOS-%230071C5.svg?style=for-the-badge" alt="Cross-Platform">
   <img src="https://img.shields.io/badge/Security-Hardened-%23000000.svg?style=for-the-badge" alt="Security Hardened">
-  <img src="https://img.shields.io/badge/Denulling%20Success-100%25-brightgreen.svg?style=for-the-badge" alt="100% Denulling Success">
 </div>
 
 <p align="center">
@@ -36,11 +35,13 @@
 
 ## Overview
 
-**byvalver** is a x-platform command-line tool built in C for automatically eliminating null bytes (`\x00`) from x86/x64 shellcode while maintaining complete functional equivalence  
+**byvalver** is a CLI tool built in C for automatically eliminating null bytes (`\x00`) from x86/x64 shellcode while maintaining complete functional equivalence  
 
-It achieves **~100% null-free output across diverse, real-world shellcode test suites**, including complex Windows payloads that challenge simpler tools
+It achieves a high success rate in producing null-free output across diverse, real-world shellcode test suites, including complex Windows payloads.
 
 The tool uses the Capstone disassembly framework to analyze instructions and applies over 120 ranked transformation strategies to replace null-containing code with equivalent alternatives  
+
+It prioritizes security, robustness, and portability, supporting Windows, Linux, and macOS seamlessly.
 
 **Core Technologies:**
 - Pure C implementation for efficiency and low-level control
@@ -50,19 +51,17 @@ The tool uses the Capstone disassembly framework to analyze instructions and app
 - Neural network integration for intelligent strategy selection
 - Biphasic processing: Obfuscation followed by denullification
 
-byvalver is ideal for working with shellcode that must avoid null bytes for string operations or memory constraints.
+While it has demonstrated 100% success on a comprehensive test corpus representing a wide variety of null-byte sources, some specialized shellcode may require additional strategies to achieve full denulling —-> our extensible registry makes it easy to add new transformations as needed
 
 ## Features
 
-### ~100% Denulling Success
+### High Denulling Success Rate
 <div align="center">
-  <strong>Perfect null-byte elimination on the entire test corpus – no remaining nulls, no functionality loss, no compromises.</strong>
+  <strong>Achieved 100% null-byte elimination on a diverse test corpus representing common and complex null sources.</strong>
 </div>
 
-byvalver delivers **100% success** on production-grade shellcode samples, handling PEB walking, hashed API resolution, SIB addressing, and intricate immediate/displacement patterns without fail.
-
 ### Advanced Transformation Engine
-Over 120 meticulously crafted strategies covering all common null-byte sources:
+120+ strategies covering virtually all common null-byte sources:
 - CALL/POP and stack-based immediate loading
 - PEB traversal with hashed API resolution
 - SALC, XCHG, and flag-based zeroing
@@ -74,7 +73,9 @@ Over 120 meticulously crafted strategies covering all common null-byte sources:
 - Register remapping and chaining
 - Comprehensive support for MOV, ADD/SUB, XOR, LEA, CMP, PUSH, and more
 
-The engine employs multi-pass processing (obfuscation → denulling) with robust fallback mechanisms for edge cases.
+The engine employs multi-pass processing (obfuscation → denulling) with robust fallback mechanisms for edge cases
+
+*While highly effective, certain edge-case shellcodes may still contain nulls; these can most always be addressed by extending the strategy registry*
 
 ### Obfuscation Layer
 Optional biphasic mode adds anti-analysis obfuscation before denulling:
@@ -283,7 +284,9 @@ The core denull pass uses over 120 strategies:
 - Displacement null handling
 - LEA alternatives
 
-Strategies are prioritized and selected via ML or deterministic order.
+Strategies are prioritized and selected via ML or deterministic order  
+
+The modular registry allows easy addition of new strategies to handle emerging shellcode patterns.
 
 ## ML Training
 
@@ -311,10 +314,12 @@ Model auto-loaded at runtime with path resolution.
 - ML: Ensure model path
 - Nulls: Confirm input format, dependencies
 
-For persistent issues, use verbose mode and check logs.
+For persistent issues, use verbose mode and check logs  
+
+If denulling fails on specific shellcode, consider adding targeted strategies to the registry.
 
 ## License
 
-byvalver is released into the public domain under the Unlicense.
+byvalver is sicced upon the Earth under the Unlicense.
 
 </DOCUMENT>
