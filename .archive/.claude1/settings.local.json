@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make:*)",
+      "Bash(./bin/byvalver test:*)",
+      "Bash(xxd:*)",
+      "Bash(grep:*)",
+      "Bash(./bin/byvalver:*)",
+      "Bash(paste:*)",
+      "Bash(byvalver --ml:*)",
+      "Bash(gdb:*)",
+      "Bash(sudo make:*)",
+      "Bash(byvalver:*)",
+      "Bash(ls:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
