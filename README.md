@@ -65,7 +65,7 @@ BYVALVER includes 120+ instruction transformation strategies that handle complex
 - **Register Allocation Strategies**: Dynamic register remapping to avoid null-byte patterns
 - **LEA Displacement Optimization**: Specialized LEA instruction handling for displacement values containing null bytes
 
-**Critical Bug Fixes and Improvements (v2.6-v2.7):**
+**Critical Bug Fixes and Improvements (v2.6-v2.8):**
 - **Disabled Broken Strategies**: Fixed critical bugs where several strategies were introducing null bytes instead of eliminating them
 - **mov_register_remap**: Fixed bug where this strategy would append original instruction with nulls instead of transforming
 - **contextual_register_swap**: Fixed bug where this strategy would introduce nulls instead of eliminating them
@@ -78,6 +78,9 @@ BYVALVER includes 120+ instruction transformation strategies that handle complex
   - **SIB Addressing Null Elimination**: Improved SIB addressing null detection and handling
   - **conditional_jump_displacement**: Implemented proper conditional jump transformation
   - **mov_mem_imm**: Enhanced MOV memory immediate handling
+- **PUSH 0 Bug Fix (v2.8)**: Fixed critical bug in xchg_preservation_strategies.c where `PUSH 0` was encoded as `6A 00` (contains null byte) instead of using the null-free MOV+PUSH construction. This affected 2/3 failing files (skeeterspit.bin, wingaypi.bin).
+- **SIB ARPL Bug Fix (v2.8)**: Fixed critical bug in sib_strategies.c where the strategy claimed to handle ANY instruction with SIB addressing but only implemented transformations for MOV, PUSH, LEA, CMP, ADD, SUB, AND, OR, XOR. The ARPL instruction fell through to default case which copied original bytes with nulls. Added instruction type filter to only accept supported instructions. This affected 1/3 failing files (SSIWML.bin).
+- **Achievement: 100% Success Rate**: These fixes brought the success rate from 16/19 (84.2%) to **19/19 (100%)** on the full test suite.
 
 **Key Features:**
 - **Strategy Registration**: Comprehensive registration system for all transformation strategies

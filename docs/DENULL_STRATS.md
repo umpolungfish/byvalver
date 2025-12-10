@@ -691,3 +691,170 @@ Strategies are registered in priority order, with higher priority strategies tak
 - **Condition:** Applies to LEA operations with EBP/R13 base registers and zero displacement that require null displacement bytes.
 - **Transformation:** LEA dst, [EBP] (requires 00 displacement) → MOV dst_reg, base_reg.
 - **Generated code:** LEA alternatives with null-byte-free encoding.
+
+## Critical Bug Fixes (v2.8) - Achieving 100% Success Rate
+
+### Bug Fix #1: PUSH 0 Null-Byte Introduction
+
+**Location:** `src/xchg_preservation_strategies.c` (lines 78-79, 101-103)
+
+**Problem Description:**
+The PUSH Immediate Null-Byte Elimination strategy (priority 86) had a critical bug where it would encode `PUSH 0` using the imm8 encoding (`6A 00`), which contains a null byte in the immediate field. This directly violated the strategy's purpose of eliminating null bytes.
+
+**Root Cause:**
+The strategy optimized small immediate values (-128 to 127) to use the compact PUSH imm8 encoding (2 bytes) instead of PUSH imm32 (5 bytes). However, it failed to exclude the value 0 from this optimization:
+
+```c
+// BUGGY CODE (before fix):
+if (imm >= -128 && imm <= 127) {
+    // PUSH imm8: 6A XX
+    buffer_write_byte(b, 0x6A);
+    buffer_write_byte(b, (uint8_t)(imm & 0xFF));  // When imm=0, this writes 0x00!
+    return;
+}
+```
+
+**The Fix:**
+Added explicit exclusion of `imm == 0` from the imm8 optimization path, forcing it to use the null-free MOV+PUSH construction:
+
+```c
+// FIXED CODE:
+// IMPORTANT: Exclude 0 because PUSH 0 encodes as 6A 00 which contains a null byte!
+if (imm >= -128 && imm <= 127 && imm != 0) {
+    // PUSH imm8: 6A XX (safe for all values except 0)
+    buffer_write_byte(b, 0x6A);
+    buffer_write_byte(b, (uint8_t)(imm & 0xFF));
+    return;
+}
+
+// For imm=0, fall through to Strategy B:
+// MOV EAX, 0xFFFFFFFF; NOT EAX; PUSH EAX (completely null-free)
+```
+
+**Impact:**
+- Affected 2 of 3 failing files: `skeeterspit.bin`, `wingaypi.bin`
+- Both files contained `PUSH 0` instructions that were being incorrectly encoded
+- Fix ensures `PUSH 0` is transformed to null-free sequence: `MOV EAX, 0xFFFFFFFF; NOT EAX; PUSH EAX`
+
+**Test Results:**
+```bash
+# Before fix:
+ERROR: Strategy 'PUSH Immediate Null-Byte Elimination' introduced null at offset 1
+
+# After fix:
+✓ skeeterspit.bin: SUCCESS (null-free)
+✓ wingaypi.bin: SUCCESS (null-free)
+```
+
+### Bug Fix #2: SIB Strategy Handling Unsupported Instructions
+
+**Location:** `src/sib_strategies.c` (lines 46-49)
+
+**Problem Description:**
+The SIB Addressing Null Elimination strategy had a critical mismatch between its `can_handle()` and `generate()` functions. The `can_handle_sib_null()` function claimed to handle ANY instruction with SIB addressing patterns, but the `generate_sib_null()` switch statement only implemented transformations for specific instruction types (MOV, PUSH, LEA, CMP, ADD, SUB, AND, OR, XOR). Unsupported instructions like ARPL would pass the `can_handle()` check, then fall through to the default case in `generate()` which just copied the original instruction bytes—nulls and all.
+
+**Root Cause:**
+The strategy selection system trusted `can_handle()` to be accurate, but the function only checked for SIB addressing patterns without verifying the instruction was actually supported:
+
+```c
+// BUGGY CODE (before fix):
+static int can_handle_sib_null(cs_insn *insn) {
+    // ... checks for SIB addressing patterns ...
+    // Returns 1 for ANY instruction with SIB addressing, including ARPL!
+    return 1;
+}
+
+static void generate_sib_null(struct buffer *b, cs_insn *insn) {
+    switch (insn->id) {
+        case X86_INS_MOV:   /* ... */ break;
+        case X86_INS_PUSH:  /* ... */ break;
+        case X86_INS_LEA:   /* ... */ break;
+        // ... other supported instructions ...
+        default:
+            // BUG: Unsupported instructions fall through here and get copied with nulls!
+            buffer_append(b, insn->bytes, insn->size);
+            break;
+    }
+}
+```
+
+**The Fix:**
+Added an instruction type filter at the beginning of `can_handle_sib_null()` to only accept instructions that are actually implemented in the `generate()` switch statement:
+
+```c
+// FIXED CODE:
+static int can_handle_sib_null(cs_insn *insn) {
+    if (!insn || !insn->detail) {
+        return 0;
+    }
+
+    // CRITICAL: Only handle instructions we actually support in the switch statement
+    // Otherwise we'll fall through to default case which just copies the original with nulls!
+    if (insn->id != X86_INS_MOV && insn->id != X86_INS_PUSH && insn->id != X86_INS_LEA &&
+        insn->id != X86_INS_CMP && insn->id != X86_INS_ADD && insn->id != X86_INS_SUB &&
+        insn->id != X86_INS_AND && insn->id != X86_INS_OR && insn->id != X86_INS_XOR) {
+        return 0;  // Don't handle instructions not in our switch statement
+    }
+
+    // ... rest of SIB addressing pattern checks ...
+}
+```
+
+**Impact:**
+- Affected 1 of 3 failing files: `SSIWML.bin`
+- File contained ARPL instruction with SIB addressing: `arpl word ptr gs:[eax + eax - 0x18], si`
+- Strategy would claim to handle it, then copy original bytes with null at offset 21
+- Fix ensures unsupported instructions are rejected by `can_handle()`, allowing other strategies to handle them
+
+**Specific Failing Instruction:**
+```asm
+arpl word ptr gs:[eax + eax - 0x18], si
+; Encoding: 65 63 74 00 E8
+;                    ^^ null byte at offset 21
+```
+
+**Test Results:**
+```bash
+# Before fix:
+ERROR: Strategy 'SIB Addressing Null Elimination' introduced null at offset 21
+
+# After fix:
+✓ SSIWML.bin: SUCCESS (null-free)
+```
+
+### Combined Impact: 100% Success Rate Achievement
+
+**Before Fixes:**
+- Success Rate: 16/19 (84.2%)
+- Failing Files: SSIWML.bin, skeeterspit.bin, wingaypi.bin
+- Issues: PUSH 0 encoding bug (2 files), SIB ARPL handling bug (1 file)
+
+**After Fixes:**
+- Success Rate: **19/19 (100%)**
+- Failing Files: **0**
+- All null-byte patterns successfully eliminated
+
+**Batch Test Results:**
+```
+===== BATCH PROCESSING SUMMARY =====
+Total files:       19
+Processed:         19
+Failed:            0
+Skipped:           0
+Total input size:  11333142 bytes
+Total output size: 70773 bytes
+Size ratio:        0.01x
+====================================
+```
+
+### Technical Lessons Learned
+
+1. **Strategy Selection Must Be Accurate**: The `can_handle()` function must accurately reflect what `generate()` can actually handle. Any mismatch leads to silent failures where strategies claim to fix null bytes but actually introduce or preserve them.
+
+2. **Edge Cases in Optimizations**: When optimizing for common cases (like imm8 encoding for small values), always consider edge cases where the optimization itself might introduce the problem you're trying to solve (like 0 in PUSH imm8).
+
+3. **Switch Statement Coverage**: When using switch statements with default cases, ensure the entry conditions (like `can_handle()`) filter out anything that would hit the default case unintentionally.
+
+4. **Priority Matters**: The PUSH 0 bug was in the higher priority strategy (86), which was selected before the working lower priority strategy (75). This demonstrates why testing must cover the actual code paths being executed, not just whether working code exists.
+
+5. **Comprehensive Testing**: These bugs only manifested in 3 specific files out of 19. Without comprehensive batch testing across diverse shellcode samples, these edge cases might have gone unnoticed.
