@@ -277,14 +277,14 @@ static void generate_sib_null(struct buffer *b, cs_insn *insn) {
             if (original_op_idx == 1) {  // Memory operand is source (CMP reg, [sib_addr])
                 // CMP reg, [temp_reg] using SIB addressing
                 x86_reg reg = x86->operands[0].reg;
-                uint8_t sib_cmp_code[] = {0x39, 0x04, 0x20};
+                uint8_t sib_cmp_code[] = {0x3B, 0x04, 0x20};  // FIX: Use 0x3B for CMP r32, r/m32
                 sib_cmp_code[1] = 0x04 | (get_reg_index(reg) << 3);  // ModR/M: mod=00, reg=reg, r/m=SIB
                 sib_cmp_code[2] = (0 << 6) | (4 << 3) | get_reg_index(temp_reg);  // SIB: scale=0, index=ESP (dummy), base=temp_reg
                 buffer_append(b, sib_cmp_code, 3);
             } else {  // Memory operand is destination (CMP [sib_addr], reg)
                 // CMP [temp_reg], reg using SIB addressing
                 x86_reg reg = x86->operands[1].reg;  // Second operand is the reg
-                uint8_t sib_cmp_code[] = {0x3B, 0x04, 0x20};
+                uint8_t sib_cmp_code[] = {0x39, 0x04, 0x20};  // FIX: Use 0x39 for CMP r/m32, r32
                 sib_cmp_code[1] = 0x04 | (get_reg_index(reg) << 3);  // ModR/M: mod=00, reg=reg, r/m=SIB
                 sib_cmp_code[2] = (0 << 6) | (4 << 3) | get_reg_index(temp_reg);  // SIB: scale=0, index=ESP (dummy), base=temp_reg
                 buffer_append(b, sib_cmp_code, 3);
@@ -301,12 +301,12 @@ static void generate_sib_null(struct buffer *b, cs_insn *insn) {
                 x86_reg reg = x86->operands[0].reg;
                 uint8_t op_code;
                 switch (insn->id) {
-                    case X86_INS_ADD: op_code = 0x01; break;  // ADD r/m32, r32
-                    case X86_INS_SUB: op_code = 0x29; break;  // SUB r/m32, r32
-                    case X86_INS_AND: op_code = 0x21; break;  // AND r/m32, r32
-                    case X86_INS_OR:  op_code = 0x09; break;  // OR r/m32, r32
-                    case X86_INS_XOR: op_code = 0x31; break;  // XOR r/m32, r32
-                    default: op_code = 0x01; break;  // Default to ADD
+                    case X86_INS_ADD: op_code = 0x03; break;  // FIX: ADD r32, r/m32
+                    case X86_INS_SUB: op_code = 0x2B; break;  // FIX: SUB r32, r/m32
+                    case X86_INS_AND: op_code = 0x23; break;  // FIX: AND r32, r/m32
+                    case X86_INS_OR:  op_code = 0x0B; break;  // FIX: OR r32, r/m32
+                    case X86_INS_XOR: op_code = 0x33; break;  // FIX: XOR r32, r/m32
+                    default: op_code = 0x03; break;  // Default to ADD
                 }
                 uint8_t sib_final_code[] = {op_code, 0x04, 0x20};
                 sib_final_code[1] = 0x04 | (get_reg_index(reg) << 3);  // ModR/M: mod=00, reg=reg, r/m=SIB
@@ -317,12 +317,12 @@ static void generate_sib_null(struct buffer *b, cs_insn *insn) {
                 x86_reg reg = x86->operands[1].reg;  // Second operand is the reg
                 uint8_t op_code;
                 switch (insn->id) {
-                    case X86_INS_ADD: op_code = 0x03; break;  // ADD r32, r/m32
-                    case X86_INS_SUB: op_code = 0x2B; break;  // SUB r32, r/m32
-                    case X86_INS_AND: op_code = 0x23; break;  // AND r32, r/m32
-                    case X86_INS_OR:  op_code = 0x0B; break;  // OR r32, r/m32
-                    case X86_INS_XOR: op_code = 0x33; break;  // XOR r32, r/m32
-                    default: op_code = 0x03; break;  // Default to ADD
+                    case X86_INS_ADD: op_code = 0x01; break;  // FIX: ADD r/m32, r32
+                    case X86_INS_SUB: op_code = 0x29; break;  // FIX: SUB r/m32, r32
+                    case X86_INS_AND: op_code = 0x21; break;  // FIX: AND r/m32, r32
+                    case X86_INS_OR:  op_code = 0x09; break;  // FIX: OR r/m32, r32
+                    case X86_INS_XOR: op_code = 0x31; break;  // FIX: XOR r/m32, r32
+                    default: op_code = 0x01; break;  // Default to ADD
                 }
                 uint8_t sib_final_code[] = {op_code, 0x04, 0x20};
                 sib_final_code[1] = 0x04 | (get_reg_index(reg) << 3);  // ModR/M: mod=00, reg=reg, r/m=SIB

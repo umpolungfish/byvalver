@@ -416,10 +416,10 @@ void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
                 uint8_t modrm = 0x00 + (get_reg_index(src_reg) << 3) + get_reg_index(addr_reg);
                 if (modrm == 0x00) {
                     // Use SIB to avoid null: MOV [EAX], reg -> becomes [EAX+SIB]
-                    uint8_t mov_sib[] = {0x89, 0x04, 0x20, 0x00};
+                    uint8_t mov_sib[] = {0x89, 0x04, 0x20};
                     mov_sib[1] = 0x04 + (get_reg_index(src_reg) << 3); // ModR/M
                     mov_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB: scale=0, index=ESP, base=addr_reg
-                    buffer_append(b, mov_sib, 4);
+                    buffer_append(b, mov_sib, 3);
                 } else {
                     uint8_t mov_reg[] = {0x89, modrm};
                     buffer_append(b, mov_reg, 2);
@@ -463,10 +463,10 @@ void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
                 uint8_t modrm = 0x00 + (get_reg_index(dst_reg) << 3) + get_reg_index(addr_reg);
                 if (modrm == 0x00) {
                     // Use SIB to avoid null
-                    uint8_t mov_sib[] = {0x8B, 0x04, 0x20, 0x00};
+                    uint8_t mov_sib[] = {0x8B, 0x04, 0x20};
                     mov_sib[1] = 0x04 + (get_reg_index(dst_reg) << 3); // ModR/M
                     mov_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB: scale=0, index=ESP, base=addr_reg
-                    buffer_append(b, mov_sib, 4);
+                    buffer_append(b, mov_sib, 3);
                 } else {
                     uint8_t mov[] = {0x8B, modrm};
                     buffer_append(b, mov, 2);
