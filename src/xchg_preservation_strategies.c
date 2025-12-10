@@ -75,7 +75,8 @@ size_t get_size_push_imm_preservation(cs_insn *insn) {
     int64_t imm = op->imm;
 
     // Check if it fits in imm8 (signed -128 to 127)
-    if (imm >= -128 && imm <= 127) {
+    // IMPORTANT: Exclude 0 because PUSH 0 encodes as 6A 00 which contains a null byte!
+    if (imm >= -128 && imm <= 127 && imm != 0) {
         // PUSH imm8: 6A XX (2 bytes)
         return 2;
     }
@@ -98,7 +99,8 @@ void generate_push_imm_preservation(struct buffer *b, cs_insn *insn) {
     int64_t imm = op->imm;
 
     // Strategy A: Use PUSH imm8 for small values
-    if (imm >= -128 && imm <= 127) {
+    // IMPORTANT: Exclude 0 because PUSH 0 encodes as 6A 00 which contains a null byte!
+    if (imm >= -128 && imm <= 127 && imm != 0) {
         // PUSH imm8: 6A XX
         buffer_write_byte(b, 0x6A);
         buffer_write_byte(b, (uint8_t)(imm & 0xFF));

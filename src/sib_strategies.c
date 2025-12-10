@@ -34,10 +34,19 @@ extern void register_strategy(strategy_t *s);
 /*
  * Detect instructions with SIB bytes containing null bytes
  * This includes any memory operand that uses [base+index*scale] addressing
+ * IMPORTANT: Only handle instructions that are actually supported in generate_sib_null()
  */
 static int can_handle_sib_null(cs_insn *insn) {
     if (!insn || !insn->detail) {
         return 0;
+    }
+
+    // CRITICAL: Only handle instructions we actually support in the switch statement
+    // Otherwise we'll fall through to default case which just copies the original with nulls!
+    if (insn->id != X86_INS_MOV && insn->id != X86_INS_PUSH && insn->id != X86_INS_LEA &&
+        insn->id != X86_INS_CMP && insn->id != X86_INS_ADD && insn->id != X86_INS_SUB &&
+        insn->id != X86_INS_AND && insn->id != X86_INS_OR && insn->id != X86_INS_XOR) {
+        return 0;  // Don't handle instructions not in our switch statement
     }
 
     // Check if this instruction actually has SIB addressing with potential null bytes
