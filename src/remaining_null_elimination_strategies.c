@@ -166,7 +166,8 @@ int can_handle_mov_mem_disp_enhanced(cs_insn *insn) {
 }
 
 size_t get_size_mov_mem_disp_enhanced(__attribute__((unused)) cs_insn *insn) {
-    return 25; // Conservative estimate
+    // PUSH EAX (1) + MOV EAX, imm32 (7 max) + MOV dst_reg, [EAX] with SIB (3) + POP EAX (1) = 12 max
+    return 15; // Conservative estimate
 }
 
 void generate_mov_mem_disp_enhanced(struct buffer *b, cs_insn *insn) {
@@ -180,16 +181,11 @@ void generate_mov_mem_disp_enhanced(struct buffer *b, cs_insn *insn) {
     // MOV EAX, disp (null-safe construction)
     generate_mov_eax_imm(b, disp);
 
-    // MOV dst_reg, [EAX] using safe encoding to avoid nulls in ModR/M
-    if (dst_reg != X86_REG_EAX) {
-        uint8_t mov_dst_eax[] = {0x8B, 0x00};
-        mov_dst_eax[1] = (get_reg_index(dst_reg) << 3) | 0x00; // ModR/M for [EAX]
-        buffer_append(b, mov_dst_eax, 2);
-    } else {
-        // Use SIB addressing to avoid null ModR/M when dst_reg is EAX: MOV EAX, [EAX]
-        uint8_t mov_eax_sib[] = {0x8B, 0x04, 0x20}; // MOV EAX, [EAX] with SIB
-        buffer_append(b, mov_eax_sib, 3);
-    }
+    // MOV dst_reg, [EAX] using SIB addressing to completely avoid ModR/M null issues
+    // This uses the format: 8B /r where /r = [SIB] and SIB addresses [EAX]
+    uint8_t mov_inst[] = {0x8B, 0x04, 0x20};  // MOV REG, [EAX] using SIB: [0x04][0x20] where [0x20] = [EAX+0*1]
+    mov_inst[1] = 0x04 | (get_reg_index(dst_reg) << 3);  // Encode destination register in ModR/M reg field
+    buffer_append(b, mov_inst, 3);
 
     // POP EAX to restore
     uint8_t pop_eax[] = {0x58};
