@@ -1,10 +1,11 @@
 <DOCUMENT filename="README.md">
+  
 # byvalver
 
 ## NULL-BYTE ELIMINATION FRAMEWORK
 
 <div align="center">
-  <img src="./images/byvalver_logo.png" alt="byvalver logo" width="400">
+  <img src="./images/byvalver_logo.png" alt="byvalver logo" width="550">
 </div>
 
 <div align="center">
