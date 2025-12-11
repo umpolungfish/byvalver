@@ -36,18 +36,18 @@
 
 ## Overview
 
-**byvalver** is a CLI tool built in C for automatically eliminating null bytes (`\x00`) from x86/x64 shellcode while maintaining complete functional equivalence  
+**byvalver** is a CLI tool built in `C` for automatically eliminating null-bytes (`\x00`) from x86/x64 shellcode while maintaining complete functional equivalence  
 
 It achieves a high success rate in producing null-free output across diverse, real-world shellcode test suites, including complex Windows payloads.
 
-The tool uses the Capstone disassembly framework to analyze instructions and applies over 120 ranked transformation strategies to replace null-containing code with equivalent alternatives  
+The tool uses the `Capstone` disassembly framework to analyze instructions and applies over 120 ranked transformation strategies to replace null-containing code with equivalent alternatives  
 
-It prioritizes security, robustness, and portability, supporting Windows, Linux, and macOS seamlessly.
+Supports Windows, Linux, and macOS
 
 **Core Technologies:**
-- Pure C implementation for efficiency and low-level control
-- Capstone for precise disassembly
-- NASM for generating decoder stubs
+- Pure `C` implementation for efficiency and low-level control
+- `Capstone` for precise disassembly
+- `NASM` for generating decoder stubs
 - Modular strategy pattern for extensible transformations
 - Neural network integration for intelligent strategy selection
 - Biphasic processing: Obfuscation followed by denullification
@@ -108,7 +108,7 @@ Optional biphasic mode adds anti-analysis obfuscation before denulling:
 - Compatible with all options (biphasic, PIC, XOR, etc.)
 
 ### Output Options
-- Formats: raw binary, C array, Python bytes, hex string
+- Formats: raw binary, `C` array, Python bytes, hex string
 - XOR encoding with decoder stub (`--xor-encode 0xDEADBEEF`)
 - Position-independent code (`--pic`)
 - Automatic output directory creation
@@ -139,11 +139,11 @@ byvalver employs a modular strategy-pattern design:
 - **CPU**: x86/x64 with modern instructions
 - **RAM**: 1GB free
 - **Disk**: 50MB free
-- **Tools**: C compiler, Make, Git (recommended)
+- **Tools**: `C` compiler, Make, Git (recommended)
 
 ## Dependencies
 
-- **Core**: GCC/Clang, GNU Make, Capstone (v4.0+), NASM (v2.13+), xxd
+- **Core**: GCC/Clang, GNU Make, `Capstone` (v4.0+), `NASM` (v2.13+), xxd
 - **Optional**: Clang-Format, Cppcheck, Valgrind
 - **ML Training**: Math libraries (included)
 
@@ -152,12 +152,12 @@ byvalver employs a modular strategy-pattern design:
 **Ubuntu/Debian:**
 ```bash
 sudo apt update
-sudo apt install build-essential nasm xxd pkg-config libcapstone-dev clang-format cppcheck valgrind
+sudo apt install build-essential `NASM` xxd pkg-config lib`Capstone`-dev clang-format cppcheck valgrind
 ```
 
 **macOS (Homebrew):**
 ```bash
-brew install capstone nasm vim
+brew install `Capstone` `NASM` vim
 ```
 
 **Windows (WSL):**
@@ -233,33 +233,33 @@ byvalver -r --pattern "*.bin" shellcodes/ output/
 
 byvalver's obfuscation pass (enabled via `--biphasic`) applies anti-analysis techniques:
 
-- **MOV Register Exchange**: XCHG/push-pop patterns
-- **MOV Immediate**: Arithmetic decomposition
-- **Arithmetic Substitution**: Complex equivalents
-- **Memory Access**: Indirection and LEA
-- **Stack Operations**: Manual ESP handling
-- **Conditional Jumps**: SETcc and moves
-- **Unconditional Jumps**: Indirect mechanisms
-- **Calls**: PUSH + JMP
-- **Control Flow Flattening**: Dispatcher states
-- **Instruction Substitution**: Equivalent ops
-- **Dead Code**: Harmless insertions
-- **Register Reassignment**: Data flow hiding
-- **Multiplication by One**: IMUL patterns
-- **NOP Sleds**: Variable padding
-- **Jump Decoys**: Fake targets
-- **Relative Offsets**: Calculated jumps
-- **Switch-Based**: Computed flow
-- **Boolean Expressions**: De Morgan equivalents
-- **Variable Encoding**: Reversible transforms
-- **Timing Variations**: Delays
-- **Register State**: Complex manipulations
-- **Stack Frames**: Custom management
-- **API Resolution**: Complex hashing
-- **String Encoding**: Runtime decoding
-- **Constants**: Expression generation
-- **Debugger Detection**: Obfuscated checks
-- **VM Detection**: Concealed methods
+- `**MOV Register Exchange**`: XCHG/push-pop patterns
+- `**MOV Immediate**`: Arithmetic decomposition
+- `**Arithmetic Substitution**`: Complex equivalents
+- `**Memory Access**`: Indirection and LEA
+- `**Stack Operations**`: Manual ESP handling
+- `**Conditional Jumps**`: SETcc and moves
+- `**Unconditional Jumps**`: Indirect mechanisms
+- `**Calls**`: PUSH + JMP
+- `**Control Flow Flattening**`: Dispatcher states
+- `**Instruction Substitution**`: Equivalent ops
+- `**Dead Code**`: Harmless insertions
+- `**Register Reassignment**`: Data flow hiding
+- `**Multiplication by One**`: IMUL patterns
+- `**NOP Sleds**`: Variable padding
+- `**Jump Decoys**`: Fake targets
+- `**Relative Offsets**`: Calculated jumps
+- `**Switch-Based**`: Computed flow
+- `**Boolean Expressions**`: De Morgan equivalents
+- `**Variable Encoding**`: Reversible transforms
+- `**Timing Variations**`: Delays
+- `**Register State**`: Complex manipulations
+- `**Stack Frames**`: Custom management
+- `**API Resolution**`: Complex hashing
+- `**String Encoding**`: Runtime decoding
+- `**Constants**`: Expression generation
+- `**Debugger Detection**`: Obfuscated checks
+- `**VM Detection**`: Concealed methods
 
 Priorities favor anti-analysis (high) over simple substitutions (low).
 
@@ -308,14 +308,14 @@ Model auto-loaded at runtime with path resolution.
 
 ## Development
 
-- Modern C with modularity
+- Modern `C` with modularity
 - Test suite: `python3 test_all_bins.py`
 - Code style: Clang-Format
 - Analysis: Cppcheck, Valgrind
 
 ## Troubleshooting
 
-- Dependencies: Verify Capstone/NASM/xxd
+- Dependencies: Verify `Capstone`/`NASM`/xxd
 - Builds: Check PATH_MAX, headers
 - ML: Ensure model path
 - Nulls: Confirm input format, dependencies
@@ -326,6 +326,6 @@ If denulling fails on specific shellcode, consider adding targeted strategies to
 
 ## License
 
-byvalver is sicced upon the Earth under the ![UNLICENSE](./UNLICENSE).
+byvalver is sicced freely upon the Earth under the ![UNLICENSE](./UNLICENSE).
 
 </DOCUMENT>
