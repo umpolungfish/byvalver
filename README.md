@@ -63,21 +63,21 @@ While it has demonstrated 100% success on a comprehensive test corpus representi
 
 ### Advanced Transformation Engine
 120+ strategies covering virtually all common null-byte sources:
-- CALL/POP and stack-based immediate loading
-- PEB traversal with hashed API resolution
+- `CALL/POP` and stack-based immediate loading
+- `PEB` traversal with hashed API resolution
 - Advanced hash-based API resolution with complex algorithms
-- Multi-stage PEB traversal for multiple DLL loading
-- SALC, XCHG, and flag-based zeroing
-- LEA for arithmetic substitution
-- Shift and arithmetic value construction
-- Multi-PUSH string building
+- Multi-stage `PEB` traversal for multiple DLL loading
+- `SALC`, `XCHG`, and flag-based zeroing
+- `LEA` for arithmetic substitution
+- `Shift` and arithmetic value construction
+- Multi-`PUSH` string building
 - Stack-based structure construction for Windows structures
 - Stack-based string construction with advanced patterns
-- SIB and displacement rewriting
+- `SIB` and displacement rewriting
 - Conditional jump displacement handling
 - Register remapping and chaining
-- Enhanced SALC+REP STOSB for buffer initialization
-- Comprehensive support for MOV, ADD/SUB, XOR, LEA, CMP, PUSH, and more
+- Enhanced `SALC`+`REP STOSB` for buffer initialization
+- Comprehensive support for `MOV`, `ADD/SUB`, `XOR`, `LEA`, `CMP`, `PUSH`, and more
 
 The engine employs multi-pass processing (obfuscation → denulling) with robust fallback mechanisms for edge cases
 
@@ -105,11 +105,11 @@ Optional biphasic mode adds anti-analysis obfuscation before denulling:
 - Custom file patterns (`--pattern "*.bin"`)
 - Structure preservation or flattening
 - Continue-on-error or strict modes
-- Compatible with all options (biphasic, PIC, XOR, etc.)
+- Compatible with all options (biphasic, PIC, `XOR`, etc.)
 
 ### Output Options
 - Formats: raw binary, `C` array, Python bytes, hex string
-- XOR encoding with decoder stub (`--xor-encode 0xDEADBEEF`)
+- `XOR` encoding with decoder stub (`--`xor`-encode 0xDEADBEEF`)
 - Position-independent code (`--pic`)
 - Automatic output directory creation
 
@@ -129,7 +129,7 @@ byvalver employs a modular strategy-pattern design:
 </div>
 
 - Pass 1 (Optional): Obfuscation for anti-analysis
-- Pass 2: Denullification for null-byte removal
+- Pass 2: Denullification for null-byte re`mov`al
 - ML layer for strategy optimization
 - Batch system for scalable processing
 
@@ -215,7 +215,7 @@ byvalver [OPTIONS] <input> [output]
 - `--biphasic`: Obfuscate + denull
 - `--pic`: Position-independent
 - `--ml`: ML strategy selection
-- `--xor-encode KEY`: XOR with stub
+- `--`xor`-encode KEY`: `XOR` with stub
 - `--format FORMAT`: raw|c|python|hexstring
 - `-r, --recursive`: Recursive batch
 - `--pattern PATTERN`: File glob
@@ -225,7 +225,7 @@ byvalver [OPTIONS] <input> [output]
 **Examples:**
 ```bash
 byvalver shellcode.bin clean.bin
-byvalver --biphasic --ml --xor-encode 0xCAFEBABE input.bin output.bin
+byvalver --biphasic --ml --`xor`-encode 0xCAFEBABE input.bin output.bin
 byvalver -r --pattern "*.bin" shellcodes/ output/
 ```
 
@@ -238,7 +238,7 @@ byvalver's obfuscation pass (enabled via `--biphasic`) applies anti-analysis tec
 - **`Arithmetic Substitution`**: Complex equivalents
 - **`Memory Access`**: Indirection and LEA
 - **`Stack Operations`**: Manual ESP handling
-- **`Conditional Jumps`**: SETcc and moves
+- **`Conditional Jumps`**: SETcc and `mov`es
 - **`Unconditional Jumps`**: Indirect mechanisms
 - **`Calls`**: PUSH + JMP
 - **`Control Flow Flattening`**: Dispatcher states
@@ -267,28 +267,28 @@ Priorities favor anti-analysis (high) over simple substitutions (low).
 
 The core denull pass uses over 120 strategies:
 
-### MOV Strategies
+### `MOV` Strategies
 - Original pass-through
-- NEG, NOT, XOR, Shift, ADD/SUB decompositions
+- `NEG`, `NOT`, `XOR`, `Shift`, `ADD/SUB` decompositions
 
 ### Arithmetic
-- Original, NEG, XOR, ADD/SUB
+- Original, `NEG`, `XOR`, `ADD/SUB`
 
 ### Jumps/Control
-- CALL/JMP indirects
+- `CALL/JMP` indirects
 - Generic memory displacement
 - Conditional offset elimination
 
 ### Advanced
 - ModR/M bypass
 - Flag-preserving TEST
-- SIB addressing
-- PUSH optimizations
-- Windows-specific: CALL/POP, PEB hashing, SALC, LEA arithmetic, shifts, stack strings, etc.
+- `SIB` addressing
+- `PUSH` optimizations
+- Windows-specific: `CALL/POP`, `PEB` hashing, `SALC`, `LEA` arithmetic, `shifts`, stack strings, etc.
 
 ### Memory/Displacement
 - Displacement null handling
-- LEA alternatives
+- `LEA` alternatives
 
 Strategies are prioritized and selected via ML or deterministic order  
 
