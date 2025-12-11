@@ -81,7 +81,7 @@ While it has demonstrated 100% success on a comprehensive test corpus representi
 
 The engine employs multi-pass processing (obfuscation → denulling) with robust fallback mechanisms for edge cases
 
-*While highly effective, certain edge-case shellcodes may still contain nulls; these can most always be addressed by extending the strategy registry*
+*While highly effective, certain edge-case shellcodes may still contain nulls → these can most always be addressed by extending the strategy registry*
 
 ### Obfuscation Layer
 Optional biphasic mode adds anti-analysis obfuscation before denulling:
@@ -109,7 +109,7 @@ Optional biphasic mode adds anti-analysis obfuscation before denulling:
 
 ### Output Options
 - Formats: raw binary, `C` array, Python bytes, hex string
-- `XOR` encoding with decoder stub (`--`xor`-encode 0xDEADBEEF`)
+- `XOR` encoding with decoder stub (`--xor-encode 0xDEADBEEF`)
 - Position-independent code (`--pic`)
 - Automatic output directory creation
 
@@ -129,7 +129,7 @@ byvalver employs a modular strategy-pattern design:
 </div>
 
 - Pass 1 (Optional): Obfuscation for anti-analysis
-- Pass 2: Denullification for null-byte re`mov`al
+- Pass 2: Denullification for null-byte removal
 - ML layer for strategy optimization
 - Batch system for scalable processing
 
@@ -196,7 +196,7 @@ sudo make uninstall
 
 From GitHub:
 ```bash
-curl -sSL https://raw.githubusercontent.com/mrnob0dy666/byvalver/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/umpolungfish/byvalver/main/install.sh | bash
 ```
 
 ## Usage
@@ -215,7 +215,7 @@ byvalver [OPTIONS] <input> [output]
 - `--biphasic`: Obfuscate + denull
 - `--pic`: Position-independent
 - `--ml`: ML strategy selection
-- `--`xor`-encode KEY`: `XOR` with stub
+- `--xor-encode KEY`: `XOR` with stub
 - `--format FORMAT`: raw|c|python|hexstring
 - `-r, --recursive`: Recursive batch
 - `--pattern PATTERN`: File glob
@@ -233,19 +233,19 @@ byvalver -r --pattern "*.bin" shellcodes/ output/
 
 byvalver's obfuscation pass (enabled via `--biphasic`) applies anti-analysis techniques:
 
-- **`MOV Register Exchange`**: XCHG/push-pop patterns
+- **`MOV Register Exchange`**: `XCHG`/push-pop patterns
 - **`MOV Immediate`**: Arithmetic decomposition
 - **`Arithmetic Substitution`**: Complex equivalents
-- **`Memory Access`**: Indirection and LEA
-- **`Stack Operations`**: Manual ESP handling
-- **`Conditional Jumps`**: SETcc and `mov`es
+- **`Memory Access`**: Indirection and `LEA`
+- **`Stack Operations`**: Manual `ESP` handling
+- **`Conditional Jumps`**: `SETcc` and moves
 - **`Unconditional Jumps`**: Indirect mechanisms
-- **`Calls`**: PUSH + JMP
+- **`Calls`**: `PUSH` + `JMP`
 - **`Control Flow Flattening`**: Dispatcher states
 - **`Instruction Substitution`**: Equivalent ops
 - **`Dead Code`**: Harmless insertions
 - **`Register Reassignment`**: Data flow hiding
-- **`Multiplication by One`**: IMUL patterns
+- **`Multiplication by One`**: `IMUL` patterns
 - **`NOP Sleds`**: Variable padding
 - **`Jump Decoys`**: Fake targets
 - **`Relative Offsets`**: Calculated jumps
@@ -281,7 +281,7 @@ The core denull pass uses over 120 strategies:
 
 ### Advanced
 - ModR/M bypass
-- Flag-preserving TEST
+- Flag-preserving `TEST`
 - `SIB` addressing
 - `PUSH` optimizations
 - Windows-specific: `CALL/POP`, `PEB` hashing, `SALC`, `LEA` arithmetic, `shifts`, stack strings, etc.
