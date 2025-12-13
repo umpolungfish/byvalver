@@ -214,13 +214,19 @@ byvalver employs a modular strategy-pattern design:
 - ML layer for strategy optimization
 - Batch system for scalable processing
 
+---
+
 <div align="center">
   <img src="./images/bv1.png" alt="Main Framework" width="800">
 </div>
 
+---
+
 <div align="center">
   <img src="./images/bv5.png" alt="ML Integration" width="800">
 </div>
+
+---
 
 ## System Requirements
 
