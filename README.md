@@ -163,14 +163,21 @@ Zero-Attempt:            5                   █░░░░░░░░░░�
 ```
 
 ### Obfuscation Layer
-Optional biphasic mode adds anti-analysis obfuscation before denulling:
-- Control flow flattening and dispatcher patterns
-- Register reassignment and state obfuscation
-- Dead code insertion and NOP sleds
-- Instruction substitution and equivalent operations
-- Stack frame manipulation and API resolution hiding
-- String and constant encoding
-- Anti-debugging and VM detection techniques
+`--biphasic` mode adds anti-analysis obfuscation prior to denulling:
+- Control flow flattening
+- Dispatcher patterns
+- Register reassignment
+- State obfuscation
+- Dead code insertion
+- NOP sleds
+- Instruction substitution
+- Equivalent operations
+- Stack frame manipulation
+- API resolution hiding
+- String Encoding
+- Constant Encoding
+- Anti-debugging
+- VM detection techniques
 
 ### ML-Powered Strategy Selection (Experimental)
 - Extracts 128 features per instruction
@@ -209,6 +216,9 @@ byvalver employs a modular strategy-pattern design:
 
 <div align="center">
   <img src="./images/bv1.png" alt="Main Framework" width="800">
+</div>
+
+<div align="center">
   <img src="./images/bv5.png" alt="ML Integration" width="800">
 </div>
 
