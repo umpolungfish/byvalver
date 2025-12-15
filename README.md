@@ -2,7 +2,7 @@
   
 # byvalver (·𐑚𐑲𐑝𐑨𐑤𐑝𐑼)
 
-## THE SHELLCODE NULL-BYTE ELIMINATOR / 𐑞 𐑖𐑧𐑤𐑒𐑴𐑛 𐑯𐑫𐑤–𐑚𐑲𐑑 𐑧𐑤𐑦𐑥𐑦𐑯𐑱𐑑𐑼
+## THE SHELLCODE NULL-BYTE ANNIHILATOR
 
 <div align="center">
   <img src="./images/byvalver_logo.png" alt="byvalver logo" width="750">
@@ -52,7 +52,8 @@ Supports Windows, Linux, and macOS
 - Neural network integration for intelligent strategy selection
 - Biphasic processing: Obfuscation followed by denullification
 
-While it has demonstrated 100% success on a comprehensive test corpus representing a wide variety of null-byte sources, some specialized shellcode may require additional strategies to achieve full denulling —-> our extensible registry makes it easy to add new transformations as needed
+> [!NOTE]
+While highly effective, certain edge-case shellcodes may still contain nulls → these can most always be addressed by extending the strategy registry
 
 ## Features
 
@@ -80,8 +81,6 @@ While it has demonstrated 100% success on a comprehensive test corpus representi
 - Comprehensive support for `MOV`, `ADD/SUB`, `XOR`, `LEA`, `CMP`, `PUSH`, and more
 
 The engine employs multi-pass processing (obfuscation → denulling) with robust fallback mechanisms for edge cases
-
-*While highly effective, certain edge-case shellcodes may still contain nulls → these can most always be addressed by extending the strategy registry*
 
 ### DENULLING IN ACTION
 
