@@ -240,12 +240,41 @@ byvalver employs a modular strategy-pattern design:
 **Ubuntu/Debian:**
 ```bash
 sudo apt update
-sudo apt install build-essential `NASM` xxd pkg-config lib`Capstone`-dev clang-format cppcheck valgrind
+sudo apt install build-essential nasm xxd pkg-config libcapstone-dev clang-format cppcheck valgrind
 ```
 
-**macOS (Homebrew):**
+**macOS (Homebrew) — macOS Tahoe 26 (and newer):**
 ```bash
-brew install `Capstone` `NASM` vim
+# Core build deps
+brew install capstone nasm pkg-config
+
+# xxd is typically already present at /usr/bin/xxd on macOS.
+# If it isn't available for some reason, install Vim (xxd is bundled with it):
+brew install vim
+```
+
+### macOS/Homebrew build fixes (repo changes)
+Recent changes were made to improve macOS/Homebrew compatibility (notably on Apple silicon + Homebrew prefix `/opt/homebrew`):
+- Updated `Makefile` and `makefile` to **use `CPPFLAGS` during compilation** and **`LDLIBS` during linking**, so `pkg-config`-discovered Capstone flags are honored.
+- Normalized the Capstone include path emitted by Homebrew’s `pkg-config` from `.../include/capstone` to `.../include` so the project’s `#include <capstone/capstone.h>` resolves correctly.
+
+Diff summary (high level):
+- `$(CC) $(CFLAGS) -c ...` → `$(CC) $(CFLAGS) $(CPPFLAGS) -c ...`
+- `$(CC) $(CFLAGS) -o ... $(LDFLAGS)` → `$(CC) $(CFLAGS) $(CPPFLAGS) -o ... $(LDFLAGS) $(LDLIBS)`
+- `CAPSTONE_CFLAGS := pkg-config --cflags capstone` → normalized to an include path compatible with `<capstone/capstone.h>`
+
+### Troubleshooting (macOS)
+```bash
+# Verify xxd is available (macOS usually ships /usr/bin/xxd)
+command -v xxd
+
+# Verify Capstone is discoverable via pkg-config
+pkg-config --cflags capstone
+pkg-config --libs capstone
+
+# Clean rebuild
+make clean
+make
 ```
 
 **Windows (WSL):**
@@ -264,7 +293,7 @@ Use the Makefile for builds:
 
 Customization:
 ```bash
-make CC=clang CFLAGS="-O3 -march=native"
+make CC=clang CFLAGS="-O3 -march=native" CPPFLAGS="$(pkg-config --cflags capstone)"
 ```
 
 View config: `make info`
@@ -313,7 +342,7 @@ byvalver [OPTIONS] <input> [output]
 **Examples:**
 ```bash
 byvalver shellcode.bin clean.bin
-byvalver --biphasic --ml --`xor`-encode 0xCAFEBABE input.bin output.bin
+byvalver --biphasic --ml --xor-encode 0xCAFEBABE input.bin output.bin
 byvalver -r --pattern "*.bin" shellcodes/ output/
 ```
 
@@ -353,7 +382,7 @@ byvalver's obfuscation pass (enabled via `--biphasic`) applies anti-analysis tec
 
 Priorities favor anti-analysis (high) over simple substitutions (low).
 
-See ![OBFUSCATION_STRATS](docs/OBFUSCATION_STRATS.md) for detailed strategy documentation.
+See [OBFUSCATION_STRATS](docs/OBFUSCATION_STRATS.md) for detailed strategy documentation.
 
 ## Denullification Strategies
 
@@ -386,7 +415,7 @@ Strategies are prioritized and selected via ML or deterministic order
 
 The modular registry allows easy addition of new strategies to handle emerging shellcode patterns.
 
-See ![DENULL_STRATS](docs/DENULL_STRATS.md) for detailed strategy documentation.
+See [DENULL_STRATS](docs/DENULL_STRATS.md) for detailed strategy documentation.
 
 ## ML Training
 
@@ -420,6 +449,6 @@ If denulling fails on specific shellcode, consider adding targeted strategies to
 
 ## License
 
-byvalver is sicced freely upon the Earth under the ![UNLICENSE](./UNLICENSE).
+byvalver is sicced freely upon the Earth under the [UNLICENSE](./UNLICENSE).
 
 </DOCUMENT>
