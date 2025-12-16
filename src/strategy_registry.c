@@ -31,6 +31,8 @@
 #include "advanced_hash_api_resolution.h"
 #include "multi_stage_peb_traversal.h"
 #include "stack_based_structure_construction.h"
+#include "pushw_word_immediate_strategies.h"
+#include "cltd_zero_extension_strategies.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h> // Added for debug prints
@@ -150,6 +152,10 @@ void register_linux_socketcall_strategies(); // Forward declaration - Linux sock
 void register_linux_string_push_strategies(); // Forward declaration - Linux string construction via PUSH - Priority 68-70
 void register_syscall_number_strategies(); // Forward declaration - Linux syscall number encoding strategies - Priority 77-78
 
+// NEW: Discovered Strategies (2025-12-16)
+void register_pushw_word_immediate_strategies(); // Forward declaration - PUSHW 16-bit immediate for port numbers - Priority 87
+void register_cltd_zero_extension_strategies(); // Forward declaration - CLTD zero extension optimization - Priority 82
+
 // NEW: 5 Additional Denulling Strategies (v3.0)
 void register_jcxz_null_safe_loop_termination_strategy(); // Priority 86 - JCXZ null-safe loop termination
 void register_push_byte_immediate_stack_construction_strategy(); // Priority 82 - PUSH byte immediate stack construction
@@ -201,6 +207,11 @@ void init_strategies(int use_ml) {
     init_advanced_transformations();      // Initialize the can_handle functions
     register_indirect_call_strategies();  // Register indirect CALL/JMP strategies (priority 100)
     register_sldt_replacement_strategy();  // Register SLDT replacement strategy (priority 95)
+
+    // NEW: Discovered Strategies (2025-12-16)
+    register_pushw_word_immediate_strategies();  // Register PUSHW 16-bit immediate strategies (priority 87)
+    register_cltd_zero_extension_strategies();  // Register CLTD zero extension strategies (priority 82)
+
     register_push_immediate_strategies();  // Register PUSH immediate null elimination strategies (priority 75)
     register_lea_displacement_strategies();  // Register LEA displacement null elimination strategies (priority 80)
     register_sequence_preservation_strategies();  // Register sequence preservation strategies

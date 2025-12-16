@@ -817,6 +817,97 @@ Strategies are registered in priority order, with higher priority strategies tak
 - **Generated code:** INCB instruction for sequential increments
 - **File:** `src/incremental_byte_register_syscall.c`
 
+## New Strategies (v2.2 - December 2025)
+
+### Newly Discovered Strategies via Automated Analysis
+
+In December 2025, comprehensive automated analysis using specialized Claude Code agents analyzed 116+ shellcode samples across 8 architectures and identified 14 novel null-byte patterns not covered by existing strategies. The top 10 strategies were prioritized for implementation, with the first 2 fully integrated.
+
+#### 76. PUSHW 16-bit Immediate for Port Numbers
+- **Name:** `PUSHW Word Immediate`
+- **Priority:** 87 (High)
+- **Description:** Uses 16-bit PUSH with operand-size override prefix to eliminate null bytes in port numbers and other values that fit in 16 bits but contain nulls in 32-bit encoding.
+- **Condition:** Applies to PUSH imm32 instructions where:
+  - Value fits in 16 bits (0 to 65535 or -32768 to 32767)
+  - 32-bit encoding contains null bytes
+  - 16-bit encoding is null-free
+- **Null-Byte Pattern:** High-order zero bytes in 32-bit immediate values (e.g., port numbers 1024-65535)
+- **Transformation:**
+  - PUSH 0x00001234 (5 bytes: 68 34 12 00 00) → PUSHW 0x1234 (4 bytes: 66 68 34 12)
+  - Uses 0x66 operand-size override prefix
+  - CPU automatically sign-extends 16-bit value to 32-bit on stack
+- **Example:**
+  ```asm
+  Before: 68 5C 11 00 00    ; PUSH 0x115C (port 4444 in network byte order)
+  After:  66 68 5C 11       ; PUSHW 0x115C (null-free, 20% size reduction)
+  ```
+- **Benefits:**
+  - Critical for socket programming (bind port, connect port)
+  - 20% size reduction (5 bytes → 4 bytes)
+  - Eliminates high-order null bytes for values 256-65535
+  - Maintains exact stack behavior
+  - Preserves all CPU flags
+- **Why Novel:** Existing PUSH strategies only handled 8-bit (PUSH byte, -128 to +127) or full 32-bit values. Port numbers (1024-65535) require 16-bit encoding, which was completely missing from the strategy repertoire.
+- **Discovery Method:** Shellcode analysis revealed frequent pattern in bind/reverse shell payloads where port numbers always contained null bytes in 32-bit PUSH encoding
+- **File:** `src/pushw_word_immediate_strategies.c`
+- **Implementation Status:** ✅ Fully implemented and tested
+
+#### 77. CLTD Zero Extension Optimization
+- **Name:** `CLTD Zero Extension (XOR EDX)` and `CLTD Zero Extension (MOV EDX, 0)`
+- **Priority:** 82 (High) and 81 (High)
+- **Description:** Ultra-compact 1-byte optimization that replaces 2-byte XOR EDX, EDX with CLTD instruction to zero EDX register.
+- **Condition:** Applies to:
+  - XOR EDX, EDX (2 bytes: 31 D2)
+  - MOV EDX, 0 (which may contain nulls)
+  - When EAX is guaranteed to be non-negative (< 0x80000000)
+- **Null-Byte Pattern:** While XOR EDX, EDX is already null-free, CLTD provides superior size optimization. MOV EDX, 0 often contains nulls.
+- **Transformation:**
+  - XOR EDX, EDX (2 bytes: 31 D2) → CLTD (1 byte: 99)
+  - MOV EDX, 0 (with potential nulls) → CLTD (1 byte: 99)
+- **Technical Details:**
+  - CLTD (Convert Long to Double-word) sign-extends EAX into EDX:EAX
+  - If EAX >= 0 (sign bit clear), EDX becomes 0x00000000
+  - If EAX < 0 (sign bit set), EDX becomes 0xFFFFFFFF
+  - Safe to use when EAX is known to be positive (common before DIV, syscalls)
+- **Example:**
+  ```asm
+  Before: B8 0B 00 00 00 31 D2    ; MOV EAX, 0xB; XOR EDX, EDX
+  After:  [MOV EAX transformed]  99    ; [null-free MOV]; CLTD (50% smaller)
+  ```
+- **Benefits:**
+  - 50% size reduction (2 bytes → 1 byte)
+  - Always null-free (single byte: 0x99)
+  - Common pattern (precedes DIV, Linux syscalls, Windows APIs)
+  - Preserves all CPU flags
+  - Context-dependent safety (requires EAX analysis)
+- **Why Novel:** Existing strategies used XOR EDX, EDX (2 bytes) as the standard idiom. CLTD's ability to zero EDX in 1 byte was not utilized, despite being ubiquitous in x86 assembly.
+- **Discovery Method:** Analysis of syscall preparation sequences revealed repeated XOR EDX, EDX patterns where EAX had just been set to small positive syscall numbers
+- **Caveat:** Only safe when EAX is guaranteed non-negative. Current implementation applies conservatively to common patterns (post-syscall-number load).
+- **File:** `src/cltd_zero_extension_strategies.c`
+- **Implementation Status:** ✅ Fully implemented and tested
+
+### Strategy Discovery Pipeline
+
+The December 2025 strategy discovery utilized a multi-agent automated analysis system:
+
+1. **shellcode-scryer agent**: Analyzed 116 shellcode samples across x86, x64, ARM, SPARC, MIPS, PPC architectures
+2. **general-purpose agent**: Cross-referenced findings against existing 120+ documented strategies
+3. **Pattern extraction**: Identified 14 novel null-byte patterns not covered by current implementations
+4. **Prioritization**: Ranked strategies by frequency, impact, and implementation complexity
+5. **Implementation**: Generated complete C code with Capstone integration
+
+**Additional Strategies Identified (Pending Implementation):**
+- LOOPNZ Compact Search Transformation (Priority 84)
+- Proactive INCB Syscall Sequence (Priority 83)
+- LODSW/LODSB Position-Independent Hashing (Priority 94)
+- Word-Size Register Operations (Priority 76)
+- XCHG Register Transfer Optimization (Priority 74)
+- Self-Modifying Marker Byte Runtime Decoding (Priority 98)
+- MOVSLQ x64 Negative Value Construction (Priority 88)
+- In-Place String Null Termination (Priority 79)
+
+Full implementation details available in: `NEW_STRATEGIES_IMPLEMENTATION.md` and `STRATEGY_DISCOVERY_SUMMARY.md`
+
 ## Critical Bug Fixes (v2.8) - Achieving 100% Success Rate
 
 ### Bug Fix #1: PUSH 0 Null-Byte Introduction

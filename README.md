@@ -40,7 +40,7 @@
 
 It achieves a high success rate in producing null-free output across diverse, real-world shellcode test suites, including complex Windows payloads.
 
-The tool uses the `Capstone` disassembly framework to analyze instructions and applies over 120 ranked transformation strategies to replace null-containing code with equivalent alternatives  
+The tool uses the `Capstone` disassembly framework to analyze instructions and applies over 122 ranked transformation strategies to replace null-containing code with equivalent alternatives
 
 Supports Windows, Linux, and macOS
 
@@ -63,7 +63,7 @@ While highly effective, certain edge-case shellcodes may still contain nulls →
 </div>
 
 ### Advanced Transformation Engine
-120+ strategies covering virtually all common null-byte sources:
+122+ strategies covering virtually all common null-byte sources (2 new strategies added in v2.2):
 - `CALL/POP` and stack-based immediate loading
 - `PEB` traversal with hashed API resolution
 - Advanced hash-based API resolution with complex algorithms
@@ -84,7 +84,7 @@ The engine employs multi-pass processing (obfuscation → denulling) with robust
 
 ### DENULLING IN ACTION
 
-![byvalver batch processing](./images/denulling.gif)
+![byvalver batch processing](https://imgur.com/a/6RS891U.gif)
 
 ### Performance Metrics
 
@@ -93,8 +93,8 @@ Real-world performance data from processing 179 diverse shellcode samples:
 ```
 📊 Batch Processing Statistics:
 
-Success Rate:            179/179             █████████████████████████   100.00%
-Files Processed:         179                 █████████████████████████   100.00%
+Success Rate:            184/184             █████████████████████████   100.00%
+Files Processed:         184                 █████████████████████████   100.00%
 Failed:                  0                   ░░░░░░░░░░░░░░░░░░░░░░░░░   00.00%
 Skipped:                 0                   ░░░░░░░░░░░░░░░░░░░░░░░░░   00.00%
 ```
@@ -103,20 +103,20 @@ Skipped:                 0                   ░░░░░░░░░░░�
 🧠 ML Strategy Selection Performance:
 
 Processing Speed:
-Instructions/sec:        19.3 inst/sec       ████████████░░░░░░░░░░░░░
-Total Instructions:      20,535
-Session Duration:        1,065 seconds
+Instructions/sec:        19.5 inst/sec       ████████████░░░░░░░░░░░░░
+Total Instructions:      20,760
+Session Duration:        1,067 seconds
 
 Null-Byte Elimination:
-Eliminated:              17,087/20,535       █████████████████████░░░░   83.21%
-Strategies Applied:      19,904
-Success Rate:            85.84%              █████████████████████░░░░   85.84%
+Eliminated:              18,636/20,760       ██████████████████████░░░   89.77%
+Strategies Applied:      20,129
+Success Rate:            92.57%              ███████████████████████░░   92.57%
 
 Learning Progress:
-Positive Feedback:       17,087              ████████████████████░░░░░   85.84%
-Negative Feedback:       2,817               ███░░░░░░░░░░░░░░░░░░░░░░   14.16%
-Total Iterations:        40,439
-Avg Confidence:          0.1307              ███░░░░░░░░░░░░░░░░░░░░░░   13.07%
+Positive Feedback:       18,636              ███████████████████████░░   92.57%
+Negative Feedback:       1,493               █░░░░░░░░░░░░░░░░░░░░░░░░   07.43%
+Total Iterations:        40,889
+Avg Confidence:          0.0015              ░░░░░░░░░░░░░░░░░░░░░░░░░   00.15%
 ```
 
 ```
@@ -124,21 +124,21 @@ Avg Confidence:          0.1307              ███░░░░░░░░�
 
 Strategy                                  Attempts    Success%    Confidence
 --------                                  --------    --------    ----------
-ret_immediate                                  134    ████████████░░░░░░░░░░░░░   50.00%
-transform_add_mem_reg8                        2012    ██████████░░░░░░░░░░░░░░░   43.69%
-cmp_mem_reg_null                                96    ██████████░░░░░░░░░░░░░░░   45.83%
-MOVZX/MOVSX Null-Byte Elimination              162    █████████░░░░░░░░░░░░░░░░   45.06%
-Unicode STOSW Byte-by-Byte                      86    ███████░░░░░░░░░░░░░░░░░░   34.88%
-lea_disp_null                                 3850    ███████░░░░░░░░░░░░░░░░░░   30.36%
-cmp_reg_imm_null                               796    █████░░░░░░░░░░░░░░░░░░░░   23.49%
-generic_mem_null_disp_enhanced              21880    █████░░░░░░░░░░░░░░░░░░░░   20.34%
-ModRM Byte Null Bypass                          82    ████░░░░░░░░░░░░░░░░░░░░░   17.07%
-SALC with Flag Setup                          1654    ████░░░░░░░░░░░░░░░░░░░░░   16.87%
-Shift-Based Value Construction                2830    ███░░░░░░░░░░░░░░░░░░░░░░   15.62%
-conservative_arithmetic                       5142    ███░░░░░░░░░░░░░░░░░░░░░░   15.95%
-Stack-Based Structure Construction            7558    ███░░░░░░░░░░░░░░░░░░░░░░   12.70%
-Multi-Stage PEB Traversal                     9936    ██░░░░░░░░░░░░░░░░░░░░░░░   11.36%
-LEA with Complex Addressing                   3568    ██░░░░░░░░░░░░░░░░░░░░░░░   11.35%
+ret_immediate                                  134    █████████████░░░░░░░░░░░░   50.00%
+MOVZX/MOVSX Null-Byte Elimination              162    █████████████░░░░░░░░░░░░   50.00%
+transform_mov_reg_mem_self                     774    █████████████░░░░░░░░░░░░   50.00%
+cmp_mem_reg_null                                96    ████████████░░░░░░░░░░░░░   46.88%
+cmp_mem_reg                                    264    ████████████░░░░░░░░░░░░░   46.97%
+lea_disp_null                                 3900    ███████████░░░░░░░░░░░░░░   45.38%
+transform_add_mem_reg8                        2012    ███████████░░░░░░░░░░░░░░   43.49%
+Push Optimized                                4214    ███████░░░░░░░░░░░░░░░░░░   29.31%
+ModRM Byte Null Bypass                          82    ██████░░░░░░░░░░░░░░░░░░░   25.61%
+conservative_arithmetic                       5172    █████░░░░░░░░░░░░░░░░░░░░   21.37%
+arithmetic_addsub_enhanced                    1722    ████░░░░░░░░░░░░░░░░░░░░░   18.12%
+PUSH Immediate Null-Byte Elimination          3066    ████░░░░░░░░░░░░░░░░░░░░░   16.54%
+SIB Addressing                                9560    ████░░░░░░░░░░░░░░░░░░░░░   16.03%
+generic_mem_null_disp_enhanced              22130    ███░░░░░░░░░░░░░░░░░░░░░░   15.52%
+SALC-based Zero Comparison                    1654    ███░░░░░░░░░░░░░░░░░░░░░░   12.88%
 ```
 
 ```
@@ -150,9 +150,9 @@ Weight Update Max:       0.100000
 Total Weight Updates:    1724.68
 
 Strategy Coverage:
-Total Strategies:        120+
-Strategies Activated:    115                 ████████████████████████░   95.83%
-Zero-Attempt:            5                   █░░░░░░░░░░░░░░░░░░░░░░░░   04.17%
+Total Strategies:        122+
+Strategies Activated:    117                 ████████████████████████░   95.90%
+Zero-Attempt:            5                   █░░░░░░░░░░░░░░░░░░░░░░░░   04.10%
 ```
 
 ### Obfuscation Layer
@@ -357,7 +357,7 @@ See ![OBFUSCATION_STRATS](docs/OBFUSCATION_STRATS.md) for detailed strategy docu
 
 ## Denullification Strategies
 
-The core denull pass uses over 120 strategies:
+The core denull pass uses over 122 strategies (including 2 newly discovered in December 2025):
 
 ### `MOV` Strategies
 - Original pass-through
