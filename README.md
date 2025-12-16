@@ -84,7 +84,7 @@ The engine employs multi-pass processing (obfuscation → denulling) with robust
 
 ### DENULLING IN ACTION
 
-![byvalver batch processing](https://imgur.com/a/6RS891U.gif)
+![byvalver batch processing](./images/denulling.gif)
 
 ### Performance Metrics
 
