@@ -222,15 +222,7 @@ byvalver employs a modular strategy-pattern design:
 - Batch system for scalable processing
 
 <div align="center">
-  <img src="./images/Strategy_Categories_Taxonomy_Compact.png" alt="Strategy Categories Taxonomy" width="650">
-</div>
-
-<div align="center">
-  <img src="./images/Module_Dependency_Graph_Compact.png" alt="Module Dependency Graph" width="650">
-</div>
-
-<div align="center">
-  <img src="./images/Strategy_System_Architecture_Compact.png" alt="Strategy System Architecture" width="650">
+  <img src="./images/Strategy_Categories_Taxonomy_Compact.png" alt="Strategy Categories Taxonomy" width="700">
 </div>
 
 ## System Requirements
