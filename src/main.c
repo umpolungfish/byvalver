@@ -482,6 +482,16 @@ int main(int argc, char *argv[]) {
         batch_stats_init(&stats);
         stats.total_files = file_list.count;
 
+        // Set bad character configuration in stats
+        bad_char_config_t* bad_char_config = get_bad_char_config();
+        if (bad_char_config) {
+            stats.bad_char_count = bad_char_config->bad_char_count;
+            // Convert uint8_t to int for the batch stats
+            for (int i = 0; i < 256; i++) {
+                stats.bad_char_set[i] = bad_char_config->bad_chars[i];
+            }
+        }
+
         // Process each file
         for (size_t i = 0; i < file_list.count; i++) {
             const char *input_path = file_list.paths[i];
@@ -580,7 +590,7 @@ int main(int argc, char *argv[]) {
                 ml_strategist_print_bad_char_breakdown();  // Added bad character breakdown (v3.0)
                 ml_strategist_print_learning_progress();
             } else {
-                // Provide basic statistics for batch processing even without ML
+                // Provide enhanced statistics for batch processing even without ML
                 printf("Statistics without ML Integration:\n");
                 printf("  - Batch processing completed\n");
                 printf("  - Total files: %zu\n", stats.total_files);
@@ -593,6 +603,23 @@ int main(int argc, char *argv[]) {
                     double ratio = (double)stats.total_output_bytes / (double)stats.total_input_bytes;
                     printf("  - Average size ratio: %.2f\n", ratio);
                 }
+
+                // Add bad character information
+                printf("  - Bad character elimination: ENABLED\n");
+                printf("  - Configured bad characters: ");
+                int printed = 0;
+                for (int i = 0; i < 256; i++) {
+                    if (stats.bad_char_set[i]) {
+                        if (printed > 0) printf(", ");
+                        printf("0x%02x", i);
+                        printed++;
+                    }
+                }
+                if (printed == 0) {
+                    printf("0x00 (default null only)");
+                }
+                printf("\n");
+                printf("  - Total bad characters configured: %d\n", stats.bad_char_count);
             }
         }
 
@@ -662,7 +689,7 @@ int main(int argc, char *argv[]) {
             ml_strategist_print_bad_char_breakdown();  // Added bad character breakdown (v3.0)
             ml_strategist_print_learning_progress();
         } else {
-            // Provide basic statistics even without ML
+            // Provide enhanced statistics even without ML, including bad character info
             printf("Statistics without ML Integration:\n");
             printf("  - Shellcode processing completed\n");
             printf("  - Input size: %zu bytes\n", input_size);
@@ -670,6 +697,28 @@ int main(int argc, char *argv[]) {
             if (input_size > 0) {
                 double ratio = (double)output_size / (double)input_size;
                 printf("  - Size ratio: %.2f\n", ratio);
+            }
+
+            // Add bad character information
+            bad_char_config_t* bad_char_config = get_bad_char_config();
+            if (bad_char_config) {
+                printf("  - Bad character elimination: %s\n",
+                       config->bad_chars ? "ENABLED" : "DISABLED (default: nulls only)");
+                printf("  - Configured bad characters: ");
+
+                int bad_char_count = 0;
+                for (int i = 0; i < 256; i++) {
+                    if (bad_char_config->bad_chars[i]) {
+                        if (bad_char_count > 0) printf(", ");
+                        printf("0x%02x", i);
+                        bad_char_count++;
+                    }
+                }
+                if (bad_char_count == 0) {
+                    printf("0x00 (default null only)");
+                }
+                printf("\n");
+                printf("  - Total bad characters configured: %d\n", bad_char_config->bad_char_count);
             }
         }
     }

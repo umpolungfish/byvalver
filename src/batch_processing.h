@@ -24,6 +24,9 @@ typedef struct {
     char **failed_file_list;
     size_t failed_file_count;
     size_t failed_file_capacity;
+    // Bad character statistics
+    int bad_char_count;
+    int bad_char_set[256];  // Use int to match ml_metrics.h session_metrics_t bad_char_set type
 } batch_stats_t;
 
 // Function to check if a path is a directory

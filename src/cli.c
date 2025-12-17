@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "cli.h"
+#include "badchar_profiles.h"
 #include <unistd.h>
 #include <time.h>
 #include <stdlib.h>
@@ -203,9 +204,15 @@ void print_detailed_help(FILE *stream, const char *program_name) {
     fprintf(stream, "      --pic                         Generate position-independent code\n");
     fprintf(stream, "      --ml                          Use ML strategy selection\n");
     fprintf(stream, "      --xor-encode KEY              XOR encode output with 4-byte key (hex)\n");
-    fprintf(stream, "      --format FORMAT               Output format: raw, c, python, powershell, hexstring\n");
+    fprintf(stream, "      --format FORMAT               Output format: raw, c, python, powershell, hexstring\n\n");
+
+    fprintf(stream, "    Bad Character Elimination (v3.0):\n");
     fprintf(stream, "      --bad-chars BYTES             Comma-separated hex bytes to eliminate (e.g., \"00,0a,0d\")\n");
-    fprintf(stream, "                                    Default: \"00\" (null bytes only)\n\n");
+    fprintf(stream, "                                    Default: \"00\" (null bytes only)\n");
+    fprintf(stream, "      --profile NAME                Use predefined bad-character profile\n");
+    fprintf(stream, "                                    Examples: http-newline, url-safe, sql-injection,\n");
+    fprintf(stream, "                                              alphanumeric-only, printable-only\n");
+    fprintf(stream, "      --list-profiles               List all available bad-character profiles\n\n");
 
     fprintf(stream, "    ML Metrics Options (requires --ml):\n");
     fprintf(stream, "      --metrics                     Enable ML metrics tracking and learning\n");
@@ -250,6 +257,16 @@ void print_detailed_help(FILE *stream, const char *program_name) {
     fprintf(stream, "      %s --bad-chars \"00,0a,0d\" shellcode.bin output.bin\n\n", program_name);
     fprintf(stream, "      # Avoid space character (for command injection)\n");
     fprintf(stream, "      %s --bad-chars \"00,20\" shellcode.bin output.bin\n\n", program_name);
+
+    fprintf(stream, "    Use predefined profiles (v3.0+):\n");
+    fprintf(stream, "      # List all available profiles\n");
+    fprintf(stream, "      %s --list-profiles\n\n", program_name);
+    fprintf(stream, "      # Use HTTP newline profile (eliminates 0x00, 0x0A, 0x0D)\n");
+    fprintf(stream, "      %s --profile http-newline shellcode.bin output.bin\n\n", program_name);
+    fprintf(stream, "      # Use SQL injection profile\n");
+    fprintf(stream, "      %s --profile sql-injection shellcode.bin output.bin\n\n", program_name);
+    fprintf(stream, "      # Generate alphanumeric-only shellcode (extreme difficulty)\n");
+    fprintf(stream, "      %s --profile alphanumeric-only shellcode.bin output.bin\n\n", program_name);
 
     fprintf(stream, "    Batch process directory:\n");
     fprintf(stream, "      %s input_dir/ output_dir/\n\n", program_name);
@@ -307,6 +324,8 @@ int parse_arguments(int argc, char *argv[], byvalver_config_t *config) {
         {"arch", required_argument, 0, 0},
         {"ml", no_argument, 0, 0},  // EXPERIMENTAL: Known to degrade performance
         {"bad-chars", required_argument, 0, 0},  // NEW in v3.0: Generic bad character elimination
+        {"profile", required_argument, 0, 0},    // NEW in v3.0: Use predefined bad-char profile
+        {"list-profiles", no_argument, 0, 0},    // NEW in v3.0: List available profiles
 
         // ML Metrics options
         {"metrics", no_argument, 0, 0},
@@ -422,6 +441,34 @@ int parse_arguments(int argc, char *argv[], byvalver_config_t *config) {
                             fprintf(stderr, "Expected: comma-separated hex bytes (e.g., \"00,0a,0d\")\n");
                             return EXIT_INVALID_ARGUMENTS;
                         }
+                    }
+                    else if (strcmp(opt_name, "profile") == 0) {
+                        // Use predefined profile (v3.0)
+                        const badchar_profile_t *profile = find_badchar_profile(optarg);
+                        if (!profile) {
+                            fprintf(stderr, "Error: Unknown profile: %s\n", optarg);
+                            fprintf(stderr, "Use --list-profiles to see available profiles.\n");
+                            return EXIT_INVALID_ARGUMENTS;
+                        }
+
+                        if (config->bad_chars) {
+                            free(config->bad_chars);
+                        }
+                        config->bad_chars = profile_to_config(profile);
+                        if (!config->bad_chars) {
+                            fprintf(stderr, "Error: Failed to load profile: %s\n", optarg);
+                            return EXIT_INVALID_ARGUMENTS;
+                        }
+
+                        if (!config->quiet) {
+                            fprintf(stderr, "Using profile '%s': %s\n", profile->name, profile->description);
+                            fprintf(stderr, "Eliminating %zu bad characters\n", profile->bad_char_count);
+                        }
+                    }
+                    else if (strcmp(opt_name, "list-profiles") == 0) {
+                        // List available profiles
+                        list_badchar_profiles(stdout);
+                        exit(EXIT_SUCCESS);
                     }
                     else if (strcmp(opt_name, "format") == 0) {
                         config->output_format = optarg;

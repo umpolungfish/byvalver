@@ -193,6 +193,8 @@ void batch_stats_init(batch_stats_t *stats) {
     stats->skipped_files = 0;
     stats->total_input_bytes = 0;
     stats->total_output_bytes = 0;
+    stats->bad_char_count = 0;
+    memset(stats->bad_char_set, 0, sizeof(stats->bad_char_set)); // Initialize bad character set
 
     // Initialize failed file list
     stats->failed_file_list = NULL;
@@ -288,5 +290,21 @@ void batch_stats_print(const batch_stats_t *stats, int quiet) {
         double ratio = (double)stats->total_output_bytes / (double)stats->total_input_bytes;
         printf("Size ratio:        %.2fx\n", ratio);
     }
+
+    // Add bad character information
+    printf("Bad characters:    %d configured\n", stats->bad_char_count);
+    if (stats->bad_char_count > 0) {
+        printf("Configured:        ");
+        int printed = 0;
+        for (int i = 0; i < 256; i++) {
+            if (stats->bad_char_set[i]) {
+                if (printed > 0) printf(", ");
+                printf("0x%02x", i);
+                printed++;
+            }
+        }
+        printf("\n");
+    }
+
     printf("====================================\n");
 }

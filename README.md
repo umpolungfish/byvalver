@@ -40,7 +40,12 @@
 
 The tool uses the `Capstone` disassembly framework to analyze instructions and applies over 122 ranked transformation strategies to replace null-containing code with equivalent alternatives. It has been extensively tested on null-byte elimination and achieves a high success rate across diverse, real-world shellcode test suites, including complex Windows payloads.
 
-**NEW in v3.0:** Generic bad character elimination framework. The `--bad-chars` option allows specification of arbitrary bytes to eliminate (e.g., `--bad-chars "00,0a,0d"` for newline-safe shellcode). **This feature is functional but newly implemented** - the 122+ transformation strategies were originally designed and optimized specifically for null-byte elimination. While they apply to other bad characters, they have not been extensively tested or optimized for non-null byte scenarios.
+**NEW in v3.0:** Generic bad character elimination framework with two usage modes:
+
+1. **Direct specification**: The `--bad-chars` option allows specification of arbitrary bytes to eliminate (e.g., `--bad-chars "00,0a,0d"` for newline-safe shellcode)
+2. **Profile-based**: The `--profile` option uses pre-configured bad-character sets for common exploit scenarios (e.g., `--profile http-newline`, `--profile sql-injection`, `--profile alphanumeric-only`)
+
+**This feature is functional but newly implemented** - the 122+ transformation strategies were originally designed and optimized specifically for null-byte elimination. While they apply to other bad characters, they have not been extensively tested or optimized for non-null byte scenarios.
 
 Supports Windows, Linux, and macOS
 
@@ -339,6 +344,8 @@ byvalver [OPTIONS] <input> [output]
 - `-V, --verbose`: Verbose
 - `-q, --quiet`: Quiet
 - `--bad-chars BYTES`: **[v3.0]** Comma-separated hex bytes to eliminate (default: "00")
+- `--profile NAME`: **[v3.0]** Use predefined bad-character profile (e.g., http-newline, sql-injection)
+- `--list-profiles`: **[v3.0]** List all available bad-character profiles
 - `--biphasic`: Obfuscate + denull
 - `--pic`: Position-independent
 - `--ml`: ML strategy selection
@@ -354,20 +361,26 @@ byvalver [OPTIONS] <input> [output]
 # Default: eliminate null bytes only (well-tested, recommended)
 byvalver shellcode.bin clean.bin
 
-# v3.0 NEW: Eliminate newlines too (experimental - not extensively tested)
+# v3.0 NEW: List available bad-character profiles
+byvalver --list-profiles
+
+# v3.0 NEW: Use predefined profile for HTTP contexts (eliminates 0x00, 0x0A, 0x0D)
+byvalver --profile http-newline shellcode.bin clean.bin
+
+# v3.0 NEW: Use profile for SQL injection contexts
+byvalver --profile sql-injection shellcode.bin clean.bin
+
+# v3.0 NEW: Use profile for URL-safe shellcode
+byvalver --profile url-safe shellcode.bin clean.bin
+
+# v3.0 NEW: Manual bad-char specification (experimental - not extensively tested)
 byvalver --bad-chars "00,0a,0d" shellcode.bin clean.bin
 
-# v3.0 NEW: Eliminate multiple bad characters (experimental)
-byvalver --bad-chars "00,0a,0d,20" input.bin output.bin
+# Combined with other features
+byvalver --profile http-newline --biphasic --ml input.bin output.bin
 
-# Combined with other features (null-byte mode recommended for production)
-byvalver --biphasic --ml --xor-encode 0xCAFEBABE input.bin output.bin
-
-# Batch processing (null-byte elimination)
-byvalver -r --pattern "*.bin" shellcodes/ output/
-
-# Batch processing with custom bad chars (experimental)
-byvalver -r --bad-chars "00,0a,0d" --pattern "*.bin" shellcodes/ output/
+# Batch processing with profile
+byvalver -r --profile http-whitespace --pattern "*.bin" shellcodes/ output/
 ```
 
 > [!IMPORTANT]
@@ -375,11 +388,69 @@ byvalver -r --bad-chars "00,0a,0d" --pattern "*.bin" shellcodes/ output/
 
 ---
 
+## Bad-Character Profiles (v3.0)
+
+### Overview
+
+Version 3.0 introduces **bad-character profiles** - pre-configured sets of bytes for common exploit scenarios. Instead of manually specifying hex values, use profile names that match your context.
+
+### Available Profiles
+
+| Profile | Difficulty | Bad Chars | Use Case |
+|---------|-----------|-----------|----------|
+| `null-only` | ░░░░░ Trivial | 1 | Classic buffer overflows (default) |
+| `http-newline` | █░░░░ Low | 3 | HTTP headers, line-based protocols |
+| `http-whitespace` | █░░░░ Low | 5 | HTTP parameters, command injection |
+| `url-safe` | ███░░ Medium | 23 | URL parameters, GET requests |
+| `sql-injection` | ███░░ Medium | 5 | SQL injection contexts |
+| `xml-html` | ███░░ Medium | 6 | XML/HTML injection, XSS |
+| `json-string` | ███░░ Medium | 34 | JSON API injection |
+| `format-string` | ███░░ Medium | 3 | Format string vulnerabilities |
+| `buffer-overflow` | ███░░ Medium | 5 | Stack/heap overflows with filtering |
+| `command-injection` | ███░░ Medium | 20 | Shell command injection |
+| `ldap-injection` | ███░░ Medium | 5 | LDAP queries |
+| `printable-only` | ████░ High | 161 | Text-based protocols (printable ASCII only) |
+| `alphanumeric-only` | █████ Extreme | 194 | Alphanumeric-only shellcode (0-9, A-Z, a-z) |
+
+### Usage
+
+```bash
+# List all available profiles
+byvalver --list-profiles
+
+# Use a specific profile
+byvalver --profile http-newline input.bin output.bin
+
+# Combine with other options
+byvalver --profile sql-injection --biphasic --format c input.bin output.c
+```
+
+### Profile Examples
+
+**HTTP Contexts** (eliminates NULL, LF, CR):
+```bash
+byvalver --profile http-newline payload.bin http_safe.bin
+```
+
+**SQL Injection** (eliminates NULL, quotes, semicolons):
+```bash
+byvalver --profile sql-injection payload.bin sql_safe.bin
+```
+
+**Alphanumeric-Only** (extreme difficulty - only allows 0-9, A-Z, a-z):
+```bash
+byvalver --profile alphanumeric-only payload.bin alphanum.bin
+```
+
+For detailed profile documentation, see [docs/BAD_CHAR_PROFILES.md](docs/BAD_CHAR_PROFILES.md).
+
+---
+
 ## Generic Bad-Character Elimination (v3.0)
 
 ### Overview
 
-Version 3.0 introduces a generic bad-character elimination framework that extends beyond null bytes. The `--bad-chars` option allows you to specify any set of bytes to eliminate from your shellcode.
+Version 3.0 also introduces a generic bad-character elimination framework for manual specification. The `--bad-chars` option allows you to specify any set of bytes to eliminate from your shellcode.
 
 ### Implementation Details
 
