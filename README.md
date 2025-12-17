@@ -221,23 +221,19 @@ byvalver employs a modular strategy-pattern design:
 - ML layer for strategy optimization
 - Batch system for scalable processing
 
----
+<div align="left">
+  <img src="./images/Batch_Processing_Flow_Compact.png" alt="Batch Processing Flow" width="325">
+<div align="right">
+  <img src="./images/Strategy_Categories_Taxonomy_Compact.png" alt="Strategy Categories Taxonomy" width="325">
+</div>
 
-![Batch Processing Flow](./images/Batch_Processing_Flow_Compact.png)
+<div align="center">
+  <img src="./images/Module_Dependency_Graph_Compact.png" alt="Module Dependency Graph" width="600">
+</div>
 
----
-
-![Module Dependency Graph](./images/Module_Dependency_Graph_Compact.png)
-
----
-
-![Strategy Categories Taxonomy](./images/Strategy_Categories_Taxonomy_Compact.png)
-
----
-
-![Strategy System Architecture](./images/Strategy_System_Architecture_Compact.png)
-
----
+<div align="center">
+  <img src="./images/Strategy_System_Architecture_Compact.png" alt="Strategy System Architecture" width="600">
+</div>
 
 ## System Requirements
 
