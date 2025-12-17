@@ -184,7 +184,7 @@ Zero-Attempt:            5                   █░░░░░░░░░░�
 - Graceful fallback to deterministic ordering
 
 > [!WARNING]
-> ML mode is experimental and may reduce success rate compared to the deterministic strategy selection. The ML model was trained exclusively on null-byte elimination data. Use the `--ml` flag to enable (disabled by default). For production use, standard mode (without `--ml`) is recommended.
+> ML mode is experimental and may reduce success rate compared to the deterministic strategy selection. Use the `--ml` flag to enable (disabled by default).
 
 ### Batch Processing
 - Recursive directory traversal (`-r`)
