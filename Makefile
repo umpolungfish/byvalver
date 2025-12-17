@@ -3,8 +3,24 @@
 
 # Compiler and flags
 CC = gcc
+PKG_CONFIG ?= pkg-config
+
+# Prefer pkg-config to locate Capstone (Homebrew/macOS installs vary)
+CAPSTONE_CFLAGS_RAW := $(shell $(PKG_CONFIG) --cflags capstone 2>/dev/null)
+CAPSTONE_LIBS       := $(shell $(PKG_CONFIG) --libs capstone 2>/dev/null)
+
+# Homebrew capstone.pc often returns "-I.../include/capstone" which does NOT work with
+# includes like "<capstone/capstone.h>" (it would look for capstone/capstone/capstone.h).
+# Normalize to "-I.../include".
+CAPSTONE_CFLAGS := $(shell echo "$(CAPSTONE_CFLAGS_RAW)" | sed 's|/include/capstone|/include|g')
+
+# Preprocessor/compiler flags
+CPPFLAGS = $(CAPSTONE_CFLAGS)
 CFLAGS = -Wall -Wextra -pedantic -std=c99 -O2
-LDFLAGS = -lcapstone -lm
+
+# Linker flags / libs
+LDFLAGS =
+LDLIBS = $(if $(CAPSTONE_LIBS),$(CAPSTONE_LIBS),-lcapstone) -lm
 
 # Directories
 SRC_DIR = src
@@ -69,7 +85,7 @@ all: decoder.h $(BIN_DIR)/$(TARGET)
 TRAIN_TARGET = train_model
 $(BIN_DIR)/$(TRAIN_TARGET): $(BIN_DIR) $(OBJS) decoder.h
 	@echo "[LD] Linking $(TRAIN_TARGET)..."
-	@$(CC) $(CFLAGS) -o $@ $(SRC_DIR)/train_model.c $(filter-out $(SRC_DIR)/main.c, $(SRCS)) $(LDFLAGS)
+	@$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(SRC_DIR)/train_model.c $(filter-out $(SRC_DIR)/main.c, $(SRCS)) $(LDFLAGS) $(LDLIBS)
 	@echo "[OK] Built $(TRAIN_TARGET) successfully"
 
 # Build training utility
@@ -105,13 +121,13 @@ decoder.h: decoder.bin
 # Link final executable
 $(BIN_DIR)/$(TARGET): $(BIN_DIR) $(OBJS)
 	@echo "[LD] Linking $(TARGET)..."
-	@$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
+	@$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(OBJS) $(LDFLAGS) $(LDLIBS)
 	@echo "[OK] Built $(TARGET) successfully ($(words $(OBJS)) object files)"
 
 # Compile source files
 $(BIN_DIR)/%.o: $(SRC_DIR)/%.c decoder.h
 	@echo "[CC] Compiling $<..."
-	@$(CC) $(CFLAGS) -c -o $@ $<
+	@$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 # Clean build artifacts
 clean:
