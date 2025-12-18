@@ -181,22 +181,34 @@ Zero-Attempt:            5                   █░░░░░░░░░░�
 - Anti-debugging
 - VM detection techniques
 
-### ML-Powered Strategy Selection (Experimental - Overhauled December 2025)
-- **Fixed feature extraction** with stable 34-dimensional layout (no sliding indices)
+### ML-Powered Strategy Selection (Experimental - v2.0 Architecture December 2025)
+**Architecture v2.0** (December 17, 2025):
+- **One-hot instruction encoding** (51 dims) replaces scalar instruction IDs
+- **Context window** with sliding buffer of 4 instructions (current + 3 previous)
+- **Fixed feature extraction** with stable 84-dimensional layout per instruction
 - **Stable strategy registry** ensuring consistent NN output mapping
 - **Full backpropagation** through all layers (input→hidden→output)
 - **Correct gradient computation** for softmax + cross-entropy loss
 - **Output masking** filters invalid strategies before softmax
-- 3-layer feedforward neural network (128→256→200)
+- **He/Xavier initialization** for proper weight initialization
+- 3-layer feedforward neural network (336→512→200)
 - Adaptive learning from success/failure feedback
 - Tracks predictions, accuracy, and confidence
 - Graceful fallback to deterministic ordering
 
+**What Changed in v2.0**:
+- Input expanded: 128 → 336 features (4 instructions × 84 features)
+- Hidden layer: 256 → 512 neurons (increased for accuracy)
+- Parameters: ~84K → ~204K (~2.4× increase)
+- Memory: ~660 KB → ~1.66 MB (~2.5× increase)
+- Proper categorical encoding (no more false ordinal relationships)
+- Sequential pattern learning (context-aware predictions)
+
 > [!NOTE]
-> **ML Fixes (Dec 2025)**: The ML system underwent comprehensive fixes addressing all critical architectural issues identified in technical review. The system is now theoretically sound but requires empirical validation with diverse training data. See `docs/ML_FIXES_2025.md` for complete details.
+> **ML Architecture v2.0 (Dec 17, 2025)**: The ML system has been enhanced with one-hot instruction encoding and context window support, completing all 7 critical issues identified in technical review. Issues 1-5 were fixed in v3.0.1 (Dec 2025), and issues 6-7 are now fixed in v2.0. See `docs/ML_FIXES_2025.md` for complete details.
 
 > [!WARNING]
-> ML mode is experimental and requires further training/validation. Use the `--ml` flag to enable (disabled by default). Current model is trained primarily on null-byte elimination data.
+> ML mode is experimental and requires further training/validation with the new v2.0 architecture. Use the `--ml` flag to enable (disabled by default). Old v1.0 models are incompatible and must be retrained. Current model requires retraining with diverse datasets.
 
 ### Batch Processing
 - Recursive directory traversal (`-r`)

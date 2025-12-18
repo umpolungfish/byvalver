@@ -19,9 +19,22 @@
 extern "C" {
 #endif
 
-// Maximum number of features for instruction representation
-#define MAX_INSTRUCTION_FEATURES 128
-#define MAX_STRATEGY_COUNT 200
+// Neural Network Architecture v2.0 (December 2025)
+// One-hot encoding + context window improvements
+
+// One-hot encoding dimensions (top-50 instructions + OTHER bucket)
+#define ONEHOT_DIM 51
+
+// Feature dimensions
+#define FEATURES_PER_INSN 84             // One-hot (51) + 33 other features
+#define CONTEXT_WINDOW_SIZE 4            // Current instruction + 3 previous
+#define NN_INPUT_SIZE (CONTEXT_WINDOW_SIZE * FEATURES_PER_INSN)  // 4 × 84 = 336 dims
+#define NN_HIDDEN_SIZE 512               // Increased from 256 for better accuracy
+#define NN_OUTPUT_SIZE 200               // Max strategies
+
+// Legacy constant (for backward compatibility)
+#define MAX_INSTRUCTION_FEATURES (NN_INPUT_SIZE)  // 336
+#define MAX_STRATEGY_COUNT NN_OUTPUT_SIZE
 
 /**
  * @brief Structure to represent instruction features for ML model
@@ -39,6 +52,16 @@ typedef struct {
     int immediate_value;                       // Immediate value if present
     int register_indices[4];                   // Register indices if present
 } instruction_features_t;
+
+/**
+ * @brief Context buffer for instruction history
+ * Maintains sliding window of previous instructions for context-aware predictions
+ */
+typedef struct {
+    cs_insn* instructions[CONTEXT_WINDOW_SIZE - 1];  // Last 3 instructions (not including current)
+    instruction_features_t features[CONTEXT_WINDOW_SIZE - 1];  // Features for last 3 instructions
+    int count;  // Number of valid history entries (0-3)
+} instruction_history_t;
 
 /**
  * @brief ML model prediction result

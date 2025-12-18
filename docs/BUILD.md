@@ -297,6 +297,221 @@ After training a new model:
 2. The application uses dynamic path resolution to locate the model file relative to the executable location
 3. If the model file is not found, the application falls back to default weights
 
+## ML Architecture v2.0 Build Changes (December 2025)
+
+### New Components Added
+
+The ML system has been upgraded to Architecture v2.0 with the following new build components:
+
+#### New Source Files
+- **`src/ml_instruction_map.h`** (40 lines) - Interface for instruction one-hot encoding
+- **`src/ml_instruction_map.c`** (127 lines) - Fast O(1) instruction-to-index mapping implementation
+
+These files are automatically included in the build process through the Makefile's wildcard source discovery.
+
+#### Modified ML Components
+- **`src/ml_strategist.h`** - Updated neural network architecture constants:
+  - `NN_INPUT_SIZE`: 128 → 336 features
+  - `NN_HIDDEN_SIZE`: 256 → 512 neurons
+  - Added `ONEHOT_DIM` (51), `FEATURES_PER_INSN` (84), `CONTEXT_WINDOW_SIZE` (4)
+
+- **`src/ml_strategist.c`** - Complete feature extraction rewrite:
+  - Added global instruction history buffer
+  - Implemented one-hot encoding integration
+  - Context window management with circular buffer
+  - He/Xavier weight initialization
+
+#### Build Impact
+
+**No Makefile Changes Required**: The existing build system automatically includes the new files.
+
+**Build Verification**:
+```bash
+# Clean build with v2.0 architecture
+make clean && make
+
+# Expected output:
+# - 149 object files compiled (including ml_instruction_map.o)
+# - No compilation errors or warnings
+# - Executable: bin/byvalver
+
+# Verify ML components
+./bin/byvalver --ml test.bin output.bin 2>&1 | head -20
+# Should show: ML Registry initialized with N strategies
+```
+
+**Memory Requirements**:
+- **Compile-Time**: No additional memory required
+- **Link-Time**: Slightly larger binary due to lookup tables (~5-10 KB increase)
+- **Run-Time**: Additional ~1-2 MB for v2.0 neural network weights
+
+**Build Time Impact**:
+- **Negligible**: 2 additional small files (~167 LOC total)
+- **Typical**: <1 second additional compilation time on modern systems
+
+### Architecture v2.0 Model Files
+
+**Model File Format Change**: Architecture v2.0 models have a different binary format.
+
+**Model File Characteristics**:
+- **Size**: ~1.66 MB (v1.0 was ~660 KB)
+- **Format**: Binary with architecture metadata
+- **Layout**:
+  ```
+  [Header: layer_sizes] 3 integers: [336, 512, 200]
+  [Input Weights]       512 × 336 doubles
+  [Hidden Weights]      200 × 512 doubles
+  [Input Bias]          512 doubles
+  [Hidden Bias]         200 doubles
+  ```
+
+**Compatibility Checks**:
+- Model loading automatically validates architecture dimensions
+- Mismatched models are rejected with clear error messages
+- No backward compatibility with v1.0 models
+
+### Training Utility Changes
+
+The `train_model` utility automatically uses v2.0 architecture:
+
+```bash
+# Build training utility with v2.0
+make train
+
+# Run training (creates v2.0 model)
+./bin/train_model
+
+# Model saved to: ./ml_models/byvalver_ml_model.bin (v2.0 format)
+```
+
+**Training Configuration Updates**:
+- **Input Features**: 336 dimensions (up from 128)
+- **Hidden Neurons**: 512 (up from 256)
+- **Training Time**: ~4× slower per example due to larger network
+- **Memory Usage**: ~2.5× more memory during training
+
+**Training Recommendations**:
+- Increase batch size for better GPU utilization (if applicable)
+- Consider reducing learning rate due to larger network
+- Allocate 4-8 GB RAM for training large datasets
+- Training time: Expect ~4× longer than v1.0 for same dataset
+
+### Development Build Configurations
+
+#### Debug Build with ML v2.0
+```bash
+make debug
+./bin/byvalver --ml test.bin output.bin
+
+# Debug mode enables:
+# - Verbose ML logging
+# - Feature vector validation
+# - History buffer state tracking
+# - Architecture dimension checks
+```
+
+#### Release Build with ML v2.0
+```bash
+make release
+./bin/byvalver --ml test.bin output.bin
+
+# Release optimizations:
+# - -O3 optimization for faster inference
+# - -march=native for SIMD vector operations
+# - Estimated 2-3× faster than debug builds
+```
+
+#### Static Build Considerations
+```bash
+make static
+
+# Note: Static builds include:
+# - All Capstone library functions
+# - Math library (required for randn(), sqrt(), log(), cos())
+# - Larger binary size (~5-8 MB vs ~2-3 MB dynamic)
+```
+
+### Verification and Testing
+
+After building with v2.0 architecture, verify functionality:
+
+```bash
+# 1. Verify compilation
+make clean && make
+echo "Build status: $?"
+
+# 2. Check ML registry initialization
+./bin/byvalver --ml test.bin output.bin 2>&1 | grep "ML Registry"
+# Expected: "ML Registry initialized with 184 strategies"
+
+# 3. Verify feature dimensions
+./bin/byvalver --ml test.bin output.bin 2>&1 | grep "features"
+# Should show 336-dimensional feature vectors
+
+# 4. Test model save/load
+./bin/byvalver --save-model test_v2.bin
+ls -lh test_v2.bin
+# Expected: ~1.66 MB file size
+
+# 5. Verify architecture validation
+./bin/byvalver --load-model test_v2.bin --ml test.bin output.bin
+# Should load successfully with v2.0 dimensions
+```
+
+### Capstone Header Requirements
+
+The ML instruction map requires Capstone x86 instruction definitions:
+
+```c
+#include <capstone/x86.h>  // For X86_INS_* constants
+```
+
+**Build Dependency Check**:
+```bash
+# Verify Capstone headers are accessible
+pkg-config --cflags capstone
+# Expected output: -I/usr/include or similar
+
+# Check for x86.h specifically
+find /usr/include -name "x86.h" 2>/dev/null | grep capstone
+# Expected: /usr/include/capstone/x86.h
+```
+
+**If Capstone headers are missing**:
+```bash
+# Ubuntu/Debian
+sudo apt install libcapstone-dev
+
+# macOS
+brew install capstone
+
+# Verify installation
+ls /usr/include/capstone/x86.h  # Linux
+ls /usr/local/include/capstone/x86.h  # macOS
+```
+
+### Breaking Changes for Developers
+
+**If you're developing custom ML strategies or modifications**:
+
+1. **Feature Vector Size Changed**: Update any code expecting 128-dimensional input to 336
+2. **Instruction Encoding Changed**: Use `ml_get_instruction_onehot_index()` instead of raw instruction IDs
+3. **Model File Format Changed**: v1.0 models cannot be loaded; must retrain
+4. **Context Buffer Added**: Feature extraction now maintains instruction history
+5. **Initialization Changed**: He/Xavier initialization replaces uniform random
+
+**Code Migration Example**:
+```c
+// OLD v1.0 code:
+features->features[0] = (double)insn->id;  // Scalar instruction ID
+
+// NEW v2.0 code:
+int onehot_idx = ml_get_instruction_onehot_index(insn->id);
+for (int i = 0; i < ONEHOT_DIM; i++) {
+    features->features[i] = (i == onehot_idx) ? 1.0 : 0.0;
+}
+```
+
 ## Troubleshooting Common Build Issues
 
 ### Missing Dependencies

@@ -9,28 +9,32 @@
 #include "ml_strategist.h"
 #include "ml_metrics.h"
 #include "ml_strategy_registry.h"
+#include "ml_instruction_map.h"
 #include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
+// Define M_PI if not already defined
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 // Enterprise-grade ML strategist implementation
 // Uses custom neural network inference engine optimized for shellcode analysis
+// Architecture v2.0: One-hot instruction encoding + context window
 
-// Neural network parameters for the instruction classifier
-#define NN_INPUT_SIZE 128
-#define NN_HIDDEN_SIZE 256
-#define NN_OUTPUT_SIZE 200  // Maximum number of strategies
 #define NN_NUM_LAYERS 3
 
 // Simple neural network structure for demonstration
+// v2.0: Expanded to support one-hot encoding and context windows
 typedef struct {
-    double input_weights[NN_HIDDEN_SIZE][NN_INPUT_SIZE];
-    double hidden_weights[NN_OUTPUT_SIZE][NN_HIDDEN_SIZE];
-    double input_bias[NN_HIDDEN_SIZE];
-    double hidden_bias[NN_OUTPUT_SIZE];
-    int layer_sizes[NN_NUM_LAYERS];  // [input, hidden, output]
+    double input_weights[NN_HIDDEN_SIZE][NN_INPUT_SIZE];    // 512 × 336
+    double hidden_weights[NN_OUTPUT_SIZE][NN_HIDDEN_SIZE];  // 200 × 512
+    double input_bias[NN_HIDDEN_SIZE];                      // 512
+    double hidden_bias[NN_OUTPUT_SIZE];                     // 200
+    int layer_sizes[NN_NUM_LAYERS];  // [336, 512, 200]
 } simple_neural_network_t;
 
 static simple_neural_network_t* g_loaded_model = NULL;
@@ -40,6 +44,19 @@ static ml_metrics_tracker_t* g_ml_metrics = NULL;
 // Track the last predicted strategy for verification
 static strategy_t* g_last_predicted_strategy = NULL;
 static double g_last_prediction_confidence = 0.0;
+
+// Global instruction history buffer for context-aware predictions
+static instruction_history_t g_instruction_history = {0};
+
+/**
+ * @brief Generate Gaussian random number (mean=0, std=1)
+ * Uses Box-Muller transform to generate normally distributed random numbers
+ */
+static double randn(void) {
+    double u1 = (rand() + 1.0) / (RAND_MAX + 1.0);
+    double u2 = (rand() + 1.0) / (RAND_MAX + 1.0);
+    return sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
+}
 
 /**
  * @brief Initialize the ML strategist with neural network model
@@ -61,18 +78,23 @@ int ml_strategist_init(ml_strategist_t* strategist, const char* model_path) {
         return -1;
     }
 
-    // Initialize the neural network with default weights
-    // In a real enterprise implementation, these would be loaded from the model file
+    // Initialize the neural network with He/Xavier initialization (v2.0)
+    // He initialization for ReLU layers, Xavier for output layer
+
+    // He initialization for input->hidden (ReLU activation)
+    double he_scale = sqrt(2.0 / NN_INPUT_SIZE);
     for (int i = 0; i < NN_HIDDEN_SIZE; i++) {
         for (int j = 0; j < NN_INPUT_SIZE; j++) {
-            model->input_weights[i][j] = 0.01 * (rand() % 100) / 100.0;  // Small random weights
+            model->input_weights[i][j] = he_scale * randn();
         }
         model->input_bias[i] = 0.0;
     }
 
+    // Xavier initialization for hidden->output (softmax activation)
+    double xavier_scale = sqrt(2.0 / (NN_HIDDEN_SIZE + NN_OUTPUT_SIZE));
     for (int i = 0; i < NN_OUTPUT_SIZE; i++) {
         for (int j = 0; j < NN_HIDDEN_SIZE; j++) {
-            model->hidden_weights[i][j] = 0.01 * (rand() % 100) / 100.0;
+            model->hidden_weights[i][j] = xavier_scale * randn();
         }
         model->hidden_bias[i] = 0.0;
     }
@@ -96,14 +118,173 @@ int ml_strategist_init(ml_strategist_t* strategist, const char* model_path) {
         printf("[ML] Metrics tracking enabled\n");
     }
 
+    // Initialize instruction mapping
+    ml_instruction_map_init();
+
+    // Reset history buffer
+    memset(&g_instruction_history, 0, sizeof(instruction_history_t));
+
     printf("[ML] Enterprise ML Strategist initialized with model: %s\n", model_path);
     return 0;
 }
 
 /**
- * @brief Extract features from an instruction for ML model input
+ * @brief Extract features for a SINGLE instruction WITHOUT context
+ * Helper function that extracts 84 features from one instruction
+ */
+static int ml_extract_single_instruction_features(cs_insn* insn,
+                                                   double* output,
+                                                   int offset,
+                                                   int* has_bad_chars_out,
+                                                   int* bad_char_count_out) {
+    if (!insn || !output) {
+        return -1;
+    }
+
+    int idx = offset;
+
+    // [0-50] One-hot instruction encoding
+    int onehot_idx = ml_get_instruction_onehot_index(insn->id);
+    for (int i = 0; i < ONEHOT_DIM; i++) {
+        output[idx++] = (i == onehot_idx) ? 1.0 : 0.0;
+    }
+
+    // Check for bad characters
+    int has_bad_chars = !is_bad_char_free_buffer(insn->bytes, insn->size);
+    int bad_char_count = 0;
+    for (size_t i = 0; i < insn->size; i++) {
+        if (!is_bad_char_free_byte(insn->bytes[i])) {
+            bad_char_count++;
+        }
+    }
+
+    if (has_bad_chars_out) *has_bad_chars_out = has_bad_chars;
+    if (bad_char_count_out) *bad_char_count_out = bad_char_count;
+
+    // [51-54] Basic features
+    output[idx++] = (double)insn->size;
+    output[idx++] = (double)has_bad_chars;
+    output[idx++] = (double)bad_char_count;
+    output[idx++] = (double)insn->detail->x86.op_count;
+
+    // [55-58] Operand types
+    for (int i = 0; i < 4; i++) {
+        output[idx++] = (i < insn->detail->x86.op_count) ?
+            (double)insn->detail->x86.operands[i].type : 0.0;
+    }
+
+    // [59-62] Register operands
+    for (int i = 0; i < 4; i++) {
+        output[idx++] = (i < insn->detail->x86.op_count &&
+                        insn->detail->x86.operands[i].type == X86_OP_REG) ?
+            (double)insn->detail->x86.operands[i].reg : 0.0;
+    }
+
+    // [63-66] Immediate operands (normalized)
+    for (int i = 0; i < 4; i++) {
+        if (i < insn->detail->x86.op_count &&
+            insn->detail->x86.operands[i].type == X86_OP_IMM) {
+            double imm_val = (double)insn->detail->x86.operands[i].imm;
+            output[idx++] = imm_val / 2147483648.0;
+        } else {
+            output[idx++] = 0.0;
+        }
+    }
+
+    // [67-70] Memory base register
+    for (int i = 0; i < 4; i++) {
+        output[idx++] = (i < insn->detail->x86.op_count &&
+                        insn->detail->x86.operands[i].type == X86_OP_MEM) ?
+            (double)insn->detail->x86.operands[i].mem.base : 0.0;
+    }
+
+    // [71-74] Memory index register
+    for (int i = 0; i < 4; i++) {
+        output[idx++] = (i < insn->detail->x86.op_count &&
+                        insn->detail->x86.operands[i].type == X86_OP_MEM) ?
+            (double)insn->detail->x86.operands[i].mem.index : 0.0;
+    }
+
+    // [75-78] Memory scale
+    for (int i = 0; i < 4; i++) {
+        output[idx++] = (i < insn->detail->x86.op_count &&
+                        insn->detail->x86.operands[i].type == X86_OP_MEM) ?
+            (double)insn->detail->x86.operands[i].mem.scale : 0.0;
+    }
+
+    // [79-82] Memory displacement (normalized)
+    for (int i = 0; i < 4; i++) {
+        if (i < insn->detail->x86.op_count &&
+            insn->detail->x86.operands[i].type == X86_OP_MEM) {
+            double disp = (double)insn->detail->x86.operands[i].mem.disp;
+            output[idx++] = disp / 2147483648.0;
+        } else {
+            output[idx++] = 0.0;
+        }
+    }
+
+    // [83] Prefix count
+    output[idx++] = (insn->detail->x86.prefix[0] != 0) ? 1.0 : 0.0;
+
+    return 0;
+}
+
+/**
+ * @brief Update history buffer with current instruction
+ */
+static void ml_update_history_buffer(instruction_history_t* history,
+                                     cs_insn* insn,
+                                     double* current_features) {
+    if (!history || !insn || !current_features) {
+        return;
+    }
+
+    // Shift buffer
+    if (history->count >= CONTEXT_WINDOW_SIZE - 1) {
+        for (int i = CONTEXT_WINDOW_SIZE - 2; i > 0; i--) {
+            history->instructions[i] = history->instructions[i-1];
+            memcpy(history->features[i].features,
+                   history->features[i-1].features,
+                   FEATURES_PER_INSN * sizeof(double));
+        }
+    } else {
+        for (int i = history->count; i > 0; i--) {
+            history->instructions[i] = history->instructions[i-1];
+            memcpy(history->features[i].features,
+                   history->features[i-1].features,
+                   FEATURES_PER_INSN * sizeof(double));
+        }
+        history->count++;
+    }
+
+    // Store current at position 0
+    history->instructions[0] = insn;
+    memcpy(history->features[0].features,
+           current_features,
+           FEATURES_PER_INSN * sizeof(double));
+}
+
+/**
+ * @brief Extract features for a SINGLE instruction (one-hot + other features)
  *
- * FIXED FEATURE LAYOUT (no sliding):
+ * NEW FEATURE LAYOUT v2.0 (84 dimensions per instruction):
+ * [0-50]   : One-hot instruction encoding (51 dims)
+ * [51]     : instruction_size (1-15 bytes)
+ * [52]     : has_bad_chars (0 or 1)
+ * [53]     : bad_char_count (0-N)
+ * [54]     : operand_count (0-4)
+ * [55-58]  : operand_type[0-3] (4 slots)
+ * [59-62]  : register[0-3] (4 slots)
+ * [63-66]  : immediate[0-3] normalized (4 slots)
+ * [67-70]  : memory_base[0-3] (4 slots)
+ * [71-74]  : memory_index[0-3] (4 slots)
+ * [75-78]  : memory_scale[0-3] (4 slots)
+ * [79-82]  : memory_disp[0-3] normalized (4 slots)
+ * [83]     : prefix_count
+ *
+ * v2.0 UPDATE: This is now a WRAPPER that calls ml_extract_single_instruction_features()
+ *              and adds context from history buffer
+ * OLD LAYOUT for reference:
  * [0]      : instruction_id (categorical, will be one-hot encoded later)
  * [1]      : instruction_size (1-15 bytes)
  * [2]      : has_bad_chars (0 or 1)
@@ -127,28 +308,28 @@ int ml_extract_instruction_features(cs_insn* insn, instruction_features_t* featu
     // Initialize ALL features to zero
     memset(features, 0, sizeof(instruction_features_t));
 
-    // Extract instruction type
+    // Extract current instruction features at offset 0 (v2.0: one-hot encoding)
+    int has_bad_chars, bad_char_count;
+    ml_extract_single_instruction_features(insn, features->features, 0,
+                                          &has_bad_chars, &bad_char_count);
+
+    // Store metadata
     features->instruction_type = insn->id;
+    features->has_bad_chars = has_bad_chars;
+    features->has_nulls = has_bad_chars;  // Backward compatibility
+    features->bad_char_count = bad_char_count;
 
-    // Check for bad characters (v3.0: generic bad character awareness)
-    features->has_bad_chars = !is_bad_char_free_buffer(insn->bytes, insn->size);
-    features->has_nulls = features->has_bad_chars;  // Backward compatibility
-    features->bad_char_count = 0;
-
-    // Extract which specific bad characters are present
+    // Extract bad character types bitmap
+    memset(features->bad_char_types, 0, sizeof(features->bad_char_types));
     for (size_t i = 0; i < insn->size; i++) {
         if (!is_bad_char_free_byte(insn->bytes[i])) {
-            if (features->bad_char_types[insn->bytes[i]] == 0) {
-                features->bad_char_types[insn->bytes[i]] = 1;
-                features->bad_char_count++;
-            }
+            features->bad_char_types[insn->bytes[i]] = 1;
         }
     }
 
-    // Extract operand information into fixed arrays
+    // Extract operand information for backward compatibility
     for (int i = 0; i < insn->detail->x86.op_count && i < 4; i++) {
         features->operand_types[i] = insn->detail->x86.operands[i].type;
-
         if (insn->detail->x86.operands[i].type == X86_OP_REG) {
             features->register_indices[i] = insn->detail->x86.operands[i].reg;
         } else if (insn->detail->x86.operands[i].type == X86_OP_IMM) {
@@ -156,99 +337,25 @@ int ml_extract_instruction_features(cs_insn* insn, instruction_features_t* featu
         }
     }
 
-    // FIXED FEATURE LAYOUT - No sliding!
-    int idx = 0;
+    // v2.0: Add context from history buffer (previous 3 instructions)
+    instruction_history_t* history = &g_instruction_history;
+    int context_count = (history != NULL) ? history->count : 0;
 
-    // [0-4] Basic instruction features
-    features->features[idx++] = (double)insn->id;                           // [0]
-    features->features[idx++] = (double)insn->size;                         // [1]
-    features->features[idx++] = (double)features->has_bad_chars;            // [2]
-    features->features[idx++] = (double)features->bad_char_count;           // [3]
-    features->features[idx++] = (double)insn->detail->x86.op_count;         // [4]
-
-    // [5-8] Operand types (ALWAYS 4 slots)
-    for (int i = 0; i < 4; i++) {
-        if (i < insn->detail->x86.op_count) {
-            features->features[idx++] = (double)insn->detail->x86.operands[i].type;
-        } else {
-            features->features[idx++] = 0.0;  // Unused operand slot
+    for (int i = 0; i < CONTEXT_WINDOW_SIZE - 1; i++) {
+        int offset = (i + 1) * FEATURES_PER_INSN;
+        if (i < context_count) {
+            // Copy features from history
+            memcpy(&features->features[offset],
+                   &history->features[i].features,
+                   FEATURES_PER_INSN * sizeof(double));
         }
+        // else: already zero-padded by memset above
     }
 
-    // [9-12] Register operands (ALWAYS 4 slots, 0 if not register)
-    for (int i = 0; i < 4; i++) {
-        if (i < insn->detail->x86.op_count &&
-            insn->detail->x86.operands[i].type == X86_OP_REG) {
-            features->features[idx++] = (double)insn->detail->x86.operands[i].reg;
-        } else {
-            features->features[idx++] = 0.0;
-        }
-    }
+    features->feature_count = NN_INPUT_SIZE;  // 336
 
-    // [13-16] Immediate operands (ALWAYS 4 slots, 0 if not immediate)
-    for (int i = 0; i < 4; i++) {
-        if (i < insn->detail->x86.op_count &&
-            insn->detail->x86.operands[i].type == X86_OP_IMM) {
-            // Normalize large immediates to prevent gradient explosion
-            double imm_val = (double)insn->detail->x86.operands[i].imm;
-            // Scale to [-1, 1] range assuming 32-bit immediates
-            features->features[idx++] = imm_val / 2147483648.0;
-        } else {
-            features->features[idx++] = 0.0;
-        }
-    }
-
-    // [17-20] Memory base register (ALWAYS 4 slots)
-    for (int i = 0; i < 4; i++) {
-        if (i < insn->detail->x86.op_count &&
-            insn->detail->x86.operands[i].type == X86_OP_MEM) {
-            features->features[idx++] = (double)insn->detail->x86.operands[i].mem.base;
-        } else {
-            features->features[idx++] = 0.0;
-        }
-    }
-
-    // [21-24] Memory index register (ALWAYS 4 slots)
-    for (int i = 0; i < 4; i++) {
-        if (i < insn->detail->x86.op_count &&
-            insn->detail->x86.operands[i].type == X86_OP_MEM) {
-            features->features[idx++] = (double)insn->detail->x86.operands[i].mem.index;
-        } else {
-            features->features[idx++] = 0.0;
-        }
-    }
-
-    // [25-28] Memory scale (ALWAYS 4 slots)
-    for (int i = 0; i < 4; i++) {
-        if (i < insn->detail->x86.op_count &&
-            insn->detail->x86.operands[i].type == X86_OP_MEM) {
-            features->features[idx++] = (double)insn->detail->x86.operands[i].mem.scale;
-        } else {
-            features->features[idx++] = 0.0;
-        }
-    }
-
-    // [29-32] Memory displacement (ALWAYS 4 slots, normalized)
-    for (int i = 0; i < 4; i++) {
-        if (i < insn->detail->x86.op_count &&
-            insn->detail->x86.operands[i].type == X86_OP_MEM) {
-            // Normalize displacement to prevent gradient explosion
-            double disp = (double)insn->detail->x86.operands[i].mem.disp;
-            features->features[idx++] = disp / 2147483648.0;
-        } else {
-            features->features[idx++] = 0.0;
-        }
-    }
-
-    // [33] Prefix count (for LOCK, REP, etc.)
-    features->features[idx++] = (double)insn->detail->x86.prefix[0] != 0 ? 1.0 : 0.0;
-
-    // [34-127] Pad remaining features with zeros
-    while (idx < MAX_INSTRUCTION_FEATURES) {
-        features->features[idx++] = 0.0;
-    }
-
-    features->feature_count = MAX_INSTRUCTION_FEATURES;
+    // Update history buffer with current instruction
+    ml_update_history_buffer(&g_instruction_history, insn, features->features);
 
     return 0;
 }
@@ -938,6 +1045,21 @@ int ml_strategist_load_model(ml_strategist_t* strategist, const char* path) {
         input_bias_read != NN_HIDDEN_SIZE ||
         hidden_bias_read != NN_OUTPUT_SIZE ||
         layer_sizes_read != NN_NUM_LAYERS) {
+        fprintf(stderr, "[ML] Error: Model file corrupted or incomplete\n");
+        return -1;
+    }
+
+    // v2.0: Validate model architecture matches expected dimensions
+    if (nn->layer_sizes[0] != NN_INPUT_SIZE ||
+        nn->layer_sizes[1] != NN_HIDDEN_SIZE ||
+        nn->layer_sizes[2] != NN_OUTPUT_SIZE) {
+        fprintf(stderr, "[ML] Error: Model architecture mismatch!\n");
+        fprintf(stderr, "[ML]   Expected: [%d, %d, %d]\n",
+                NN_INPUT_SIZE, NN_HIDDEN_SIZE, NN_OUTPUT_SIZE);
+        fprintf(stderr, "[ML]   Found:    [%d, %d, %d]\n",
+                nn->layer_sizes[0], nn->layer_sizes[1], nn->layer_sizes[2]);
+        fprintf(stderr, "[ML] This model was trained with a different architecture.\n");
+        fprintf(stderr, "[ML] Please retrain your model or use the correct version.\n");
         return -1;
     }
 
