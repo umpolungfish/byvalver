@@ -97,7 +97,7 @@ The engine employs multi-pass processing (obfuscation → denulling) with robust
 
 ### Performance Metrics
 
-Real-world performance data from processing 179 diverse shellcode samples:
+Real-world performance data from processing 184 diverse shellcode samples:
 
 ```
 📊 Batch Processing Statistics:
