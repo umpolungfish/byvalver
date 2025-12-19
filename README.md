@@ -64,6 +64,90 @@ Supports Windows, Linux, and macOS
 >
 > **Generic bad-character elimination** (`--bad-chars "00,0a,0d"` etc.): Newly implemented in v3.0. The framework is functional and strategies apply generically, but effectiveness for non-null characters has not been comprehensively validated. Success rates may vary depending on the specific bad characters and shellcode complexity.
 
+## Quick-Start
+
+Get started with `byvalver` in minutes:
+
+### Installation
+
+**Option 1: From GitHub (Recommended)**
+```bash
+curl -sSL https://raw.githubusercontent.com/umpolungfish/byvalver/main/install.sh | bash
+```
+
+**Option 2: Build from Source**
+```bash
+git clone https://github.com/umpolungfish/byvalver.git
+cd byvalver
+make
+sudo make install
+sudo make install-man  # Install man page
+```
+
+### Basic Usage
+
+**Eliminate null bytes (default behavior):**
+```bash
+byvalver input.bin output.bin
+```
+
+**Using bad-character profiles (v3.0+):**
+```bash
+# HTTP contexts (removes null, newline, carriage return)
+byvalver --profile http-newline input.bin output.bin
+
+# SQL injection contexts
+byvalver --profile sql-injection input.bin output.bin
+
+# Alphanumeric-only shellcode (most restrictive)
+byvalver --profile alphanumeric-only input.bin output.bin
+```
+
+**Manual bad-character specification:**
+```bash
+# Eliminate null bytes and newlines
+byvalver --bad-chars "00,0a,0d" input.bin output.bin
+```
+
+**Advanced features:**
+```bash
+# Add obfuscation layer before denullification
+byvalver --biphasic input.bin output.bin
+
+# Enable ML-powered strategy selection
+byvalver --ml input.bin output.bin
+
+# Generate XOR-encoded shellcode with decoder stub
+byvalver --xor-encode DEADBEEF input.bin output.bin
+
+# Output in different formats
+byvalver --format c input.bin output.c      # C array
+byvalver --format python input.bin output.py # Python bytes
+byvalver --format hexstring input.bin output.hex # Hex string
+```
+
+### Verification
+
+Always verify your transformed shellcode:
+```bash
+# Check for remaining bad characters
+python3 verify_denulled.py --bad-chars "00,0a,0d" output.bin
+
+# Verify functional equivalence
+python3 verify_functionality.py input.bin output.bin
+```
+
+### Batch Processing
+
+Process entire directories:
+```bash
+# Process all .bin files recursively
+byvalver -r --pattern "*.bin" input_dir/ output_dir/
+
+# Apply HTTP profile to all shellcode in directory
+byvalver -r --profile http-newline input_dir/ output_dir/
+```
+
 ## Bad-Character Profiles (v3.0)
 
 ### Overview
