@@ -280,21 +280,27 @@ void batch_stats_print(const batch_stats_t *stats, int quiet) {
     printf("\n");
     printf("===== BATCH PROCESSING SUMMARY =====\n");
     printf("Total files:       %zu\n", stats->total_files);
-    printf("Processed:         %zu\n", stats->processed_files);
-    printf("Failed:            %zu\n", stats->failed_files);
+    printf("Successfully processed: %zu (%.1f%%)\n",
+           stats->processed_files,
+           stats->total_files > 0 ? (100.0 * stats->processed_files / stats->total_files) : 0.0);
+    printf("Failed:            %zu (%.1f%%)\n",
+           stats->failed_files,
+           stats->total_files > 0 ? (100.0 * stats->failed_files / stats->total_files) : 0.0);
     printf("Skipped:           %zu\n", stats->skipped_files);
+    printf("\n");
     printf("Total input size:  %zu bytes\n", stats->total_input_bytes);
     printf("Total output size: %zu bytes\n", stats->total_output_bytes);
 
     if (stats->total_input_bytes > 0) {
         double ratio = (double)stats->total_output_bytes / (double)stats->total_input_bytes;
-        printf("Size ratio:        %.2fx\n", ratio);
+        printf("Average size ratio: %.2fx\n", ratio);
     }
 
     // Add bad character information
+    printf("\n");
     printf("Bad characters:    %d configured\n", stats->bad_char_count);
     if (stats->bad_char_count > 0) {
-        printf("Configured:        ");
+        printf("Configured set:    ");
         int printed = 0;
         for (int i = 0; i < 256; i++) {
             if (stats->bad_char_set[i]) {
@@ -307,4 +313,18 @@ void batch_stats_print(const batch_stats_t *stats, int quiet) {
     }
 
     printf("====================================\n");
+
+    // Show failed files list if there are any
+    if (stats->failed_files > 0 && stats->failed_file_list && stats->failed_file_count > 0) {
+        printf("\n");
+        printf("FAILED FILES (%zu):\n", stats->failed_file_count);
+        for (size_t i = 0; i < stats->failed_file_count && i < 10; i++) {
+            printf("  - %s\n", stats->failed_file_list[i]);
+        }
+        if (stats->failed_file_count > 10) {
+            printf("  ... and %zu more (use --failed-files-output to save full list)\n",
+                   stats->failed_file_count - 10);
+        }
+        printf("\n");
+    }
 }

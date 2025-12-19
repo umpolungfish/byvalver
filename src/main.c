@@ -251,23 +251,37 @@ static int process_single_file(const char *input_file, const char *output_file,
         *output_size_out = final_shellcode.size;
     }
 
-    // Verify that the final shellcode has no null bytes
-    int has_remaining_nulls = 0;
-    for (size_t i = 0; i < final_shellcode.size; i++) {
-        if (final_shellcode.data[i] == 0x00) {
-            has_remaining_nulls = 1;
-            break;
-        }
-    }
-
-    if (has_remaining_nulls) {
+    // Verify that the final shellcode has no bad characters
+    if (!is_bad_char_free_buffer(final_shellcode.data, final_shellcode.size)) {
         if (!config->quiet) {
-            fprintf(stderr, "Error: Shellcode processing completed but null bytes still remain in output\n");
+            // Count and identify remaining bad characters
+            int bad_char_found[256] = {0};
+            int total_bad_chars = 0;
+            for (size_t i = 0; i < final_shellcode.size; i++) {
+                if (!is_bad_char_free_byte(final_shellcode.data[i])) {
+                    if (!bad_char_found[final_shellcode.data[i]]) {
+                        bad_char_found[final_shellcode.data[i]] = 1;
+                        total_bad_chars++;
+                    }
+                }
+            }
+
+            fprintf(stderr, "Error: Shellcode processing completed but bad characters still remain in output\n");
+            fprintf(stderr, "       Found %d distinct bad character(s): ", total_bad_chars);
+            int printed = 0;
+            for (int i = 0; i < 256; i++) {
+                if (bad_char_found[i]) {
+                    if (printed > 0) fprintf(stderr, ", ");
+                    fprintf(stderr, "0x%02x", i);
+                    printed++;
+                }
+            }
+            fprintf(stderr, "\n");
         }
         free(shellcode);
         buffer_free(&new_shellcode);
         buffer_free(&final_shellcode);
-        return EXIT_PROCESSING_FAILED;  // Return failure when null bytes remain
+        return EXIT_PROCESSING_FAILED;  // Return failure when bad characters remain
     }
 
     // Write modified shellcode to output file
@@ -526,7 +540,11 @@ int main(int argc, char *argv[]) {
                 stats.total_output_bytes += output_size;
 
                 if (!config->quiet && config->verbose) {
-                    printf("  ✓ Success: %zu → %zu bytes\n", input_size, output_size);
+                    printf("  ✓ Processed: %zu → %zu bytes (%.2fx)\n",
+                           input_size, output_size,
+                           input_size > 0 ? (double)output_size / (double)input_size : 0.0);
+                } else if (!config->quiet) {
+                    printf("  ✓ %zu → %zu bytes\n", input_size, output_size);
                 }
             } else {
                 stats.failed_files++;

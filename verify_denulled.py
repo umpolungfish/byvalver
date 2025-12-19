@@ -5,6 +5,7 @@ verify_denulled.py
 
 This tool verifies that the output file from byvalver has successfully eliminated all specified bad characters.
 Updated in v3.0 to support generic bad character checking (not just null bytes).
+Updated in v3.0.3 to support bad-character profiles matching byvalver's --profile option.
 """
 
 import sys
@@ -12,6 +13,192 @@ import os
 import argparse
 from pathlib import Path
 import fnmatch
+
+# =============================================================================
+# BAD-CHARACTER PROFILE DEFINITIONS
+# Matches the profiles defined in src/badchar_profiles.h
+# =============================================================================
+
+BADCHAR_PROFILES = {
+    'null-only': {
+        'name': 'null-only',
+        'description': 'Eliminate NULL bytes only (classic denullification)',
+        'context': 'Most buffer overflows, string-based exploits',
+        'bad_chars': [0x00],
+        'difficulty': 1,  # Trivial
+    },
+    'http-newline': {
+        'name': 'http-newline',
+        'description': 'Eliminate NULL, LF, and CR (line terminators)',
+        'context': 'HTTP headers, FTP, SMTP, line-based protocols',
+        'bad_chars': [0x00, 0x0A, 0x0D],
+        'difficulty': 2,  # Low
+    },
+    'http-whitespace': {
+        'name': 'http-whitespace',
+        'description': 'Eliminate NULL and all whitespace characters',
+        'context': 'HTTP parameters, command injection contexts',
+        'bad_chars': [0x00, 0x09, 0x0A, 0x0D, 0x20],
+        'difficulty': 2,  # Low
+    },
+    'url-safe': {
+        'name': 'url-safe',
+        'description': 'Eliminate URL-unsafe characters',
+        'context': 'URL parameters, GET requests, query strings',
+        'bad_chars': [
+            0x00, 0x20, 0x22, 0x23, 0x24, 0x25, 0x26, 0x2B, 0x2C, 0x2F,
+            0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x5B, 0x5D, 0x5C,
+            0x7B, 0x7D, 0x7C
+        ],
+        'difficulty': 3,  # Medium
+    },
+    'sql-injection': {
+        'name': 'sql-injection',
+        'description': 'Eliminate SQL metacharacters',
+        'context': 'SQL injection via string literals',
+        'bad_chars': [0x00, 0x22, 0x27, 0x2D, 0x3B],
+        'difficulty': 3,  # Medium
+    },
+    'xml-html': {
+        'name': 'xml-html',
+        'description': 'Eliminate XML/HTML special characters',
+        'context': 'XML/HTML injection, XSS payloads',
+        'bad_chars': [0x00, 0x22, 0x26, 0x27, 0x3C, 0x3E],
+        'difficulty': 3,  # Medium
+    },
+    'json-string': {
+        'name': 'json-string',
+        'description': 'Eliminate JSON-unsafe characters',
+        'context': 'JSON API injection, JavaScript contexts',
+        'bad_chars': list(range(0x00, 0x20)) + [0x22, 0x5C],  # Control chars + quote + backslash
+        'difficulty': 3,  # Medium
+    },
+    'format-string': {
+        'name': 'format-string',
+        'description': 'Eliminate format string specifiers',
+        'context': 'Format string vulnerabilities (printf, etc.)',
+        'bad_chars': [0x00, 0x20, 0x25],
+        'difficulty': 3,  # Medium
+    },
+    'buffer-overflow': {
+        'name': 'buffer-overflow',
+        'description': 'Common buffer overflow bad characters',
+        'context': 'Stack/heap overflows with character filtering',
+        'bad_chars': [0x00, 0x09, 0x0A, 0x0D, 0x20],
+        'difficulty': 3,  # Medium
+    },
+    'command-injection': {
+        'name': 'command-injection',
+        'description': 'Eliminate shell metacharacters',
+        'context': 'Shell command injection, system() calls',
+        'bad_chars': [
+            0x00, 0x09, 0x0A, 0x0D, 0x20, 0x21, 0x22, 0x24, 0x26, 0x27,
+            0x28, 0x29, 0x2A, 0x2F, 0x3B, 0x3C, 0x3E, 0x5C, 0x60, 0x7C
+        ],
+        'difficulty': 3,  # Medium
+    },
+    'ldap-injection': {
+        'name': 'ldap-injection',
+        'description': 'Eliminate LDAP special characters',
+        'context': 'LDAP injection attacks',
+        'bad_chars': [0x00, 0x28, 0x29, 0x2A, 0x5C],
+        'difficulty': 3,  # Medium
+    },
+    'printable-only': {
+        'name': 'printable-only',
+        'description': 'Allow only printable ASCII (0x20-0x7E)',
+        'context': 'Text-based protocols, printable character requirements',
+        'bad_chars': list(range(0x00, 0x20)) + [0x7F] + list(range(0x80, 0x100)),
+        'difficulty': 4,  # High
+    },
+    'alphanumeric-only': {
+        'name': 'alphanumeric-only',
+        'description': 'Allow only alphanumeric chars (0-9, A-Z, a-z)',
+        'context': 'Strict input filters, alphanumeric-only shellcode',
+        'bad_chars': [i for i in range(256) if not (
+            (0x30 <= i <= 0x39) or  # 0-9
+            (0x41 <= i <= 0x5A) or  # A-Z
+            (0x61 <= i <= 0x7A)     # a-z
+        )],
+        'difficulty': 5,  # Extreme
+    },
+}
+
+DIFFICULTY_LABELS = {
+    1: 'Trivial',
+    2: 'Low',
+    3: 'Medium',
+    4: 'High',
+    5: 'Extreme'
+}
+
+def list_profiles():
+    """List all available bad-character profiles."""
+    print("=" * 80)
+    print("AVAILABLE BAD-CHARACTER PROFILES")
+    print("=" * 80)
+    print()
+
+    for profile_name in sorted(BADCHAR_PROFILES.keys()):
+        profile = BADCHAR_PROFILES[profile_name]
+
+        # Difficulty indicator
+        difficulty_bar = '█' * profile['difficulty'] + '░' * (5 - profile['difficulty'])
+
+        print(f"  {profile['name']:<22}  [{difficulty_bar}]  ({len(profile['bad_chars'])} bad chars)")
+        print(f"      {profile['description']}")
+        print(f"      Context: {profile['context']}")
+        print()
+
+    print("Difficulty Legend: [█░░░░]=Trivial  [███░░]=Medium  [█████]=Extreme")
+    print()
+    print("Usage: verify_denulled.py --profile <name> input.bin [output.bin]")
+    print("   or: verify_denulled.py --list-profiles  (show this list)")
+    print()
+
+def get_profile_bad_chars(profile_name):
+    """
+    Get bad characters from a profile name.
+
+    Args:
+        profile_name (str): Name of the profile
+
+    Returns:
+        set: Set of bad byte values, or None if profile not found
+    """
+    if profile_name not in BADCHAR_PROFILES:
+        return None
+
+    return set(BADCHAR_PROFILES[profile_name]['bad_chars'])
+
+def show_profile_details(profile_name):
+    """Show detailed information about a specific profile."""
+    if profile_name not in BADCHAR_PROFILES:
+        print(f"[ERROR] Unknown profile: {profile_name}")
+        return False
+
+    profile = BADCHAR_PROFILES[profile_name]
+
+    print("=" * 80)
+    print(f"PROFILE: {profile['name'].upper()}")
+    print("=" * 80)
+    print()
+    print(f"Description: {profile['description']}")
+    print(f"Context:     {profile['context']}")
+    print(f"Difficulty:  {'█' * profile['difficulty']}{'░' * (5 - profile['difficulty'])} ({DIFFICULTY_LABELS[profile['difficulty']]})")
+    print()
+    print(f"Bad Characters ({len(profile['bad_chars'])} total):")
+
+    # Show first 20 bytes
+    hex_list = [f"0x{b:02X}" for b in profile['bad_chars'][:20]]
+    print(f"  Hex: {', '.join(hex_list)}", end='')
+    if len(profile['bad_chars']) > 20:
+        print(f" ... ({len(profile['bad_chars']) - 20} more)")
+    else:
+        print()
+    print()
+
+    return True
 
 def parse_bad_chars(bad_chars_str):
     """
@@ -66,13 +253,13 @@ def analyze_shellcode_for_bad_chars(shellcode_data, bad_chars=None):
     i = 0
     while i < len(shellcode_data):
         if shellcode_data[i] in bad_chars:
-            bad_char_count += 1
-            bad_char_positions[shellcode_data[i]].append(i)
-
             # Track consecutive bad char sequences
             seq_start = i
             seq_bytes = []
             while i < len(shellcode_data) and shellcode_data[i] in bad_chars:
+                # Count each bad character individually
+                bad_char_count += 1
+                bad_char_positions[shellcode_data[i]].append(i)
                 seq_bytes.append(shellcode_data[i])
                 i += 1
             seq_length = i - seq_start
@@ -341,21 +528,32 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Manual bad-char specification
   %(prog)s input.bin                                # Analyze input file only (null bytes)
   %(prog)s input.bin output.bin                     # Compare input and output files
   %(prog)s input.bin output.bin --bad-chars 00,0a,0d  # Check for newlines too
   %(prog)s shellcode.bin -o processed.bin           # With explicit output file
+
+  # Profile-based (NEW in v3.0.3)
+  %(prog)s --list-profiles                          # List all available profiles
+  %(prog)s --profile http-newline input.bin output.bin  # Use HTTP newline profile
+  %(prog)s --profile sql-injection input.bin output.bin # Use SQL injection profile
+  %(prog)s --profile alphanumeric-only test.bin     # Verify alphanumeric-only
+
+  # Batch processing
   %(prog)s input_dir/                               # Batch process directory
-  %(prog)s input_dir/ output_dir/ --bad-chars 00    # Batch with bad chars
-  %(prog)s input_dir/ -r                            # Batch process recursively
+  %(prog)s input_dir/ output_dir/ --profile http-whitespace  # Batch with profile
+  %(prog)s input_dir/ -r --bad-chars 00             # Batch recursive with bad chars
 
 Note: This tool verifies that the output has no bad characters after processing with byvalver.
-      By default, only null bytes (0x00) are checked. Use --bad-chars to specify others.
+      Use --profile for predefined sets or --bad-chars for manual specification.
+      Default: null bytes (0x00) only.
         """
     )
 
     parser.add_argument(
         'input_path',
+        nargs='?',
         help='Path to the input file or directory before bad character elimination'
     )
 
@@ -369,6 +567,20 @@ Note: This tool verifies that the output has no bad characters after processing 
         '-o', '--output',
         dest='output_path_alt',
         help='Alternative way to specify output file/directory path'
+    )
+
+    # Profile options
+    parser.add_argument(
+        '--profile',
+        type=str,
+        metavar='NAME',
+        help='Use predefined bad-character profile (e.g., http-newline, sql-injection, alphanumeric-only). Use --list-profiles to see all available profiles.'
+    )
+
+    parser.add_argument(
+        '--list-profiles',
+        action='store_true',
+        help='List all available bad-character profiles and exit'
     )
 
     # Batch processing options
@@ -399,17 +611,41 @@ Note: This tool verifies that the output has no bad characters after processing 
     parser.add_argument(
         '--bad-chars',
         type=str,
-        default='00',
-        help='Comma-separated hex bytes to check for elimination (default: "00" for null bytes only). Example: "00,0a,0d" for null and newlines'
+        metavar='BYTES',
+        help='Comma-separated hex bytes to check for elimination (default: "00" for null bytes only). Example: "00,0a,0d" for null and newlines. Note: --profile takes precedence if both are specified.'
     )
 
     args = parser.parse_args()
 
+    # Handle --list-profiles
+    if args.list_profiles:
+        list_profiles()
+        sys.exit(0)
+
+    # Validate that input_path is provided (unless --list-profiles was used)
+    if not args.input_path:
+        parser.error("the following arguments are required: input_path")
+
     # Determine output path
     output_path = args.output_path or args.output_path_alt
 
-    # Parse bad characters
-    bad_chars = parse_bad_chars(args.bad_chars)
+    # Determine bad characters - profile takes precedence
+    if args.profile:
+        bad_chars = get_profile_bad_chars(args.profile)
+        if bad_chars is None:
+            print(f"[ERROR] Unknown profile: {args.profile}")
+            print(f"Use --list-profiles to see available profiles")
+            sys.exit(1)
+
+        if args.verbose or True:  # Always show which profile is being used
+            profile = BADCHAR_PROFILES[args.profile]
+            print(f"Using profile: {args.profile} ({len(bad_chars)} bad characters)")
+            print(f"Description: {profile['description']}")
+            print()
+    else:
+        # Use manual --bad-chars specification (or default)
+        bad_chars_str = args.bad_chars if args.bad_chars else '00'
+        bad_chars = parse_bad_chars(bad_chars_str)
 
     input_path = Path(args.input_path)
 

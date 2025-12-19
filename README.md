@@ -216,9 +216,36 @@ Zero-Attempt:            5                   █░░░░░░░░░░�
 - Structure preservation or flattening
 - Continue-on-error or strict modes
 - Compatible with all options (biphasic, PIC, `XOR`, etc.)
+- **Enhanced output** (v3.0.2):
+  - Per-file size transformations with ratios
+  - Detailed bad character identification on failures
+  - Success/failure percentages in summary
+  - Failed files list (first 10 shown inline)
+  - Strict success definition: files with remaining bad characters marked as failed
+
+**Batch Processing Output Example:**
+```
+===== BATCH PROCESSING SUMMARY =====
+Total files:       8
+Successfully processed: 1 (12.5%)
+Failed:            7 (87.5%)
+Skipped:           0
+
+Total input size:  650 bytes
+Total output size: 764 bytes
+Average size ratio: 1.18x
+
+Bad characters:    5 configured
+Configured set:    0x00, 0x09, 0x0a, 0x0d, 0x20
+
+FAILED FILES (7):
+  - shellcode1.bin
+  - shellcode2.bin
+  ...
+```
 
 > [!TIP]
-> For batch processing large shellcode collections, use `--no-continue-on-error` to identify problematic files early, then process successfully with `--pattern` to exclude failures. The `--verbose` flag helps track progress and identify which strategies work best for your specific shellcode corpus.
+> For batch processing large shellcode collections, use `--no-continue-on-error` to identify problematic files early, then process successfully with `--pattern` to exclude failures. The `--verbose` flag helps track progress and identify which strategies work best for your specific shellcode corpus. Files are only counted as successful when they contain **zero remaining bad characters** - partial success is treated as failure.
 
 ### Output Options
 - Formats: raw binary, `C` array, Python bytes, hex string
@@ -228,13 +255,16 @@ Zero-Attempt:            5                   █░░░░░░░░░░�
 
 ### Verification Suite
 Python tools for validation:
-- `verify_denulled.py`: Ensures zero null bytes
+- `verify_denulled.py`: Ensures zero bad characters (supports `--bad-chars` for custom verification)
 - `verify_functionality.py`: Checks execution patterns
 - `verify_semantic.py`: Validates equivalence
 
+> [!IMPORTANT]
+> **v3.0.2 Verification:** `byvalver` now performs strict verification during processing. Files with any remaining bad characters are automatically marked as failed and reported with detailed character information
+
 ## Architecture
 
-byvalver employs a modular strategy-pattern design:
+`byvalver` employs a modular strategy-pattern design:
 - Pass 1: (Optional) Obfuscation for anti-analysis
 - Pass 2: Denullification for null-byte removal
 - ML layer for strategy optimization
