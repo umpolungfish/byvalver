@@ -17,6 +17,8 @@
 
 <p align="center">
   <a href="#overview">Overview</a> •
+  <a href="#bad-character-profiles-v30">Bad-Character Profiles</a> •
+  <a href="#generic-bad-character-elimination-v30">Generic Bad-Character Elimination</a> •
   <a href="#features">Features</a> •
   <a href="#architecture">Architecture</a> •
   <a href="#system-requirements">System Requirements</a> •
@@ -61,6 +63,112 @@ Supports Windows, Linux, and macOS
 > **Null-byte elimination** (`--bad-chars "00"` or default): Well-tested with 100% success rate on diverse test corpus
 >
 > **Generic bad-character elimination** (`--bad-chars "00,0a,0d"` etc.): Newly implemented in v3.0. The framework is functional and strategies apply generically, but effectiveness for non-null characters has not been comprehensively validated. Success rates may vary depending on the specific bad characters and shellcode complexity.
+
+## Bad-Character Profiles (v3.0)
+
+### Overview
+
+Version 3.0 introduces **bad-character profiles** - pre-configured sets of bytes for common exploit scenarios. Instead of manually specifying hex values, use profile names that match your context.
+
+### Available Profiles
+
+| Profile | Difficulty | Bad Chars | Use Case |
+|---------|-----------|-----------|----------|
+| `null-only` | ░░░░░ Trivial | 1 | Classic buffer overflows (default) |
+| `http-newline` | █░░░░ Low | 3 | `HTTP` headers, line-based protocols |
+| `http-whitespace` | █░░░░ Low | 5 | `HTTP` parameters, command injection |
+| `url-safe` | ███░░ Medium | 23 | `URL` parameters, `GET` requests |
+| `sql-injection` | ███░░ Medium | 5 | `SQL` injection contexts |
+| `xml-html` | ███░░ Medium | 6 | `XML`/`HTML` injection, `XSS` |
+| `json-string` | ███░░ Medium | 34 | `JSON` API injection |
+| `format-string` | ███░░ Medium | 3 | Format string vulnerabilities |
+| `buffer-overflow` | ███░░ Medium | 5 | Stack/heap overflows with filtering |
+| `command-injection` | ███░░ Medium | 20 | Shell command injection |
+| `ldap-injection` | ███░░ Medium | 5 | `LDAP` queries |
+| `printable-only` | ████░ High | 161 | Text-based protocols (printable ASCII only) |
+| `alphanumeric-only` | █████ Extreme | 194 | Alphanumeric-only shellcode (0-9, A-Z, a-z) |
+
+### Usage
+
+```bash
+# List all available profiles
+byvalver --list-profiles
+
+# Use a specific profile
+byvalver --profile http-newline input.bin output.bin
+
+# Combine with other options
+byvalver --profile sql-injection --biphasic --format c input.bin output.c
+```
+
+### Profile Examples
+
+**HTTP Contexts** (eliminates NULL, LF, CR):
+```bash
+byvalver --profile http-newline payload.bin http_safe.bin
+```
+
+**SQL Injection** (eliminates NULL, quotes, semicolons):
+```bash
+byvalver --profile sql-injection payload.bin sql_safe.bin
+```
+
+**Alphanumeric-Only** (extreme difficulty - only allows 0-9, A-Z, a-z):
+```bash
+byvalver --profile alphanumeric-only payload.bin alphanum.bin
+```
+
+For detailed profile documentation, see [docs/BAD_CHAR_PROFILES.md](docs/BAD_CHAR_PROFILES.md).
+
+## Generic Bad-Character Elimination (v3.0)
+
+### Overview
+
+Version 3.0 also introduces a generic bad-character elimination framework for manual specification. The `--bad-chars` option allows you to specify any set of bytes to eliminate from your shellcode.
+
+### Implementation Details
+
+The framework operates by:
+1. Parsing the comma-separated hex byte list (e.g., `"00,0a,0d"`)
+2. Using an O(1) bitmap lookup to identify bad characters in instructions
+3. Applying the same 122+ transformation strategies used for null-byte elimination
+4. Verifying that the output does not contain the specified bad characters
+
+### Current Status
+
+**Functional:** The framework is fully implemented and operational. All transformation strategies can detect and avoid any specified bad characters.
+
+**Experimental:** The strategies were originally designed, tested, and optimized specifically for null-byte elimination. While they now support generic bad characters at the implementation level, they have not been:
+- Extensively tested with non-null bad character sets
+- Optimized for specific bad character combinations
+- Validated against diverse real-world scenarios with arbitrary bad characters
+
+### Expected Behavior
+
+- **Null bytes only** (`--bad-chars "00"` or default): High success rate (100% on test corpus)
+- **Multiple bad characters** (`--bad-chars "00,0a,0d"`): Success rate may vary significantly depending on:
+  - Which specific bytes are marked as bad
+  - Complexity of the input shellcode
+  - Frequency of bad characters in the original shellcode
+  - Whether effective alternative encodings exist for the specific bad character set
+
+### Recommendations
+
+1. **For production use:** Stick with default null-byte elimination mode
+2. **For experimentation:** Test the `--bad-chars` feature with your specific use case and validate the output
+3. **Always verify:** Use `verify_denulled.py --bad-chars "XX,YY"` to confirm all bad characters were eliminated
+4. **Expect variability:** Some shellcode may not be fully cleanable with certain bad character sets
+
+### Future Improvements
+
+The generic bad-character feature provides a foundation for:
+- Strategy optimization for specific bad character patterns
+- Automated discovery of new strategies targeting common bad character combinations
+- ML model retraining with diverse bad character training data
+- Extended testing and validation
+
+> [!CAUTION]
+> Using `--bad-chars` with multiple bad characters significantly increases the complexity of the transformation task. Some shellcode may become impossible to transform if too many bytes are marked as bad, as the tool may run out of alternative encodings. Start with small bad character sets (e.g., `"00,0a"`) and expand gradually while testing the output. Always verify the result with `verify_denulled.py` before deployment.
 
 ## Features
 
@@ -425,117 +533,6 @@ byvalver -r --profile http-whitespace --pattern "*.bin" shellcodes/ output/
 > [!IMPORTANT]
 > For production use, the default null-byte elimination mode (without `--bad-chars` or with `--bad-chars "00"`) is recommended as it has been extensively tested and validated. The generic bad-character elimination feature is functional but experimental.
 
----
-
-## Bad-Character Profiles (v3.0)
-
-### Overview
-
-Version 3.0 introduces **bad-character profiles** - pre-configured sets of bytes for common exploit scenarios. Instead of manually specifying hex values, use profile names that match your context.
-
-### Available Profiles
-
-| Profile | Difficulty | Bad Chars | Use Case |
-|---------|-----------|-----------|----------|
-| `null-only` | ░░░░░ Trivial | 1 | Classic buffer overflows (default) |
-| `http-newline` | █░░░░ Low | 3 | `HTTP` headers, line-based protocols |
-| `http-whitespace` | █░░░░ Low | 5 | `HTTP` parameters, command injection |
-| `url-safe` | ███░░ Medium | 23 | `URL` parameters, `GET` requests |
-| `sql-injection` | ███░░ Medium | 5 | `SQL` injection contexts |
-| `xml-html` | ███░░ Medium | 6 | `XML`/`HTML` injection, `XSS` |
-| `json-string` | ███░░ Medium | 34 | `JSON` API injection |
-| `format-string` | ███░░ Medium | 3 | Format string vulnerabilities |
-| `buffer-overflow` | ███░░ Medium | 5 | Stack/heap overflows with filtering |
-| `command-injection` | ███░░ Medium | 20 | Shell command injection |
-| `ldap-injection` | ███░░ Medium | 5 | `LDAP` queries |
-| `printable-only` | ████░ High | 161 | Text-based protocols (printable ASCII only) |
-| `alphanumeric-only` | █████ Extreme | 194 | Alphanumeric-only shellcode (0-9, A-Z, a-z) |
-
-### Usage
-
-```bash
-# List all available profiles
-byvalver --list-profiles
-
-# Use a specific profile
-byvalver --profile http-newline input.bin output.bin
-
-# Combine with other options
-byvalver --profile sql-injection --biphasic --format c input.bin output.c
-```
-
-### Profile Examples
-
-**HTTP Contexts** (eliminates NULL, LF, CR):
-```bash
-byvalver --profile http-newline payload.bin http_safe.bin
-```
-
-**SQL Injection** (eliminates NULL, quotes, semicolons):
-```bash
-byvalver --profile sql-injection payload.bin sql_safe.bin
-```
-
-**Alphanumeric-Only** (extreme difficulty - only allows 0-9, A-Z, a-z):
-```bash
-byvalver --profile alphanumeric-only payload.bin alphanum.bin
-```
-
-For detailed profile documentation, see [docs/BAD_CHAR_PROFILES.md](docs/BAD_CHAR_PROFILES.md).
-
----
-
-## Generic Bad-Character Elimination (v3.0)
-
-### Overview
-
-Version 3.0 also introduces a generic bad-character elimination framework for manual specification. The `--bad-chars` option allows you to specify any set of bytes to eliminate from your shellcode.
-
-### Implementation Details
-
-The framework operates by:
-1. Parsing the comma-separated hex byte list (e.g., `"00,0a,0d"`)
-2. Using an O(1) bitmap lookup to identify bad characters in instructions
-3. Applying the same 122+ transformation strategies used for null-byte elimination
-4. Verifying that the output does not contain the specified bad characters
-
-### Current Status
-
-**Functional:** The framework is fully implemented and operational. All transformation strategies can detect and avoid any specified bad characters.
-
-**Experimental:** The strategies were originally designed, tested, and optimized specifically for null-byte elimination. While they now support generic bad characters at the implementation level, they have not been:
-- Extensively tested with non-null bad character sets
-- Optimized for specific bad character combinations
-- Validated against diverse real-world scenarios with arbitrary bad characters
-
-### Expected Behavior
-
-- **Null bytes only** (`--bad-chars "00"` or default): High success rate (100% on test corpus)
-- **Multiple bad characters** (`--bad-chars "00,0a,0d"`): Success rate may vary significantly depending on:
-  - Which specific bytes are marked as bad
-  - Complexity of the input shellcode
-  - Frequency of bad characters in the original shellcode
-  - Whether effective alternative encodings exist for the specific bad character set
-
-### Recommendations
-
-1. **For production use:** Stick with default null-byte elimination mode
-2. **For experimentation:** Test the `--bad-chars` feature with your specific use case and validate the output
-3. **Always verify:** Use `verify_denulled.py --bad-chars "XX,YY"` to confirm all bad characters were eliminated
-4. **Expect variability:** Some shellcode may not be fully cleanable with certain bad character sets
-
-### Future Improvements
-
-The generic bad-character feature provides a foundation for:
-- Strategy optimization for specific bad character patterns
-- Automated discovery of new strategies targeting common bad character combinations
-- ML model retraining with diverse bad character training data
-- Extended testing and validation
-
-> [!CAUTION]
-> Using `--bad-chars` with multiple bad characters significantly increases the complexity of the transformation task. Some shellcode may become impossible to transform if too many bytes are marked as bad, as the tool may run out of alternative encodings. Start with small bad character sets (e.g., `"00,0a"`) and expand gradually while testing the output. Always verify the result with `verify_denulled.py` before deployment.
-
----
 
 ## Obfuscation Strategies
 
