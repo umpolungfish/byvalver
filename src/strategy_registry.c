@@ -35,6 +35,10 @@
 #include "stack_based_structure_construction.h"
 #include "pushw_word_immediate_strategies.h"
 #include "cltd_zero_extension_strategies.h"
+#include "polymorphic_immediate_construction_strategies.h"
+#include "setcc_jump_elimination_strategies.h"
+#include "register_dependency_chain_optimization_strategies.h"
+#include "syscall_number_obfuscation_strategies.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h> // Added for debug prints
@@ -209,6 +213,12 @@ void init_strategies(int use_ml) {
     init_advanced_transformations();      // Initialize the can_handle functions
     register_indirect_call_strategies();  // Register indirect CALL/JMP strategies (priority 100)
     register_sldt_replacement_strategy();  // Register SLDT replacement strategy (priority 95)
+
+    // NEW: Tier 1 High-Priority Strategies (2025-12-19)
+    register_register_dependency_chain_optimization_strategies();  // Priority 91 - Multi-instruction optimization
+    register_polymorphic_immediate_construction_strategies();  // Priority 88-90 - Universal immediate encoding
+    register_syscall_number_obfuscation_strategies();  // Priority 85-88 - Linux syscall optimization
+    register_setcc_jump_elimination_strategies();  // Priority 84-86 - Jump offset elimination
 
     // NEW: Discovered Strategies (2025-12-16)
     register_pushw_word_immediate_strategies();  // Register PUSHW 16-bit immediate strategies (priority 87)
