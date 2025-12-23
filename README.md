@@ -38,7 +38,7 @@
 
 ## Overview
 
-**byvalver** is a CLI tool built in `C` for automatically eliminating null-bytes (`\x00`) from x86/x64 shellcode while maintaining complete functional equivalence
+`**byvalver**` is a CLI tool built in `C` for automatically eliminating null-bytes (`\x00`) from x86/x64 shellcode while maintaining complete functional equivalence
 
 The tool uses the `Capstone` disassembly framework to analyze instructions and applies over 148+ ranked transformation strategies to replace null-containing code with equivalent alternatives. It has been extensively tested on null-byte elimination and achieves a high success rate across diverse, real-world shellcode test suites, including complex Windows payloads.
 
@@ -148,7 +148,7 @@ byvalver -r --pattern "*.bin" input_dir/ output_dir/
 byvalver -r --profile http-newline input_dir/ output_dir/
 ```
 
-## Bad-Character Profiles (v3.0)
+## Bad-Character Profiles
 
 ### Overview
 
@@ -204,7 +204,7 @@ byvalver --profile alphanumeric-only payload.bin alphanum.bin
 
 For detailed profile documentation, see [docs/BAD_CHAR_PROFILES.md](docs/BAD_CHAR_PROFILES.md).
 
-## Generic Bad-Character Elimination (v3.0)
+## Generic Bad-Character Elimination
 
 ### Overview
 
@@ -212,10 +212,10 @@ Version 3.0 also introduces a generic bad-character elimination framework for ma
 
 ### Implementation Details
 
-The framework operates by:
+`byvalver` operates by:
 1. Parsing the comma-separated hex byte list (e.g., `"00,0a,0d"`)
 2. Using an O(1) bitmap lookup to identify bad characters in instructions
-3. Applying the same 122+ transformation strategies used for null-byte elimination
+3. Applying the same 165+ transformation strategies used for null-byte elimination
 4. Verifying that the output does not contain the specified bad characters
 
 ### Current Status
@@ -281,9 +281,9 @@ The generic bad-character feature provides a foundation for:
 - Enhanced `SALC`+`REP STOSB` for buffer initialization
 - Advanced string operation transformations
 - Atomic operation encoding chains
-- FPU stack-based immediate encoding
-- XLAT table-based byte translation
-- LAHF/SAHF flag preservation chains
+- `FPU` stack-based immediate encoding
+- `XLAT` table-based byte translation
+- `LAHF`/`SAHF` flag preservation chains
 - Comprehensive support for `MOV`, `ADD/SUB`, `XOR`, `LEA`, `CMP`, `PUSH`, and more
 
 The engine employs multi-pass processing (obfuscation → denulling) with robust fallback mechanisms for edge cases
@@ -356,7 +356,7 @@ Weight Update Max:       0.100000
 Total Weight Updates:    1724.68
 
 Strategy Coverage:
-Total Strategies:        122+
+Total Strategies:        165+
 Strategies Activated:    117                 ████████████████████████░   95.90%
 Zero-Attempt:            5                   █░░░░░░░░░░░░░░░░░░░░░░░░   04.10%
 ```
@@ -378,7 +378,7 @@ Zero-Attempt:            5                   █░░░░░░░░░░�
 - Anti-debugging
 - VM detection techniques
 
-### ML-Powered Strategy Selection (Experimental - v2.0 Architecture December 2025)
+### ML-Powered Strategy Selection (Experimental)
 **Architecture v2.0** (December 17, 2025):
 - **One-hot instruction encoding** (51 dims) replaces scalar instruction IDs
 - **Context window** with sliding buffer of 4 instructions (current + 3 previous)
@@ -402,7 +402,7 @@ Zero-Attempt:            5                   █░░░░░░░░░░�
 - Sequential pattern learning (context-aware predictions)
 
 > [!NOTE]
-> **ML Architecture v2.0 (Dec 17, 2025)**: The ML system has been enhanced with one-hot instruction encoding and context window support, completing all 7 critical issues identified in technical review. Issues 1-5 were fixed in v3.0.1 (Dec 2025), and issues 6-7 are now fixed in v2.0. See `docs/ML_FIXES_2025.md` for complete details.
+> **ML Architecture v2.0**: The ML system has been enhanced with one-hot instruction encoding and context window support, completing all 7 critical issues identified in technical review. Issues 1-5 were fixed in v3.0.1, and issues 6-7 are now fixed in v2.0. See `docs/ML_FIXES_2025.md` for complete details.
 
 > [!WARNING]
 > ML mode is experimental and requires further training/validation with the new v2.0 architecture. Use the `--ml` flag to enable (disabled by default). Old v1.0 models are incompatible and must be retrained. Current model requires retraining with diverse datasets.
@@ -644,9 +644,9 @@ byvalver [OPTIONS] <input> [output]
 - `-v, --version`: Version
 - `-V, --verbose`: Verbose
 - `-q, --quiet`: Quiet
-- `--bad-chars BYTES`: **[v3.0]** Comma-separated hex bytes to eliminate (default: "00")
-- `--profile NAME`: **[v3.0]** Use predefined bad-character profile (e.g., http-newline, sql-injection)
-- `--list-profiles`: **[v3.0]** List all available bad-character profiles
+- `--bad-chars BYTES`: Comma-separated hex bytes to eliminate (default: "00")
+- `--profile NAME`: Use predefined bad-character profile (e.g., http-newline, sql-injection)
+- `--list-profiles`: List all available bad-character profiles
 - `--biphasic`: Obfuscate + denull
 - `--pic`: Position-independent
 - `--ml`: ML strategy selection
@@ -683,14 +683,9 @@ byvalver --profile http-newline --biphasic --ml input.bin output.bin
 # Batch processing with profile
 byvalver -r --profile http-whitespace --pattern "*.bin" shellcodes/ output/
 ```
-
-> [!IMPORTANT]
-> For production use, the default null-byte elimination mode (without `--bad-chars` or with `--bad-chars "00"`) is recommended as it has been extensively tested and validated. The generic bad-character elimination feature is functional but experimental.
-
-
 ## Obfuscation Strategies
 
-byvalver's obfuscation pass (enabled via `--biphasic`) applies anti-analysis techniques:
+The obfuscation pass of `byvalver` (enabled via `--biphasic`) applies anti-analysis techniques:
 
 ### Core Obfuscation Techniques
 
@@ -728,7 +723,7 @@ See [OBFUSCATION_STRATS](docs/OBFUSCATION_STRATS.md) for detailed strategy docum
 
 ## Denullification Strategies
 
-The core denull pass uses over 122 strategies (including 2 newly discovered in December 2025):
+The core denull pass uses over 165 strategies:
 
 ### `MOV` Strategies
 - Original pass-through
@@ -761,7 +756,7 @@ See [DENULL_STRATS](docs/DENULL_STRATS.md) for detailed strategy documentation.
 
 ## ML Training and Validation
 
-### Comprehensive Fixes (December 2025)
+### Comprehensive Fixes (DEC 2025)
 
 The ML system has been completely overhauled to address critical architectural issues:
 
