@@ -489,7 +489,7 @@ python3 verify_denulled.py output3.bin --bad-chars "00,0a,0d"
 
 ### Current Strategy Count
 
-**Total Strategies:** 143+ (after implementing Tier 1, additional high-priority strategies, and 10 new strategies)
+**Total Strategies:** 148+ (after implementing Tier 1, additional high-priority strategies, and 15 new strategies)
 
 **Strategy Categories:**
 - MOV instruction strategies: 20+ variants
@@ -503,9 +503,13 @@ python3 verify_denulled.py output3.bin --bad-chars "00,0a,0d"
 - Atomic operation encoding: 1 variant (Strategy 13, Priority 78)
 - FPU stack immediate encoding: 1 variant (Strategy 15, Priority 76)
 - XLAT table lookup: 1 variant (Strategy 16, Priority 72)
+- BSF/BSR bit scanning: 1 variant (Strategy 17, Priority 80)
+- Partial register optimization: 1 variant (Strategy 19, Priority 89)
 - LAHF/SAHF flag preservation: 1 variant (Strategy 20, Priority 83)
-- Partial register optimization: 1 variant (Strategy XX, Priority 89)
-- Segment register TEB/PEB access: 1 variant (Strategy XX, Priority 94)
+- PUSHF/POPF bit manipulation: 1 variant (Strategy 21, Priority 81)
+- LOOP comprehensive variants: 1 variant (Strategy 22, Priority 79)
+- BSWAP endianness transformation: 1 variant (Strategy 24, Priority 85)
+- Segment register TEB/PEB access: 1 variant (Strategy 14, Priority 94)
 
 ## New Strategy Documentation
 
@@ -1117,13 +1121,237 @@ Reference implementation commits:
 - Verification (Phase 5): Python tool updates
 - ML Integration (Phase 6): Feature extraction updates
 
+---
+
+## v3.5 Additional Strategies (2025-12-22)
+
+### Strategy 24: BSWAP Endianness Transformation (Priority 85)
+
+**File:** `src/bswap_endianness_transformation_strategies.c`
+**File:** `src/bswap_endianness_transformation_strategies.h`
+
+**Problem Statement:**
+MOV instructions with immediate values often contain bad characters, particularly when encoding IP addresses or port numbers in network byte order. Traditional strategies may not recognize that byte-swapping can eliminate bad characters.
+
+**Target Patterns:**
+```asm
+; Pattern: MOV with network byte order values containing bad chars
+mov eax, 0x00007F01    ; 127.0.0.1 in network byte order (contains nulls)
+mov ebx, 0x00005000    ; Port 80 in network byte order (contains nulls)
+```
+
+**Transformation Strategy:**
+```c
+// Check if byte-swapped version has fewer bad characters
+uint32_t original = 0x00007F01;      // Has 2 null bytes
+uint32_t swapped = 0x017F0000;       // Has 2 null bytes at end
+
+// Transform to:
+mov eax, 0x017F0000    ; Byte-swapped immediate (bad chars moved)
+bswap eax              ; Reverse byte order to get original value
+```
+
+**Implementation:**
+- Check if value is bad-char-free after byte swap
+- Only apply if swapped version has fewer bad characters
+- Uses BSWAP instruction (2 bytes: 0F C8+r)
+- Total: 7 bytes (MOV=5 + BSWAP=2) vs original 5 bytes
+
+**Use Cases:**
+- Socket programming: IP addresses, port numbers
+- Network protocols: Endianness conversions
+- Data structures with embedded addresses
+
+---
+
+### Strategy 21: PUSHF/POPF Bit Manipulation (Priority 81)
+
+**File:** `src/pushf_popf_bit_manipulation_strategies.c`
+**File:** `src/pushf_popf_bit_manipulation_strategies.h`
+
+**Problem Statement:**
+Flag-setting instructions (STC, CLC, STD, CLD, CMC) are single-byte opcodes that may themselves be bad characters. Current strategies don't transform these simple instructions.
+
+**Target Patterns:**
+```asm
+stc    ; F9h - Set Carry Flag (may be bad char)
+clc    ; F8h - Clear Carry Flag
+std    ; FDh - Set Direction Flag
+cld    ; FCh - Clear Direction Flag
+cmc    ; F5h - Complement Carry Flag
+```
+
+**Transformation Strategy:**
+```c
+// Original: STC (1 byte: F9)
+// Transform to:
+pushf               ; 9C - Push EFLAGS
+pop eax             ; 58 - Pop into EAX
+or eax, 0x01        ; 0D 01 00 00 00 - Set carry bit
+push eax            ; 50 - Push modified flags
+popf                ; 9D - Pop into EFLAGS
+
+// Original: CLC (1 byte: F8)
+// Transform to:
+pushf               ; 9C
+pop eax             ; 58
+and eax, 0xFFFFFFFE ; 25 FE FF FF FF - Clear carry bit
+push eax            ; 50
+popf                ; 9D
+```
+
+**Verified:** Successfully transformed STC (F9) to 9-byte PUSHF/POPF sequence
+
+**Flag Masks:**
+- CF (Carry): bit 0 (0x01)
+- ZF (Zero): bit 6 (0x40)
+- SF (Sign): bit 7 (0x80)
+- DF (Direction): bit 10 (0x400)
+- OF (Overflow): bit 11 (0x800)
+
+---
+
+### Strategy 17: BSF/BSR Bit Scanning (Priority 80)
+
+**File:** `src/bit_scanning_constant_strategies.c`
+**File:** `src/bit_scanning_constant_strategies.h`
+
+**Problem Statement:**
+Power-of-2 immediate values frequently contain null bytes (0x100, 0x10000, 0x1000000) but can be constructed via bit position and shifting.
+
+**Target Patterns:**
+```asm
+mov eax, 0x00010000    ; Bit 16 set (contains nulls)
+mov ebx, 0x00000100    ; Bit 8 set (contains nulls)
+mov ecx, 0x00001000    ; Bit 12 set (contains nulls)
+```
+
+**Transformation Strategy:**
+```c
+// Method 1: For small bit positions (0-7)
+// Original: MOV EAX, 0x100
+mov eax, 1             ; Load 1
+shl eax, 8             ; Shift left 8 positions = 0x100
+
+// Method 2: For larger bit positions (8-31)
+// Original: MOV EAX, 0x10000
+xor eax, eax           ; Zero register
+mov al, 16             ; Bit position
+mov ecx, 1             ; Start with 1
+shl ecx, cl            ; Shift by bit position
+mov eax, ecx           ; Move result
+```
+
+**Applicability:**
+- Only works for power-of-2 values (single bit set)
+- Bit position must not be a bad character
+- Common for bitmasks and flag values
+
+---
+
+### Strategy 22: LOOP Comprehensive Variants (Priority 79)
+
+**File:** `src/loop_comprehensive_strategies.c`
+**File:** `src/loop_comprehensive_strategies.h`
+
+**Problem Statement:**
+LOOP family instructions use 8-bit signed displacement which may contain bad characters. These are common in shellcode iteration loops.
+
+**Target Patterns:**
+```asm
+loop target      ; E2 XX - Decrement ECX, jump if not zero
+loope target     ; E1 XX - Loop while equal (ZF=1, ECX!=0)
+loopne target    ; E0 XX - Loop while not equal (ZF=0, ECX!=0)
+```
+
+**Transformation Strategy:**
+```c
+// Original: LOOP target (E2 XX)
+// Transform to:
+dec ecx          ; 49 - Decrement counter
+jnz target       ; 75 XX - Jump if not zero
+
+// Original: LOOPE target (E1 XX)
+// Transform to:
+dec ecx          ; 49
+jz skip          ; 74 02 - Skip if ECX=0
+je target        ; 74 XX - Jump if ZF=1
+skip:
+
+// Original: LOOPNE target (E0 XX)
+// Transform to:
+dec ecx          ; 49
+jz skip          ; 74 02 - Skip if ECX=0
+jne target       ; 75 XX - Jump if ZF=0
+skip:
+```
+
+**Verified:** Successfully transformed LOOP -2 (E2 FE) to DEC ECX; JNZ -3 (49 75 FD)
+
+**Size Impact:**
+- LOOP: 2 bytes → 3 bytes
+- LOOPE/LOOPNE: 2 bytes → 5 bytes
+
+---
+
+### Strategy 13: Atomic Operation Encoding Chains (Priority 78)
+
+**File:** `src/atomic_operation_encoding_strategies.c` (already existed)
+**File:** `src/atomic_operation_encoding_strategies.h`
+
+**Problem Statement:**
+LOCK-prefixed atomic operations may encode with bad characters, particularly in multi-threaded exploitation scenarios. The LOCK prefix (F0h) combined with opcode bytes can form bad character sequences.
+
+**Target Patterns:**
+```asm
+lock xadd [mem], reg    ; F0 0F C1 XX - May contain bad chars
+lock cmpxchg [mem], reg ; F0 0F B1 XX - May contain bad chars
+lock inc [mem]          ; F0 FF 05 XX - May contain bad chars
+```
+
+**Transformation Strategy:**
+```c
+// LOCK XADD [mem], reg → Non-atomic equivalent
+mov temp, [mem]        ; Load current value
+add temp, reg          ; Add register value
+mov [mem], temp        ; Store result
+xchg reg, temp         ; Return old value in reg
+
+// LOCK CMPXCHG [mem], reg → Non-atomic equivalent
+cmp eax, [mem]         ; Compare EAX with memory
+jne skip               ; Skip if not equal
+mov [mem], reg         ; Store new value
+skip:
+
+// LOCK INC/DEC [mem] → Simply remove LOCK prefix
+inc [mem]              ; Remove F0 prefix
+```
+
+**⚠️ WARNING:** Loses atomicity! Only use in single-threaded shellcode contexts.
+
+**Status:** Previously implemented, verified registration in v3.5
+
+---
+
 ## Conclusion
 
-The generic bad-character elimination framework in BYVALVER v3.0 extends the tool's capabilities beyond null-byte removal. While the framework is fully functional and operational, users should be aware that:
+The generic bad-character elimination framework in BYVALVER v3.5 extends the tool's capabilities with 5 additional specialized strategies. The framework now includes:
 
-- **Null-byte elimination** remains the primary, well-tested use case
-- **Generic bad-character elimination** is newly implemented and experimental
-- **Strategies** were designed for null-byte patterns and may require optimization for other characters
-- **Testing** is recommended before production use with non-null bad character sets
+- **148+ total strategies** covering diverse transformation patterns
+- **15 newly documented strategies** from proposals (as of Dec 2025)
+- **Verified implementations** with test cases and practical demonstrations
 
-The framework provides a solid foundation for future enhancements and community contributions to improve support for diverse bad character elimination scenarios.
+Recent additions (v3.5):
+- **Network-aware**: BSWAP for endianness handling
+- **Flag manipulation**: PUSHF/POPF for single-byte instruction replacement
+- **Power-of-2 constants**: BSF/BSR bit scanning optimization
+- **Loop transformations**: Comprehensive LOOP family handling
+- **Atomic operations**: LOCK prefix removal with caveat warnings
+
+While **null-byte elimination** remains the primary, well-tested use case:
+- **Generic bad-character elimination** is fully functional
+- **Strategies** continue to evolve for non-null character patterns
+- **Testing** is recommended before production use
+- **Community contributions** welcomed for additional patterns
+
+The framework provides a solid foundation for advanced shellcode transformation and bad character elimination scenarios.

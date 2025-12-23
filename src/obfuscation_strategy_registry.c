@@ -17,7 +17,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#define MAX_OBFUSCATION_STRATEGIES 50
+#define MAX_OBFUSCATION_STRATEGIES 100
 
 static strategy_t* obfuscation_strategies[MAX_OBFUSCATION_STRATEGIES];
 static int obfuscation_strategy_count = 0;

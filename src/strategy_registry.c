@@ -42,12 +42,17 @@
 #include "partial_register_optimization_strategies.h"
 #include "segment_register_teb_peb_strategies.h"
 #include "cmov_conditional_elimination_strategies.h"
+#include "bswap_endianness_transformation_strategies.h"
+#include "pushf_popf_bit_manipulation_strategies.h"
+#include "bit_scanning_constant_strategies.h"
+#include "loop_comprehensive_strategies.h"
+#include "atomic_operation_encoding_strategies.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h> // Added for debug prints
 // #include <stdio.h> // Removed for printf
 
-#define MAX_STRATEGIES 200
+#define MAX_STRATEGIES 400
 
 // Global ML strategist instance for this module
 static ml_strategist_t g_ml_strategist;
@@ -175,6 +180,12 @@ void register_fpu_stack_immediate_encoding_strategies();  // Register FPU stack 
 void register_xlat_table_lookup_strategies();  // Register XLAT table lookup strategies (priority 72)
 void register_lahf_sahf_flag_preservation_strategies();  // Register LAHF/SAHF flag preservation strategies (priority 83)
 
+// NEW: 5 Additional Denulling Strategies (v3.5 - 2025-12-22)
+void register_bswap_endianness_transformation_strategies();  // Register BSWAP endianness transformation strategies (priority 85)
+void register_pushf_popf_bit_manipulation_strategies();  // Register PUSHF/POPF bit manipulation strategies (priority 81)
+void register_bit_scanning_constant_strategies();  // Register BSF/BSR bit scanning strategies (priority 80)
+void register_loop_comprehensive_strategies();  // Register LOOP comprehensive variants strategies (priority 79)
+
 // NEW: 5 Additional Denulling Strategies (v3.0)
 void register_jcxz_null_safe_loop_termination_strategy(); // Priority 86 - JCXZ null-safe loop termination
 void register_push_byte_immediate_stack_construction_strategy(); // Priority 82 - PUSH byte immediate stack construction
@@ -238,10 +249,17 @@ void init_strategies(int use_ml) {
     register_segment_register_teb_peb_strategies();  // Register segment register TEB/PEB access strategies (priority 94)
     register_cmov_conditional_elimination_strategies();  // Register CMOV conditional move elimination strategies (priority 92)
     register_advanced_string_operation_strategies();  // Register advanced string operation strategies (priority 85)
+
+    // NEW: 5 Additional Denulling Strategies (v3.5 - 2025-12-22)
+    register_bswap_endianness_transformation_strategies();  // Register BSWAP endianness transformation strategies (priority 85)
+    register_lahf_sahf_flag_preservation_strategies();  // Register LAHF/SAHF flag preservation strategies (priority 83)
+    register_pushf_popf_bit_manipulation_strategies();  // Register PUSHF/POPF bit manipulation strategies (priority 81)
+    register_bit_scanning_constant_strategies();  // Register BSF/BSR bit scanning strategies (priority 80)
+    register_loop_comprehensive_strategies();  // Register LOOP comprehensive variants strategies (priority 79)
     register_atomic_operation_encoding_strategies();  // Register atomic operation encoding strategies (priority 78)
+
     register_fpu_stack_immediate_encoding_strategies();  // Register FPU stack immediate encoding strategies (priority 76)
     register_xlat_table_lookup_strategies();  // Register XLAT table lookup strategies (priority 72)
-    register_lahf_sahf_flag_preservation_strategies();  // Register LAHF/SAHF flag preservation strategies (priority 83)
 
     // NEW: Discovered Strategies (2025-12-16)
     register_pushw_word_immediate_strategies();  // Register PUSHW 16-bit immediate strategies (priority 87)
@@ -634,6 +652,30 @@ void register_xlat_table_lookup_strategies() {
 void register_lahf_sahf_flag_preservation_strategies() {
     extern strategy_t lahf_sahf_flag_preservation_strategy;
     register_strategy(&lahf_sahf_flag_preservation_strategy);
+}
+
+// Register the BSWAP endianness transformation strategy
+void register_bswap_endianness_transformation_strategies() {
+    extern strategy_t bswap_endianness_transformation_strategy;
+    register_strategy(&bswap_endianness_transformation_strategy);
+}
+
+// Register the PUSHF/POPF bit manipulation strategy
+void register_pushf_popf_bit_manipulation_strategies() {
+    extern strategy_t pushf_popf_flag_manipulation_strategy;
+    register_strategy(&pushf_popf_flag_manipulation_strategy);
+}
+
+// Register the bit scanning constant strategy
+void register_bit_scanning_constant_strategies() {
+    extern strategy_t bit_scanning_constant_strategy;
+    register_strategy(&bit_scanning_constant_strategy);
+}
+
+// Register the LOOP comprehensive variants strategy
+void register_loop_comprehensive_strategies() {
+    extern strategy_t loop_comprehensive_strategy;
+    register_strategy(&loop_comprehensive_strategy);
 }
 
 

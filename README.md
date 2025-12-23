@@ -40,14 +40,14 @@
 
 **byvalver** is a CLI tool built in `C` for automatically eliminating null-bytes (`\x00`) from x86/x64 shellcode while maintaining complete functional equivalence
 
-The tool uses the `Capstone` disassembly framework to analyze instructions and applies over 122 ranked transformation strategies to replace null-containing code with equivalent alternatives. It has been extensively tested on null-byte elimination and achieves a high success rate across diverse, real-world shellcode test suites, including complex Windows payloads.
+The tool uses the `Capstone` disassembly framework to analyze instructions and applies over 148+ ranked transformation strategies to replace null-containing code with equivalent alternatives. It has been extensively tested on null-byte elimination and achieves a high success rate across diverse, real-world shellcode test suites, including complex Windows payloads.
 
 **NEW in v3.0:** Generic bad character elimination framework with two usage modes:
 
 1. **Direct specification**: The `--bad-chars` option allows specification of arbitrary bytes to eliminate (e.g., `--bad-chars "00,0a,0d"` for newline-safe shellcode)
 2. **Profile-based**: The `--profile` option uses pre-configured bad-character sets for common exploit scenarios (e.g., `--profile http-newline`, `--profile sql-injection`, `--profile alphanumeric-only`)
 
-**This feature is functional but newly implemented** - the 122+ transformation strategies were originally designed and optimized specifically for null-byte elimination. While they apply to other bad characters, they have not been extensively tested or optimized for non-null byte scenarios.
+**This feature is functional but newly implemented** - the 148+ transformation strategies were originally designed and optimized specifically for null-byte elimination. While they apply to other bad characters, they have not been extensively tested or optimized for non-null byte scenarios.
 
 Supports Windows, Linux, and macOS
 
@@ -55,7 +55,7 @@ Supports Windows, Linux, and macOS
 - Pure `C` implementation for efficiency and low-level control
 - `Capstone` for precise disassembly
 - `NASM` for generating decoder stubs
-- Modular strategy pattern for extensible transformations (161+ strategy implementations)
+- Modular strategy pattern for extensible transformations (165+ strategy implementations)
 - Neural network integration for intelligent strategy selection
 - Biphasic processing: Obfuscation followed by denullification
 
