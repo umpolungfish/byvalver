@@ -5,6 +5,40 @@
 CC = gcc
 PKG_CONFIG ?= pkg-config
 
+# Check for ncurses library (required for TUI)
+HAS_NCURSES := $(shell $(PKG_CONFIG) --exists ncurses && echo 1)
+ifeq ($(HAS_NCURSES),1)
+    NCURSES_CFLAGS := $(shell $(PKG_CONFIG) --cflags ncurses)
+    NCURSES_LIBS   := $(shell $(PKG_CONFIG) --libs ncurses)
+    TUI_ENABLED := 1
+    CPPFLAGS_EXTRA = -DTUI_ENABLED
+else
+    # Check if ncurses is available directly (fallback)
+    ifeq ($(shell pkg-config --exists ncursesw || echo 0),0)
+        ifeq ($(shell ldconfig -p | grep -q libncursesw && echo 1),1)
+            NCURSES_CFLAGS :=
+            NCURSES_LIBS   := -lncursesw
+            TUI_ENABLED := 1
+            CPPFLAGS_EXTRA = -DTUI_ENABLED
+        else ifeq ($(shell ldconfig -p | grep -q libncurses && echo 1),1)
+            NCURSES_CFLAGS :=
+            NCURSES_LIBS   := -lncurses
+            TUI_ENABLED := 1
+            CPPFLAGS_EXTRA = -DTUI_ENABLED
+        else
+            TUI_ENABLED := 0
+            NCURSES_CFLAGS :=
+            NCURSES_LIBS :=
+            CPPFLAGS_EXTRA =
+        endif
+    else
+        NCURSES_CFLAGS := $(shell $(PKG_CONFIG) --cflags ncursesw)
+        NCURSES_LIBS   := $(shell $(PKG_CONFIG) --libs ncursesw)
+        TUI_ENABLED := 1
+        CPPFLAGS_EXTRA = -DTUI_ENABLED
+    endif
+endif
+
 # Prefer pkg-config to locate Capstone (Homebrew/macOS installs vary)
 CAPSTONE_CFLAGS_RAW := $(shell $(PKG_CONFIG) --cflags capstone 2>/dev/null)
 CAPSTONE_LIBS       := $(shell $(PKG_CONFIG) --libs capstone 2>/dev/null)
@@ -15,12 +49,12 @@ CAPSTONE_LIBS       := $(shell $(PKG_CONFIG) --libs capstone 2>/dev/null)
 CAPSTONE_CFLAGS := $(shell echo "$(CAPSTONE_CFLAGS_RAW)" | sed 's|/include/capstone|/include|g')
 
 # Preprocessor/compiler flags
-CPPFLAGS = $(CAPSTONE_CFLAGS)
+CPPFLAGS = $(CAPSTONE_CFLAGS) $(NCURSES_CFLAGS) $(CPPFLAGS_EXTRA)
 CFLAGS = -Wall -Wextra -pedantic -std=c99 -O2
 
 # Linker flags / libs
 LDFLAGS =
-LDLIBS = $(if $(CAPSTONE_LIBS),$(CAPSTONE_LIBS),-lcapstone) -lm
+LDLIBS = $(if $(CAPSTONE_LIBS),$(CAPSTONE_LIBS),-lcapstone) -lm $(NCURSES_LIBS)
 
 # Directories
 SRC_DIR = src
@@ -28,7 +62,15 @@ BIN_DIR = bin
 TARGET = byvalver
 
 # Get all C files, excluding old/duplicate versions
-ALL_SRCS = $(wildcard $(SRC_DIR)/*.c)
+BASE_SRCS = $(wildcard $(SRC_DIR)/*.c)
+TUI_SRCS = $(wildcard $(SRC_DIR)/tui/*.c)
+
+# Conditionally include TUI source files if TUI is enabled
+ifneq ($(TUI_ENABLED),0)
+ALL_SRCS = $(BASE_SRCS) $(TUI_SRCS)
+else
+ALL_SRCS = $(BASE_SRCS)
+endif
 
 # Exclude files:
 # - lib_api.c (library-specific, not needed for CLI)
@@ -108,6 +150,10 @@ static: all
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
 
+# Create TUI subdirectory
+$(BIN_DIR)/tui:
+	@mkdir -p $(BIN_DIR)/tui
+
 # Build decoder stub from assembly
 decoder.bin: decoder.asm
 	@echo "[NASM] Assembling decoder stub..."
@@ -126,6 +172,11 @@ $(BIN_DIR)/$(TARGET): $(BIN_DIR) $(OBJS)
 
 # Compile source files
 $(BIN_DIR)/%.o: $(SRC_DIR)/%.c decoder.h
+	@echo "[CC] Compiling $<..."
+	@$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+
+# Compile TUI source files
+$(BIN_DIR)/tui/%.o: $(SRC_DIR)/tui/%.c decoder.h $(BIN_DIR)/tui
 	@echo "[CC] Compiling $<..."
 	@$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
@@ -203,6 +254,16 @@ uninstall:
 	@rm -f /usr/local/bin/$(TARGET)
 	@rm -f /usr/local/share/man/man1/byvalver.1
 	@echo "[OK] Uninstalled byvalver"
+
+# Build without TUI support
+no-tui:
+	@echo "[BUILD] Building byvalver without TUI support..."
+	@$(MAKE) TUI_ENABLED=0 NCURSES_CFLAGS= NCURSES_LIBS= CPPFLAGS_EXTRA= CPPFLAGS="$(CAPSTONE_CFLAGS) "
+
+# Build with TUI support explicitly enabled
+with-tui:
+	@echo "[BUILD] Building byvalver with TUI support..."
+	@$(MAKE) CPPFLAGS_EXTRA="-DTUI_ENABLED" TUI_ENABLED=1
 
 # Format code (if clang-format is available)
 format:

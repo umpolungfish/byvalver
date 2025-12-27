@@ -80,6 +80,7 @@ typedef struct {
     int help_requested;
     int version_requested;
     int output_file_specified_via_flag;  // Whether -o/--output was used
+    int interactive_menu;                // Whether to launch interactive TUI menu
 } byvalver_config_t;
 
 // Function declarations

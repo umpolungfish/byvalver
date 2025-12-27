@@ -16,6 +16,11 @@
 #include "utils.h"  // For create_parent_dirs
 #include "batch_processing.h"  // For batch directory processing
 #include "../decoder.h" // Include the generated decoder stub header
+#include "processing.h"  // For process_single_file
+
+#ifdef TUI_ENABLED
+#include "tui/tui_menu.h"
+#endif
 
 size_t find_entry_point(const uint8_t *shellcode, size_t size);
 
@@ -97,9 +102,9 @@ static char* format_shellcode(const uint8_t *data, size_t size, const char *form
 
 // Process a single file with the given configuration
 // Returns EXIT_SUCCESS on success, or an error code on failure
-static int process_single_file(const char *input_file, const char *output_file,
-                               byvalver_config_t *config, size_t *input_size_out,
-                               size_t *output_size_out) {
+int process_single_file(const char *input_file, const char *output_file,
+                        byvalver_config_t *config, size_t *input_size_out,
+                        size_t *output_size_out) {
     // Open input file
     FILE *file = fopen(input_file, "rb");
     if (!file) {
@@ -340,6 +345,10 @@ int main(int argc, char *argv[]) {
     // Parse command-line arguments
     int parse_result = parse_arguments(argc, argv, config);
 
+    // Initialize ML strategist only if ML option is enabled (after parsing arguments)
+    ml_strategist_t ml_strategist;
+    int ml_initialized = 0;
+
     // Handle special requests (help/version) first
     if (config->help_requested) {
         print_detailed_help(stdout, argv[0]);
@@ -353,9 +362,20 @@ int main(int argc, char *argv[]) {
         return EXIT_SUCCESS;
     }
 
-    // Initialize ML strategist only if ML option is enabled (after parsing arguments)
-    ml_strategist_t ml_strategist;
-    int ml_initialized = 0;
+    // Launch interactive TUI menu if requested
+    if (config->interactive_menu) {
+#ifdef TUI_ENABLED
+        int tui_result = run_tui_menu(config);
+        config_free(config);
+        if (ml_initialized) ml_strategist_cleanup(&ml_strategist);
+        return tui_result;
+#else
+        fprintf(stderr, "Error: TUI mode not compiled in. Please rebuild with TUI support enabled.\n");
+        config_free(config);
+        return EXIT_GENERAL_ERROR;
+#endif
+    }
+
     if (config->use_ml_strategist) {
         // Determine the absolute path to the ML model file
         char model_path[PATH_MAX];

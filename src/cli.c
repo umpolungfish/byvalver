@@ -351,7 +351,10 @@ int parse_arguments(int argc, char *argv[], byvalver_config_t *config) {
         
         // Output options
         {"output", required_argument, 0, 'o'},
-        
+
+        // TUI options
+        {"menu", no_argument, 0, 0},
+
         {0, 0, 0, 0}
     };
     
@@ -540,6 +543,9 @@ int parse_arguments(int argc, char *argv[], byvalver_config_t *config) {
                     else if (strcmp(opt_name, "failed-files") == 0) {
                         config->failed_files_output = optarg;
                     }
+                    else if (strcmp(opt_name, "menu") == 0) {
+                        config->interactive_menu = 1;
+                    }
                 }
                 break;
                 
@@ -587,25 +593,118 @@ int parse_arguments(int argc, char *argv[], byvalver_config_t *config) {
 
 // Load configuration from file
 int load_config_file(const char *config_path, byvalver_config_t *config) {
-    // This is a placeholder implementation
-    // In a full implementation, this would parse a JSON/YAML config file
     if (!config_path || !config) {
         return EXIT_CONFIG_ERROR;
     }
-    
-    // Check if file exists
+
     FILE *file = fopen(config_path, "r");
     if (!file) {
         fprintf(stderr, "Warning: Config file not found: %s\n", config_path);
         return EXIT_SUCCESS; // Not a fatal error, just a warning
     }
-    
-    fclose(file);
-    
-    // For now, just acknowledge the config file exists
-    if (config->verbose) {
-        fprintf(stderr, "Using config file: %s\n", config_path);
+
+    char line[1024];
+    char current_section[64] = "";
+    int line_num = 0;
+
+    while (fgets(line, sizeof(line), file)) {
+        line_num++;
+
+        // Remove trailing newline
+        line[strcspn(line, "\r\n")] = '\0';
+
+        // Trim leading whitespace
+        char *trimmed = line;
+        while (*trimmed && isspace((unsigned char)*trimmed)) trimmed++;
+
+        // Skip empty lines and comments
+        if (*trimmed == '\0' || *trimmed == '#') continue;
+
+        // Check for section header [section]
+        if (*trimmed == '[') {
+            char *end = strchr(trimmed, ']');
+            if (end) {
+                *end = '\0';
+                strncpy(current_section, trimmed + 1, sizeof(current_section) - 1);
+                current_section[sizeof(current_section) - 1] = '\0';
+            }
+            continue;
+        }
+
+        // Parse key = value
+        char *equals = strchr(trimmed, '=');
+        if (!equals) continue;
+
+        *equals = '\0';
+        char *key = trimmed;
+        char *value = equals + 1;
+
+        // Trim whitespace from key and value
+        char *key_end = key + strlen(key) - 1;
+        while (key_end > key && isspace((unsigned char)*key_end)) *key_end-- = '\0';
+
+        while (*value && isspace((unsigned char)*value)) value++;
+        char *value_end = value + strlen(value) - 1;
+        while (value_end > value && isspace((unsigned char)*value_end)) *value_end-- = '\0';
+
+        // Parse based on section and key
+        if (strcmp(current_section, "general") == 0) {
+            if (strcmp(key, "verbose") == 0) config->verbose = atoi(value);
+            else if (strcmp(key, "quiet") == 0) config->quiet = atoi(value);
+            else if (strcmp(key, "show_stats") == 0) config->show_stats = atoi(value);
+            else if (strcmp(key, "validate_output") == 0) config->validate_output = atoi(value);
+            else if (strcmp(key, "dry_run") == 0) config->dry_run = atoi(value);
+        }
+        else if (strcmp(current_section, "processing") == 0) {
+            if (strcmp(key, "use_biphasic") == 0) config->use_biphasic = atoi(value);
+            else if (strcmp(key, "use_pic_generation") == 0) config->use_pic_generation = atoi(value);
+            else if (strcmp(key, "encode_shellcode") == 0) config->encode_shellcode = atoi(value);
+            else if (strcmp(key, "xor_key") == 0) config->xor_key = (uint32_t)strtol(value, NULL, 16);
+            else if (strcmp(key, "strategy_limit") == 0) config->strategy_limit = atoi(value);
+            else if (strcmp(key, "timeout_seconds") == 0) config->timeout_seconds = atoi(value);
+            else if (strcmp(key, "max_size") == 0) config->max_size = (size_t)atoll(value);
+        }
+        else if (strcmp(current_section, "output") == 0) {
+            if (strcmp(key, "output_format") == 0) {
+                config->output_format = strdup(value);
+            }
+        }
+        else if (strcmp(current_section, "bad_characters") == 0) {
+            if (strcmp(key, "bad_chars") == 0) {
+                bad_char_config_t *bad_chars = parse_bad_chars_string(value);
+                if (bad_chars) {
+                    if (config->bad_chars) free(config->bad_chars);
+                    config->bad_chars = bad_chars;
+                }
+            }
+        }
+        else if (strcmp(current_section, "ml") == 0) {
+            if (strcmp(key, "use_ml_strategist") == 0) config->use_ml_strategist = atoi(value);
+            else if (strcmp(key, "metrics_enabled") == 0) config->metrics_enabled = atoi(value);
+            else if (strcmp(key, "metrics_export_json") == 0) config->metrics_export_json = atoi(value);
+            else if (strcmp(key, "metrics_export_csv") == 0) config->metrics_export_csv = atoi(value);
+            else if (strcmp(key, "metrics_show_live") == 0) config->metrics_show_live = atoi(value);
+            else if (strcmp(key, "metrics_output_file") == 0) {
+                if (config->metrics_output_file) free(config->metrics_output_file);
+                config->metrics_output_file = strdup(value);
+            }
+        }
+        else if (strcmp(current_section, "batch") == 0) {
+            if (strcmp(key, "file_pattern") == 0) {
+                if (config->file_pattern) free(config->file_pattern);
+                config->file_pattern = strdup(value);
+            }
+            else if (strcmp(key, "recursive") == 0) config->recursive = atoi(value);
+            else if (strcmp(key, "preserve_structure") == 0) config->preserve_structure = atoi(value);
+            else if (strcmp(key, "continue_on_error") == 0) config->continue_on_error = atoi(value);
+        }
     }
-    
+
+    fclose(file);
+
+    if (!config->quiet) {
+        fprintf(stderr, "Loaded configuration from: %s\n", config_path);
+    }
+
     return EXIT_SUCCESS;
 }
