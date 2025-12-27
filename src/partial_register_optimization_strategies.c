@@ -15,6 +15,26 @@
 #include <stdlib.h>
 
 /**
+ * Get register index for 8-bit registers (ModR/M encoding)
+ * AL=0, CL=1, DL=2, BL=3, AH=4, CH=5, DH=6, BH=7
+ */
+static uint8_t get_reg_index_8bit(x86_reg reg) {
+    switch (reg) {
+        case X86_REG_AL: return 0;
+        case X86_REG_CL: return 1;
+        case X86_REG_DL: return 2;
+        case X86_REG_BL: return 3;
+        case X86_REG_AH: return 4;
+        case X86_REG_CH: return 5;
+        case X86_REG_DH: return 6;
+        case X86_REG_BH: return 7;
+        default:
+            fprintf(stderr, "[WARNING] Invalid 8-bit register: %d\n", reg);
+            return 0;
+    }
+}
+
+/**
  * Transform partial register operations that contain bad characters
  *
  * Original: MOV AL, 0x00 (contains null byte)
@@ -24,40 +44,26 @@ int can_handle_partial_register_optimization(cs_insn *insn) {
     if (!insn) {
         return 0;
     }
-    
-    // Check if this is a MOV instruction involving partial registers
+
+    // ONLY handle MOV instructions with partial registers and immediate values
+    // This strategy specifically transforms: MOV r8, imm8
     if (insn->id == X86_INS_MOV && insn->detail->x86.op_count == 2) {
         cs_x86_op *dst_op = &insn->detail->x86.operands[0];
         cs_x86_op *src_op = &insn->detail->x86.operands[1];
-        
-        // Check if either operand is a partial register (8-bit: AL, AH, BL, BH, etc.)
-        if ((dst_op->type == X86_OP_REG && 
-             (dst_op->reg >= X86_REG_AL && dst_op->reg <= X86_REG_BH)) ||
-            (src_op->type == X86_OP_REG && 
-             (src_op->reg >= X86_REG_AL && src_op->reg <= X86_REG_BH))) {
-            return 1;
-        }
-        
-        // Also check for MOV with immediate that might contain bad chars
+
+        // Check if destination is a partial register and source is immediate
         if (dst_op->type == X86_OP_REG && src_op->type == X86_OP_IMM) {
-            // Check if destination is a partial register
-            if (dst_op->reg >= X86_REG_AL && dst_op->reg <= X86_REG_BH) {
+            // Only handle 8-bit registers (AL, CL, DL, BL, AH, CH, DH, BH)
+            // NOTE: These are NOT sequential in the enum!
+            x86_reg reg = dst_op->reg;
+            if (reg == X86_REG_AL || reg == X86_REG_BL || reg == X86_REG_CL || reg == X86_REG_DL ||
+                reg == X86_REG_AH || reg == X86_REG_BH || reg == X86_REG_CH || reg == X86_REG_DH) {
                 return 1;
             }
         }
     }
-    
-    // Check for other instructions with partial registers
-    if (insn->detail->x86.op_count > 0) {
-        for (int i = 0; i < insn->detail->x86.op_count; i++) {
-            if (insn->detail->x86.operands[i].type == X86_OP_REG &&
-                insn->detail->x86.operands[i].reg >= X86_REG_AL && 
-                insn->detail->x86.operands[i].reg <= X86_REG_BH) {
-                return 1;
-            }
-        }
-    }
-    
+
+    // Don't claim to handle other instructions - let other strategies handle them
     return 0;
 }
 
@@ -70,119 +76,64 @@ void generate_partial_register_optimization(struct buffer *b, cs_insn *insn) {
     if (!insn || !b) {
         return;
     }
-    
-    // Check if this is a MOV instruction with partial register and immediate
-    if (insn->id == X86_INS_MOV && insn->detail->x86.op_count == 2) {
-        cs_x86_op *dst_op = &insn->detail->x86.operands[0];
-        cs_x86_op *src_op = &insn->detail->x86.operands[1];
-        
-        if (dst_op->type == X86_OP_REG && src_op->type == X86_OP_IMM) {
-            // If destination is a partial register and immediate contains bad chars
-            if (dst_op->reg >= X86_REG_AL && dst_op->reg <= X86_REG_BH) {
-                uint8_t imm_val = (uint8_t)src_op->imm;
-                
-                // Check if immediate contains bad character (simplified null check)
-                if (imm_val == 0x00) {
-                    // Transform MOV AL, 0x00 to XOR EAX, EAX (if AL is part of EAX)
-                    x86_reg full_reg = X86_REG_EAX;  // Default to EAX
-                    
-                    // Map partial register to its full register
-                    switch(dst_op->reg) {
-                        case X86_REG_AL:
-                        case X86_REG_AH:
-                            full_reg = X86_REG_EAX;
-                            break;
-                        case X86_REG_BL:
-                        case X86_REG_BH:
-                            full_reg = X86_REG_EBX;
-                            break;
-                        case X86_REG_CL:
-                        case X86_REG_CH:
-                            full_reg = X86_REG_ECX;
-                            break;
-                        case X86_REG_DL:
-                        case X86_REG_DH:
-                            full_reg = X86_REG_EDX;
-                            break;
-                        default:
-                            full_reg = X86_REG_EAX;  // Fallback
-                            break;
-                    }
-                    
-                    // Use XOR reg, reg to zero the full register
-                    uint8_t reg_idx = get_reg_index(full_reg);
-                    buffer_write_byte(b, 0x31);  // XOR reg, reg
-                    buffer_write_byte(b, 0xC0 | (reg_idx << 3) | reg_idx);  // MOD/RM byte
-                    return;
-                }
-                else {
-                    // For non-zero immediate values, we can use MOV with full register
-                    // if the immediate doesn't contain bad chars in its 32-bit form
-                    x86_reg full_reg = X86_REG_EAX;  // Default to EAX
-                    
-                    // Map partial register to its full register
-                    switch(dst_op->reg) {
-                        case X86_REG_AL:
-                        case X86_REG_AH:
-                            full_reg = X86_REG_EAX;
-                            break;
-                        case X86_REG_BL:
-                        case X86_REG_BH:
-                            full_reg = X86_REG_EBX;
-                            break;
-                        case X86_REG_CL:
-                        case X86_REG_CH:
-                            full_reg = X86_REG_ECX;
-                            break;
-                        case X86_REG_DL:
-                        case X86_REG_DH:
-                            full_reg = X86_REG_EDX;
-                            break;
-                        default:
-                            full_reg = X86_REG_EAX;  // Fallback
-                            break;
-                    }
-                    
-                    // Use MOV reg32, imm32
-                    uint8_t reg_idx = get_reg_index(full_reg);
-                    buffer_write_byte(b, 0xB8 + reg_idx);  // MOV reg32, imm32
-                    buffer_write_byte(b, imm_val);  // Immediate value
-                    // Fill upper bytes with zeros to maintain same effect
-                    buffer_write_byte(b, 0x00);
-                    buffer_write_byte(b, 0x00);
-                    buffer_write_byte(b, 0x00);
-                    return;
-                }
-            }
-        }
+
+    // We know from can_handle that this is MOV r8, imm8
+    cs_x86_op *dst_op = &insn->detail->x86.operands[0];
+    cs_x86_op *src_op = &insn->detail->x86.operands[1];
+
+    x86_reg partial_reg = dst_op->reg;
+    uint8_t imm_val = (uint8_t)src_op->imm;
+
+    // Map partial register to its full register
+    x86_reg full_reg = X86_REG_EAX;  // Default
+    switch(partial_reg) {
+        case X86_REG_AL:
+        case X86_REG_AH:
+            full_reg = X86_REG_EAX;
+            break;
+        case X86_REG_BL:
+        case X86_REG_BH:
+            full_reg = X86_REG_EBX;
+            break;
+        case X86_REG_CL:
+        case X86_REG_CH:
+            full_reg = X86_REG_ECX;
+            break;
+        case X86_REG_DL:
+        case X86_REG_DH:
+            full_reg = X86_REG_EDX;
+            break;
+        default:
+            full_reg = X86_REG_EAX;
+            break;
     }
-    
-    // For other partial register operations, try to use equivalent full register ops
-    // or alternative encodings
-    buffer_append(b, insn->bytes, insn->size);
+
+    // Strategy: Transform MOV r8, imm to avoid null bytes
+
+    // Step 1: XOR full_reg, full_reg (zero the register)
+    uint8_t reg_idx = get_reg_index(full_reg);
+    buffer_write_byte(b, 0x31);  // XOR reg32, reg32
+    buffer_write_byte(b, 0xC0 | (reg_idx << 3) | reg_idx);  // MOD/RM byte
+
+    // Step 2: Only ADD the immediate if it's non-zero
+    // (for zero, XOR alone is sufficient)
+    if (imm_val != 0x00) {
+        // ADD partial_reg, imm8 (set the value)
+        // Encoding: 80 /0 imm8 for ADD r/m8, imm8
+        uint8_t partial_idx = get_reg_index_8bit(partial_reg);
+        buffer_write_byte(b, 0x80);  // ADD r/m8, imm8
+        buffer_write_byte(b, 0xC0 | partial_idx);  // MOD/RM: 11 000 r/m
+        buffer_write_byte(b, imm_val);  // Immediate value
+    }
+    // For MOV AL, 0 we just use XOR EAX, EAX (2 bytes total, no nulls)
 }
 
 /**
  * Transform operations to avoid partial register dependencies that cause bad chars
  */
 int can_handle_partial_register_dependency(cs_insn *insn) {
-    if (!insn) {
-        return 0;
-    }
-    
-    // Check for instructions that may have bad chars due to partial register usage
-    // This is a simplified check - in practice, we'd check the actual encoding
-    if (insn->detail->x86.op_count > 0) {
-        for (int i = 0; i < insn->detail->x86.op_count; i++) {
-            if (insn->detail->x86.operands[i].type == X86_OP_REG &&
-                insn->detail->x86.operands[i].reg >= X86_REG_AL && 
-                insn->detail->x86.operands[i].reg <= X86_REG_BH) {
-                return 1;
-            }
-        }
-    }
-    
-    return 0;
+    // Use the same logic as the main optimization function
+    return can_handle_partial_register_optimization(insn);
 }
 
 size_t get_size_partial_register_dependency(__attribute__((unused)) cs_insn *insn) {
@@ -200,5 +151,5 @@ strategy_t partial_register_optimization_strategy = {
     .can_handle = can_handle_partial_register_dependency,
     .get_size = get_size_partial_register_dependency,
     .generate = generate_partial_register_dependency,
-    .priority = 89  // As specified in documentation
+    .priority = 165  // Higher than mov_imm_enhanced (160) for specialized 8-bit register handling
 };
