@@ -693,7 +693,14 @@ byvalver -r --profile http-whitespace --pattern "*.bin" shellcodes/ output/
 byvalver --menu
 ```
 
-## Interactive Mode
+## Interactive TUI
+
+<div align="left">
+  <img src="./assets/images/menu_main.png" alt="Main TUI Menu" width="350">
+</div>
+<div align="right">
+  <img src="./assets/images/menu_proc.png" alt="Dynamic Batch Processing Menu" width="350">
+</div>
 
 byvalver includes a **fully-featured interactive TUI** (Text User Interface) with **complete CLI feature parity**. The TUI provides an intuitive, visual interface for all bad-character elimination operations, including batch processing with live statistics, ML configuration, and comprehensive file browsing.
 
@@ -808,22 +815,6 @@ Two input methods available:
 - **0-9**: Quick select menu option by number
 - **Space**: Select current directory (in file browser directory mode)
 
-### Real Processing (No Mock Code):
-
-**All processing is 100% real and functional:**
-
-- Uses the actual `process_single_file()` function from the core engine
-- Calls real `find_files()`, `init_strategies()`, `init_obfuscation_strategies()`
-- Tracks actual `batch_stats_t` with real strategy usage
-- Creates real output files in the specified directory
-- **No simulated progress** - all statistics are from actual processing
-
-**Stdout/stderr handling during batch processing:**
-- Verbose debug output is redirected to `/dev/null` during processing
-- Prevents console output from overwriting the clean ncurses display
-- Screen remains stable with only the progress UI visible
-- After processing, stdout/stderr are restored for the summary
-
 ### Requirements:
 
 Interactive mode requires the `ncurses` library to be installed on your system:
@@ -863,7 +854,7 @@ The TUI support is conditionally compiled based on ncurses availability:
 2. Select "2. Batch Process Directory"
 3. Browse for input directory containing shellcode files
 4. Browse for output directory
-5. Configure file pattern (default: *.bin) and recursive option
+5. Configure file pattern (default: <file>.bin) and recursive option
 6. Start batch processing and watch live progress with strategy statistics
 
 **Configuration Management:**
@@ -891,25 +882,8 @@ The TUI has been tested with:
 
 **Minimum recommended terminal size**: 80x24 characters (100x30 or larger recommended for full strategy table during batch processing)
 
-### Recent Improvements (December 2025):
-
-**Latest (v3.6.2):**
-- ✅ **Dual-Panel Layout**: Split-screen batch processing display (left: progress/config/stats, right: strategy table)
-- ✅ **Arrow-Key Navigation**: Profile selection supports all 13 profiles with arrow keys/j/k (fixes "10" = "1" issue)
-- ✅ **Smart Bad Char Display**: Shows actual hex values (e.g., `00,22,27,2d,3b`) when ≤25 chars
-- ✅ **Tilde Paths**: Home directory collapsed to `~` for readability (`/home/user/path` → `~/path`)
-- ✅ **Better Spacing**: Improved visual alignment between sections
-
-**Previous (v3.6.1):**
-- ✅ **Fixed**: Exit to command line bug after processing - now properly returns to main menu
-- ✅ **Enhanced**: Full strategy names displayed (50 chars, no truncation)
-- ✅ **Enhanced**: All strategies shown in statistics (removed 10-strategy limit)
-- ✅ **Added**: Configuration display during batch processing
-- ✅ **Improved**: Statistics display with "Completed: X / Y" format and success rate
-- ✅ **Restored**: Graphical file browser for input/output selection
-- ✅ **Restored**: Bad-character profile selection interface
-
 For complete TUI documentation, troubleshooting, and advanced usage, see [TUI_README.md](TUI_README.md).
+
 ## Obfuscation Strategies
 
 The obfuscation pass of `byvalver` (enabled via `--biphasic`) applies anti-analysis techniques:
