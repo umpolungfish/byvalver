@@ -457,52 +457,60 @@ int show_main_screen(byvalver_config_t *config) {
                         }
 
                         if (sub_selection == 1) {
-                            // Load Profile - show profile selection screen
-                            init_badchar_profiles();  // Initialize dynamic profiles
+                            // Load Profile - arrow-key navigation
+                            init_badchar_profiles();
+                            int selected_profile = 0;
+                            int done = 0;
 
-                            clear_right_panel();
-                            draw_right_panel_header("Select Bad Character Profile");
+                            while (!done) {
+                                clear_right_panel();
+                                draw_right_panel_header("Select Bad Character Profile");
+                                int prof_row = 5;
+                                int prof_col = RIGHT_PANEL_START + 2;
 
-                            int prof_row = 5;
-                            int prof_col = RIGHT_PANEL_START + 2;
-                            int max_visible = 10;  // Show first 10 profiles
+                                mvprintw(prof_row++, prof_col, "Arrow keys/j/k to navigate, Enter to select, ESC to cancel");
+                                prof_row++;
 
-                            mvprintw(prof_row++, prof_col, "Available Profiles:");
-                            prof_row++;
+                                for (size_t i = 0; i < NUM_PROFILES; i++) {
+                                    const badchar_profile_t *profile = &BADCHAR_PROFILES[i];
+                                    if ((int)i == selected_profile) {
+                                        attron(COLOR_PAIR(2) | A_BOLD);
+                                        mvprintw(prof_row, prof_col, " -> ");
+                                        attroff(COLOR_PAIR(2) | A_BOLD);
+                                    } else {
+                                        mvprintw(prof_row, prof_col, "    ");
+                                    }
+                                    mvprintw(prof_row++, prof_col + 4, "%zu. %s", i + 1, profile->name);
+                                    attron(COLOR_PAIR(5));
+                                    mvprintw(prof_row++, prof_col + 7, "%s", profile->description);
+                                    attroff(COLOR_PAIR(5));
+                                }
+                                refresh();
 
-                            for (size_t i = 0; i < NUM_PROFILES && i < (size_t)max_visible; i++) {
-                                const badchar_profile_t *profile = &BADCHAR_PROFILES[i];
-                                mvprintw(prof_row++, prof_col, "%zu. %s", i + 1, profile->name);
-                                attron(COLOR_PAIR(5));
-                                mvprintw(prof_row++, prof_col + 3, "%s", profile->description);
-                                attroff(COLOR_PAIR(5));
-                            }
-
-                            prof_row++;
-                            mvprintw(prof_row++, prof_col, "Enter profile number (1-%d) or ESC:", (int)NUM_PROFILES);
-                            refresh();
-
-                            int prof_choice = getch();
-                            if (prof_choice >= '1' && prof_choice <= '9') {
-                                int idx = prof_choice - '1';
-                                if (idx < (int)NUM_PROFILES) {
-                                    const badchar_profile_t *profile = &BADCHAR_PROFILES[idx];
+                                int ch = getch();
+                                if (ch == KEY_UP || ch == 'k' || ch == 'K') {
+                                    selected_profile = (selected_profile > 0) ? selected_profile - 1 : (int)NUM_PROFILES - 1;
+                                } else if (ch == KEY_DOWN || ch == 'j' || ch == 'J') {
+                                    selected_profile = (selected_profile < (int)NUM_PROFILES - 1) ? selected_profile + 1 : 0;
+                                } else if (ch == '\n' || ch == '\r' || ch == ' ') {
+                                    const badchar_profile_t *profile = &BADCHAR_PROFILES[selected_profile];
                                     bad_char_config_t *new_config = profile_to_config(profile);
                                     if (new_config) {
                                         if (config->bad_chars) free(config->bad_chars);
                                         config->bad_chars = new_config;
-
-                                        // Show success message
                                         clear_right_panel();
                                         draw_right_panel_header("Profile Loaded");
                                         attron(COLOR_PAIR(4));
-                                        mvprintw(5, RIGHT_PANEL_START + 2, "Loaded profile: %s", profile->name);
+                                        mvprintw(5, RIGHT_PANEL_START + 2, "Loaded: %s", profile->name);
                                         attroff(COLOR_PAIR(4));
-                                        mvprintw(6, RIGHT_PANEL_START + 2, "%zu bad characters configured", profile->bad_char_count);
-                                        mvprintw(8, RIGHT_PANEL_START + 2, "Press any key to continue...");
+                                        mvprintw(6, RIGHT_PANEL_START + 2, "%zu bad characters", profile->bad_char_count);
+                                        mvprintw(8, RIGHT_PANEL_START + 2, "Press any key...");
                                         refresh();
                                         getch();
+                                        done = 1;
                                     }
+                                } else if (ch == 27 || ch == 'q' || ch == 'Q') {
+                                    done = 1;
                                 }
                             }
                         } else if (sub_selection == 2) {
@@ -1589,80 +1597,107 @@ int show_processing_screen(byvalver_config_t *config) {
             clear_screen();
             draw_header("Batch Processing - Live Progress");
 
-            int progress_row = 3;
+            // Dual-panel layout
+            const int left_col = 2;
+            const int separator_col = 60;
+            const int right_col = 62;
+            int left_row = 3;
+            int right_row = 3;
+
+            // Draw vertical separator
+            for (int y = 3; y < LINES - 2; y++) {
+                mvprintw(y, separator_col, "|");
+            }
+
+            // LEFT PANEL - Progress, Configuration, Statistics, Current File
 
             // Progress bar
-            int bar_width = 50;
+            int bar_width = 48;
             int filled = (int)((float)(i + 1) / file_list.count * bar_width);
-            mvprintw(progress_row++, 5, "Progress: [");
+            mvprintw(left_row++, left_col, "Progress: [");
             attron(COLOR_PAIR(4)); // Green
             for (int j = 0; j < filled; j++) printw("=");
             attroff(COLOR_PAIR(4));
             for (int j = filled; j < bar_width; j++) printw(" ");
-            printw("] %zu/%zu files", i + 1, file_list.count);
-            progress_row++;
+            printw("] %zu/%zu", i + 1, file_list.count);
+            left_row++;
 
             // Configuration display
-            mvprintw(progress_row++, 5, " ");
-            mvprintw(progress_row++, 5, "Configuration:");
+            mvprintw(left_row++, left_col, " ");
+            mvprintw(left_row++, left_col, "Configuration:");
 
             // Bad characters
             if (config->bad_chars && config->bad_chars->bad_char_count > 0) {
                 attron(COLOR_PAIR(5));
-                mvprintw(progress_row++, 5, "  Bad chars: %d configured", config->bad_chars->bad_char_count);
+                // Build hex string of bad chars from bad_char_list (not bitmap)
+                char bad_chars_str[256];
+                int pos = 0;
+                for (int bc = 0; bc < config->bad_chars->bad_char_count && pos < 250; bc++) {
+                    if (bc > 0) {
+                        pos += snprintf(bad_chars_str + pos, sizeof(bad_chars_str) - pos, ",");
+                    }
+                    pos += snprintf(bad_chars_str + pos, sizeof(bad_chars_str) - pos,
+                                   "%02x", config->bad_chars->bad_char_list[bc]);
+                }
+                // Show actual chars if <= 25 chars, otherwise show count
+                if (strlen(bad_chars_str) <= 25) {
+                    mvprintw(left_row++, left_col, "  Bad chars: %s", bad_chars_str);
+                } else {
+                    mvprintw(left_row++, left_col, "  Bad chars: %d configured", config->bad_chars->bad_char_count);
+                }
                 attroff(COLOR_PAIR(5));
             } else {
                 attron(COLOR_PAIR(5));
-                mvprintw(progress_row++, 5, "  Bad chars: Default (0x00)");
+                mvprintw(left_row++, left_col, "  Bad chars: 00");
                 attroff(COLOR_PAIR(5));
             }
 
             // Processing options
             if (config->use_biphasic) {
                 attron(COLOR_PAIR(4));
-                mvprintw(progress_row++, 5, "  Biphasic: ON");
+                mvprintw(left_row++, left_col, "  Biphasic: ON");
                 attroff(COLOR_PAIR(4));
             }
             if (config->use_pic_generation) {
                 attron(COLOR_PAIR(4));
-                mvprintw(progress_row++, 5, "  PIC Generation: ON");
+                mvprintw(left_row++, left_col, "  PIC Generation: ON");
                 attroff(COLOR_PAIR(4));
             }
             if (config->encode_shellcode) {
                 attron(COLOR_PAIR(4));
-                mvprintw(progress_row++, 5, "  XOR Encoding: ON (key: 0x%08X)", config->xor_key);
+                mvprintw(left_row++, left_col, "  XOR Encoding: ON (key: 0x%08X)", config->xor_key);
                 attroff(COLOR_PAIR(4));
             }
             if (config->use_ml_strategist) {
                 attron(COLOR_PAIR(4));
-                mvprintw(progress_row++, 5, "  ML Strategist: ON");
+                mvprintw(left_row++, left_col, "  ML Strategist: ON");
                 attroff(COLOR_PAIR(4));
             }
 
             // Output format
             attron(COLOR_PAIR(5));
-            mvprintw(progress_row++, 5, "  Output format: %s",
+            mvprintw(left_row++, left_col, "  Output format: %s",
                     config->output_format ? config->output_format : "raw");
             attroff(COLOR_PAIR(5));
 
             // Statistics
-            mvprintw(progress_row++, 5, " ");
-            mvprintw(progress_row++, 5, "File Statistics:");
+            mvprintw(left_row++, left_col, " ");
+            mvprintw(left_row++, left_col, "File Statistics:");
 
             size_t total_attempted = stats.processed_files + stats.failed_files + stats.skipped_files;
-            mvprintw(progress_row++, 5, "  Completed:  %zu / %zu", total_attempted, file_list.count);
+            mvprintw(left_row++, left_col, "  Completed:  %zu / %zu", total_attempted, file_list.count);
 
             attron(COLOR_PAIR(4));
-            mvprintw(progress_row++, 5, "  Successful: %zu", stats.processed_files);
+            mvprintw(left_row++, left_col, "  Successful: %zu", stats.processed_files);
             attroff(COLOR_PAIR(4));
 
             attron(COLOR_PAIR(3));
-            mvprintw(progress_row++, 5, "  Failed:     %zu", stats.failed_files);
+            mvprintw(left_row++, left_col, "  Failed:     %zu", stats.failed_files);
             attroff(COLOR_PAIR(3));
 
             if (stats.skipped_files > 0) {
                 attron(COLOR_PAIR(5));
-                mvprintw(progress_row++, 5, "  Skipped:    %zu", stats.skipped_files);
+                mvprintw(left_row++, left_col, "  Skipped:    %zu", stats.skipped_files);
                 attroff(COLOR_PAIR(5));
             }
 
@@ -1672,40 +1707,76 @@ int show_processing_screen(byvalver_config_t *config) {
                 if (success_rate >= 80.0f) attron(COLOR_PAIR(4));
                 else if (success_rate >= 50.0f) attron(COLOR_PAIR(5));
                 else attron(COLOR_PAIR(3));
-                mvprintw(progress_row++, 5, "  Success rate: %.1f%%", success_rate);
+                mvprintw(left_row++, left_col, "  Success rate: %.1f%%", success_rate);
                 attroff(COLOR_PAIR(4));
                 attroff(COLOR_PAIR(5));
                 attroff(COLOR_PAIR(3));
             }
 
-            progress_row++;
+            left_row++;
 
             // Current file
-            mvprintw(progress_row++, 5, "Current file:");
+            mvprintw(left_row++, left_col, "Current file:");
             attron(A_BOLD);
-            mvprintw(progress_row++, 5, "  %s", input_path);
+            // Replace home directory with ~ for readability
+            const char *home = getenv("HOME");
+            const char *display_path = input_path;
+            char tilde_path[512];
+            if (home && strncmp(input_path, home, strlen(home)) == 0) {
+                snprintf(tilde_path, sizeof(tilde_path), "~%s", input_path + strlen(home));
+                display_path = tilde_path;
+            }
+            // Truncate filename to fit in left panel (54 chars with 2-space indent)
+            size_t input_len = strlen(display_path);
+            if (input_len > 54) {
+                // Show end of path with ellipsis
+                mvprintw(left_row++, left_col, "  ...%s", display_path + input_len - 51);
+            } else {
+                mvprintw(left_row++, left_col, "  %s", display_path);
+            }
             attroff(A_BOLD);
-            progress_row++;
+            left_row++;
 
             // Next file preview
             if (i + 1 < file_list.count) {
-                mvprintw(progress_row++, 5, "Next file:");
+                mvprintw(left_row++, left_col, "Next file:");
                 attron(COLOR_PAIR(5)); // Yellow/dim
-                mvprintw(progress_row++, 5, "  %s", file_list.paths[i + 1]);
+                // Replace home directory with ~ for readability
+                const char *display_next = file_list.paths[i + 1];
+                char tilde_next[512];
+                if (home && strncmp(file_list.paths[i + 1], home, strlen(home)) == 0) {
+                    snprintf(tilde_next, sizeof(tilde_next), "~%s", file_list.paths[i + 1] + strlen(home));
+                    display_next = tilde_next;
+                }
+                size_t next_len = strlen(display_next);
+                if (next_len > 54) {
+                    // Show end of path with ellipsis
+                    mvprintw(left_row++, left_col, "  ...%s", display_next + next_len - 51);
+                } else {
+                    mvprintw(left_row++, left_col, "  %s", display_next);
+                }
                 attroff(COLOR_PAIR(5));
             }
-            progress_row++;
+
+            // RIGHT PANEL - Strategy Statistics Table
+
+            // Add spacing to align with progress bar
+            right_row += 2;
 
             // Strategy statistics table
             if (stats.strategy_count > 0) {
-                mvprintw(progress_row++, 5, "Strategy Usage Statistics:");
-                mvprintw(progress_row++, 5, "  %-50s  %8s  %8s  %8s",
-                        "Strategy", "Total", "Success", "Rate");
-                mvprintw(progress_row++, 5, "  %s",
-                        "--------------------------------------------------------------------------------------------");
+                mvprintw(right_row++, right_col, "Strategy Usage Statistics:");
+                mvprintw(right_row++, right_col, "%-38s %6s %6s %7s",
+                        "Strategy", "Total", "Succ", "Rate");
+                mvprintw(right_row++, right_col, "%s",
+                        "----------------------------------------------------------------");
 
-                // Show ALL strategies (no limit)
-                for (int s = 0; s < (int)stats.strategy_count; s++) {
+                // Show ALL strategies that fit on screen
+                int max_strategies = LINES - right_row - 3; // Leave space for footer
+                int strategies_to_show = (int)stats.strategy_count < max_strategies ?
+                                        (int)stats.strategy_count : max_strategies;
+
+                for (int s = 0; s < strategies_to_show; s++) {
                     strategy_stats_t *usage = &stats.strategy_stats[s];
                     int total_uses = usage->success_count + usage->failure_count;
                     float success_rate = total_uses > 0 ?
@@ -1719,12 +1790,29 @@ int show_processing_screen(byvalver_config_t *config) {
                         attron(COLOR_PAIR(3)); // Red for low success
                     }
 
-                    mvprintw(progress_row++, 5, "  %-50s  %8d  %8d  %7.1f%%",
-                            usage->name, total_uses, usage->success_count, success_rate);
+                    // Truncate strategy name to 38 chars for right panel
+                    char truncated_name[64];
+                    snprintf(truncated_name, sizeof(truncated_name), "%s", usage->name);
+
+                    mvprintw(right_row++, right_col, "%-38s %6d %6d %6.1f%%",
+                            truncated_name, total_uses, usage->success_count, success_rate);
 
                     attroff(COLOR_PAIR(4));
                     attroff(COLOR_PAIR(5));
                     attroff(COLOR_PAIR(3));
+                }
+
+                // Show indicator if more strategies exist
+                if ((int)stats.strategy_count > strategies_to_show) {
+                    attron(COLOR_PAIR(5));
+                    mvprintw(right_row++, right_col, "... and %d more strategies",
+                            (int)stats.strategy_count - strategies_to_show);
+                    attroff(COLOR_PAIR(5));
+                }
+
+                // Clear remaining lines in right panel to avoid garbage
+                for (int y = right_row; y < LINES - 2; y++) {
+                    mvprintw(y, right_col, "%*s", COLS - right_col - 1, "");
                 }
             }
 

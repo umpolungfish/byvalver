@@ -5,7 +5,7 @@
 ## THE SHELLCODE BAD-CHARACTER BANISHER
 
 <div align="center">
-  <img src="./images/byvalver_logo.png" alt="byvalver logo" width="750">
+  <img src="./assets/images/byvalver_logo.png" alt="byvalver logo" width="750">
 </div>
 
 <div align="center">
@@ -295,7 +295,7 @@ The engine employs multi-pass processing (obfuscation → denulling) with robust
 
 ### DENULLING IN ACTION
 
-![byvalver batch processing](./images/denulling.gif)
+![byvalver batch processing](./assets/images/denulling.gif)
 
 ### Performance Metrics
 
@@ -538,7 +538,7 @@ Python tools for validation:
 - Batch system for scalable processing
 
 <div align="center">
-  <img src="./images/Strategy_Categories_Taxonomy_Compact.png" alt="Strategy Categories Taxonomy" width="700">
+  <img src="./assets/images/Strategy_Categories_Taxonomy_Compact.png" alt="Strategy Categories Taxonomy" width="700">
 </div>
 
 ## System Requirements
@@ -893,6 +893,14 @@ The TUI has been tested with:
 
 ### Recent Improvements (December 2025):
 
+**Latest (v3.6.2):**
+- ✅ **Dual-Panel Layout**: Split-screen batch processing display (left: progress/config/stats, right: strategy table)
+- ✅ **Arrow-Key Navigation**: Profile selection supports all 13 profiles with arrow keys/j/k (fixes "10" = "1" issue)
+- ✅ **Smart Bad Char Display**: Shows actual hex values (e.g., `00,22,27,2d,3b`) when ≤25 chars
+- ✅ **Tilde Paths**: Home directory collapsed to `~` for readability (`/home/user/path` → `~/path`)
+- ✅ **Better Spacing**: Improved visual alignment between sections
+
+**Previous (v3.6.1):**
 - ✅ **Fixed**: Exit to command line bug after processing - now properly returns to main menu
 - ✅ **Enhanced**: Full strategy names displayed (50 chars, no truncation)
 - ✅ **Enhanced**: All strategies shown in statistics (removed 10-strategy limit)

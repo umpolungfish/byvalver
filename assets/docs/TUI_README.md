@@ -6,12 +6,37 @@ byvalver includes a fully-featured interactive TUI mode with **complete CLI feat
 
 ## Recent Improvements (December 2025)
 
-### Critical Bug Fixes
+### Latest Updates (v3.6.2)
+- ✅ **Dual-Panel Batch Processing Layout**: Split-screen design for better information density
+  - Left panel: Progress bar, configuration, file statistics, current/next file
+  - Right panel: Strategy usage statistics table
+  - Vertical separator (ASCII `|`) divides the panels
+  - Maximizes visible information without scrolling
+- ✅ **Arrow-Key Profile Navigation**: Improved bad-character profile selection
+  - Navigate all 13 profiles with arrow keys or j/k (vi-style)
+  - Fixes number input limitation (typing "10" was interpreted as "1")
+  - Wrap-around navigation (top↔bottom)
+  - Selection indicator shows current choice
+- ✅ **Smart Bad Character Display**: Shows actual hex values when space permits
+  - Displays hex values (e.g., "00,22,27,2d,3b") if ≤25 characters
+  - Falls back to count (e.g., "5 configured") for longer sets
+  - Eliminates confusion from displaying wrong values
+- ✅ **Tilde Path Replacement**: Home directory paths collapsed for readability
+  - `/home/username/path/to/file` → `~/path/to/file`
+  - Saves screen space in file display sections
+  - Maintains full path functionality
+- ✅ **Improved Visual Spacing**: Better layout alignment
+  - Added spacing between progress bar and strategy statistics
+  - Cleaner separation of information sections
+
+### Previous Updates (v3.6.1)
+
+#### Critical Bug Fixes
 - ✅ **Exit to Main Menu**: Fixed bug where processing completion would exit to command line instead of returning to main menu
   - Affects both single file and batch processing modes
   - Now properly returns to main menu, allowing continued operations
 
-### Display Enhancements
+#### Display Enhancements
 - ✅ **Full Strategy Names**: Strategy names no longer truncated (50 character display, previously 30)
   - Example: "Multi-Stage PEB Traversal Strategy" now fully visible
 - ✅ **All Strategies Shown**: Removed artificial 10-strategy limit
@@ -23,12 +48,13 @@ byvalver includes a fully-featured interactive TUI mode with **complete CLI feat
   - Success rate percentage calculated from completions
   - Eliminated confusing "Successful: 0" messages during processing
 
-### Re-Implemented Features
+#### Re-Implemented Features
 - ✅ **Graphical File Browser**: Restored file/directory browsing functionality
   - Available in both single file and batch processing screens
   - Browse input/output files and directories visually
 - ✅ **Bad-Character Profiles**: Restored profile selection interface
   - Access to all 13 pre-configured profiles (http-newline, sql-injection, etc.)
+  - Arrow-key navigation with visual selection indicator
   - Load profile option in Bad Characters screen
 
 ## Getting Started
@@ -72,35 +98,64 @@ This launches the interactive text-based menu system. Make sure the ncurses libr
 
 ### 3. Batch Processing with Live Updates
 
-The batch processing screen provides **real-time visual feedback** during processing:
+The batch processing screen uses a **dual-panel layout** for maximum information density:
 
-#### Progress Bar
 ```
-Progress: [==========================                    ] 52/100 files
+Left Panel (cols 2-58)          |  Right Panel (cols 62+)
+                                |
+Progress: [=============    ]   |  Strategy Usage Statistics:
+                                |  Strategy              Total Succ  Rate
+Configuration:                  |  -------------------------
+  Bad chars: 00,0a,0d           |  lea_disp_enhanced       93   92  98.9%
+  PIC Generation: ON            |  mov_mem_disp_null       66   65  98.5%
+  Output format: raw            |  mov_imm_enhanced       106  106 100.0%
+                                |  indirect_call_mem       23   23 100.0%
+File Statistics:                |  arithmetic_imm          31   31 100.0%
+  Completed:  7 / 12            |  mov_mem_disp_enhanced   83   83 100.0%
+  Successful: 3                 |  Multi-Stage PEB         35   35 100.0%
+  Failed:     4                 |  ... (all strategies)
+  Success rate: 42.9%           |
+                                |
+Current file:                   |
+  ~/RUBBISH/BIG_SAMPLE/file.bin |
+                                |
+Next file:                      |
+  ~/RUBBISH/BIG_SAMPLE/next.bin |
 ```
 
-#### Live File Statistics (Color-Coded)
-- **Completed**: Shows progress as "X / Y" (files attempted / total files)
-- ✅ **Successful**: Green text - files with zero bad characters remaining
-- ❌ **Failed**: Red text - files with errors or remaining bad characters
-- **Success rate**: Percentage calculated from successful completions
+#### Left Panel Contents
 
-#### Current File Display
-Shows the file currently being processed in **bold text**
+**Progress Bar**
+```
+Progress: [==========================                    ] 52/100
+```
 
-#### Next File Preview
-Shows the next file in queue with **yellow/dim** text
-
-#### Configuration Display
-Shows active processing configuration:
-- Bad characters count and profile used
+**Configuration Display** - Shows active processing configuration with actual bad char values:
+- Bad characters: Displays hex values (e.g., `00,22,27,2d,3b`) if ≤25 chars, otherwise shows count
 - Biphasic mode status (ON/OFF)
 - PIC Generation status (ON/OFF)
 - XOR Encoding with key (if enabled)
 - ML Strategist status (ON/OFF)
 - Output format
 
-#### Dynamic Strategy Statistics Table
+**Live File Statistics** (Color-Coded)
+- **Completed**: Shows progress as "X / Y" (files attempted / total files)
+- ✅ **Successful**: Green text - files with zero bad characters remaining
+- ❌ **Failed**: Red text - files with errors or remaining bad characters
+- **Success rate**: Percentage calculated from successful completions
+
+**Current File Display**
+- Shows the file currently being processed in **bold text**
+- Home directory replaced with `~` for readability (e.g., `~/path/to/file` instead of `/home/user/path/to/file`)
+- Truncated with `...` prefix if longer than 54 characters
+
+**Next File Preview**
+- Shows the next file in queue with **yellow/dim** text
+- Also uses tilde notation for home directory paths
+
+#### Right Panel Contents
+
+**Dynamic Strategy Statistics Table**
 ```
 Strategy Usage Statistics:
   Strategy                                            Total   Success      Rate
