@@ -697,7 +697,6 @@ byvalver --menu
 
 <div align="left">
   <img src="./assets/images/menu_main.png" alt="Main TUI Menu" width="350">
-</div>
 <div align="right">
   <img src="./assets/images/menu_proc.png" alt="Dynamic Batch Processing Menu" width="350">
 </div>
