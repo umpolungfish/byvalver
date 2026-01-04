@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
+#include "byvalver.h"  // For ByvalArch
+#include "audit_log.h"  // For audit_level_t
 
 // Application version information
 #define BYVALVER_VERSION_MAJOR 3
@@ -65,13 +67,30 @@ typedef struct {
     
     // Advanced options
     char *output_format;  // "raw", "c", "python", "powershell", "hexstring"
-    char *target_arch;    // "x86", "x64"
+    char *target_arch;    // "x86", "x64", "arm", "arm64"
+    ByvalArch arch;       // Parsed architecture enum
     int strategy_limit;
     size_t max_size;
     int timeout_seconds;
     int dry_run;
     int show_stats;
     int validate_output;
+
+    // Integration options
+    int enable_metasploit;
+    char *metasploit_host;
+    int metasploit_port;
+    char *metasploit_token;
+    int enable_cobalt_strike;
+    char *cs_teamserver_host;
+    int cs_teamserver_port;
+    char *cs_username;
+    char *cs_password;
+
+    // Enterprise audit options
+    int enable_audit;
+    char *audit_log_file;
+    audit_level_t audit_level;
 
     // Bad byte configuration (NEW in v3.0)
     bad_byte_config_t *bad_bytes;  // Dynamically allocated bad byte configuration
