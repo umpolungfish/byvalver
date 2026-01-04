@@ -114,6 +114,7 @@ byvalver_config_t* config_create_default(void) {
     config->xor_key = 0;
     config->output_format = "raw";
     config->target_arch = "x64";
+    config->arch = BYVAL_ARCH_X64;
     config->strategy_limit = 0; // unlimited by default
     config->max_size = 10 * 1024 * 1024; // 10MB default max
     config->timeout_seconds = 0; // no timeout by default
@@ -488,10 +489,18 @@ int parse_arguments(int argc, char *argv[], byvalver_config_t *config) {
                     }
                     else if (strcmp(opt_name, "arch") == 0) {
                         config->target_arch = optarg;
-                        // Validate architecture
-                        if (strcmp(optarg, "x86") != 0 && strcmp(optarg, "x64") != 0) {
+                        // Validate architecture and set enum
+                        if (strcmp(optarg, "x86") == 0) {
+                            config->arch = BYVAL_ARCH_X86;
+                        } else if (strcmp(optarg, "x64") == 0) {
+                            config->arch = BYVAL_ARCH_X64;
+                        } else if (strcmp(optarg, "arm") == 0) {
+                            config->arch = BYVAL_ARCH_ARM;
+                        } else if (strcmp(optarg, "arm64") == 0) {
+                            config->arch = BYVAL_ARCH_ARM64;
+                        } else {
                             fprintf(stderr, "Error: Invalid target architecture: %s\n", optarg);
-                            fprintf(stderr, "Valid architectures: x86, x64\n");
+                            fprintf(stderr, "Valid architectures: x86, x64, arm, arm64\n");
                             return EXIT_INVALID_ARGUMENTS;
                         }
                     }

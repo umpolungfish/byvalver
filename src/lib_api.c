@@ -58,6 +58,7 @@ void byval_init_options(ByvalOptions *options) {
     options->max_passes = 3;
     options->xor_encode = 0;
     options->xor_key = 0;
+    options->arch = BYVAL_ARCH_X86;  // Default to x86
 }
 
 const char* byval_error_string(ByvalError error) {
@@ -138,7 +139,7 @@ ByvalError byval_clean(const uint8_t *input, size_t input_size,
     }
 
     // Process shellcode to remove null bytes
-    struct buffer processed = remove_null_bytes(input, input_size);
+    struct buffer processed = remove_null_bytes(input, input_size, options->arch);
 
     // Check if processing failed
     if (processed.data == NULL || processed.size == 0) {

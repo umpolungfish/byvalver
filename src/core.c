@@ -6,6 +6,33 @@
 #include "strategy.h"  // For provide_ml_feedback
 #include "ml_strategist.h"  // For metrics tracking functions
 
+// Helper function to get Capstone arch and mode from ByvalArch
+void get_capstone_arch_mode(ByvalArch arch, cs_arch *cs_arch, cs_mode *cs_mode) {
+    switch (arch) {
+        case BYVAL_ARCH_X86:
+            *cs_arch = CS_ARCH_X86;
+            *cs_mode = CS_MODE_32;
+            break;
+        case BYVAL_ARCH_X64:
+            *cs_arch = CS_ARCH_X86;
+            *cs_mode = CS_MODE_64;
+            break;
+        case BYVAL_ARCH_ARM:
+            *cs_arch = CS_ARCH_ARM;
+            *cs_mode = CS_MODE_ARM;
+            break;
+        case BYVAL_ARCH_ARM64:
+            *cs_arch = CS_ARCH_ARM64;
+            *cs_mode = CS_MODE_ARM;
+            break;
+        default:
+            // Default to x86-32
+            *cs_arch = CS_ARCH_X86;
+            *cs_mode = CS_MODE_32;
+            break;
+    }
+}
+
 // Global bad byte context instance (v3.0)
 bad_byte_context_t g_bad_byte_context = {0};
 
@@ -500,7 +527,7 @@ static void process_relative_jump(struct buffer *new_shellcode,
     }
 }
 
-struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
+struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size, ByvalArch arch) {
     csh handle;
     cs_insn *insn_array;
     size_t count;
@@ -518,8 +545,12 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size) {
     }
     fprintf(stderr, "\n");
 
-    if (cs_open(CS_ARCH_X86, CS_MODE_32, &handle) != CS_ERR_OK) {
-        fprintf(stderr, "[ERROR] cs_open failed!\n");
+    cs_arch capstone_arch;
+    cs_mode capstone_mode;
+    get_capstone_arch_mode(arch, &capstone_arch, &capstone_mode);
+
+    if (cs_open(capstone_arch, capstone_mode, &handle) != CS_ERR_OK) {
+        fprintf(stderr, "[ERROR] cs_open failed for architecture %d!\n", arch);
         return new_shellcode;
     }
 
@@ -1070,8 +1101,8 @@ void fallback_memory_operation(struct buffer *b, cs_insn *insn) {
     }
 }
 
-struct buffer adaptive_processing(const uint8_t *input, size_t size) {
-    struct buffer intermediate = remove_null_bytes(input, size);
+struct buffer adaptive_processing(const uint8_t *input, size_t size, ByvalArch arch) {
+    struct buffer intermediate = remove_null_bytes(input, size, arch);
 
     // Verification pass: check if any nulls remain
     if (!verify_null_elimination(&intermediate)) {
@@ -1081,7 +1112,11 @@ struct buffer adaptive_processing(const uint8_t *input, size_t size) {
         cs_insn *insn_array;
         size_t count;
         
-        if (cs_open(CS_ARCH_X86, CS_MODE_32, &handle) == CS_ERR_OK) {
+        cs_arch capstone_arch;
+        cs_mode capstone_mode;
+        get_capstone_arch_mode(arch, &capstone_arch, &capstone_mode);
+        
+        if (cs_open(capstone_arch, capstone_mode, &handle) == CS_ERR_OK) {
             cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
             count = cs_disasm(handle, input, size, 0, 0, &insn_array);
             
@@ -1264,7 +1299,7 @@ void handle_unhandled_instruction_with_nulls(struct buffer *b, cs_insn *insn) {
  * analytical difficulty. This pass CAN introduce null bytes - Pass 2
  * will clean them up.
  */
-struct buffer apply_obfuscation(const uint8_t *shellcode, size_t size) {
+struct buffer apply_obfuscation(const uint8_t *shellcode, size_t size, ByvalArch arch) {
     csh handle;
     cs_insn *insn_array;
     size_t count;
@@ -1274,8 +1309,12 @@ struct buffer apply_obfuscation(const uint8_t *shellcode, size_t size) {
     fprintf(stderr, "\n=== PASS 1: OBFUSCATION ===\n");
     fprintf(stderr, "[OBFUSC] Input size: %zu bytes\n", size);
 
-    if (cs_open(CS_ARCH_X86, CS_MODE_32, &handle) != CS_ERR_OK) {
-        fprintf(stderr, "[ERROR] Obfuscation: cs_open failed!\n");
+    cs_arch capstone_arch;
+    cs_mode capstone_mode;
+    get_capstone_arch_mode(arch, &capstone_arch, &capstone_mode);
+
+    if (cs_open(capstone_arch, capstone_mode, &handle) != CS_ERR_OK) {
+        fprintf(stderr, "[ERROR] Obfuscation: cs_open failed for architecture %d!\n", arch);
         return obfuscated;
     }
 
@@ -1345,7 +1384,7 @@ struct buffer apply_obfuscation(const uint8_t *shellcode, size_t size) {
  * Combines Pass 1 (Obfuscation) and Pass 2 (Null-Elimination) for
  * maximum evasion and null-byte elimination.
  */
-struct buffer biphasic_process(const uint8_t *shellcode, size_t size) {
+struct buffer biphasic_process(const uint8_t *shellcode, size_t size, ByvalArch arch) {
     fprintf(stderr, "\n");
     fprintf(stderr, "╔════════════════════════════════════════════════════════╗\n");
     fprintf(stderr, "║  BYVALVER BIPHASIC PROCESSING PIPELINE                ║\n");
@@ -1354,7 +1393,7 @@ struct buffer biphasic_process(const uint8_t *shellcode, size_t size) {
     fprintf(stderr, "Original shellcode: %zu bytes\n", size);
 
     // Pass 1: Obfuscation & Complexification
-    struct buffer pass1_output = apply_obfuscation(shellcode, size);
+    struct buffer pass1_output = apply_obfuscation(shellcode, size, arch);
     
     if (pass1_output.size == 0) {
         fprintf(stderr, "[ERROR] Pass 1 failed, aborting biphasic processing\n");
@@ -1363,7 +1402,7 @@ struct buffer biphasic_process(const uint8_t *shellcode, size_t size) {
 
     // Pass 2: Null-Byte Elimination
     fprintf(stderr, "=== PASS 2: NULL-BYTE ELIMINATION ===\n");
-    struct buffer pass2_output = remove_null_bytes(pass1_output.data, pass1_output.size);
+    struct buffer pass2_output = remove_null_bytes(pass1_output.data, pass1_output.size, arch);
     
     // Free Pass 1 intermediate buffer
     buffer_free(&pass1_output);
@@ -1381,7 +1420,7 @@ struct buffer biphasic_process(const uint8_t *shellcode, size_t size) {
 }
 
 // Function to count instructions and bad bytes in shellcode
-void count_shellcode_stats(const uint8_t *shellcode, size_t size, int *instruction_count, int *bad_byte_count) {
+void count_shellcode_stats(const uint8_t *shellcode, size_t size, int *instruction_count, int *bad_byte_count, ByvalArch arch) {
     if (!shellcode || size == 0 || !instruction_count || !bad_byte_count) {
         if (instruction_count) *instruction_count = 0;
         if (bad_byte_count) *bad_byte_count = 0;
@@ -1395,7 +1434,11 @@ void count_shellcode_stats(const uint8_t *shellcode, size_t size, int *instructi
     int bad_byte_total = 0;
 
     // Initialize Capstone disassembler
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
+    cs_arch capstone_arch;
+    cs_mode capstone_mode;
+    get_capstone_arch_mode(arch, &capstone_arch, &capstone_mode);
+    
+    if (cs_open(capstone_arch, capstone_mode, &handle) != CS_ERR_OK) {
         *instruction_count = 0;
         *bad_byte_count = 0;
         return;

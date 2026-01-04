@@ -194,17 +194,17 @@ int process_single_file(const char *input_file, const char *output_file,
 
         // Now apply null-byte elimination to the PIC shellcode
         if (config->use_biphasic) {
-            new_shellcode = biphasic_process(pic_result.data, pic_result.size);
+            new_shellcode = biphasic_process(pic_result.data, pic_result.size, config->arch);
         } else {
-            new_shellcode = remove_null_bytes(pic_result.data, pic_result.size);
+            new_shellcode = remove_null_bytes(pic_result.data, pic_result.size, config->arch);
         }
 
         // Free PIC result
         pic_free_result(&pic_result);
     } else if (config->use_biphasic) {
-        new_shellcode = biphasic_process(shellcode, file_size);
+        new_shellcode = biphasic_process(shellcode, file_size, config->arch);
     } else {
-        new_shellcode = remove_null_bytes(shellcode, file_size);
+        new_shellcode = remove_null_bytes(shellcode, file_size, config->arch);
     }
 
     // Verify the shellcode was processed successfully

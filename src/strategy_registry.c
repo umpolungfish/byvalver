@@ -48,6 +48,7 @@
 #include "loop_comprehensive_strategies.h"
 #include "atomic_operation_encoding_strategies.h"
 #include "bcd_arithmetic_obfuscation_strategies.h"
+#include "arm_strategies.h"  // ARM plumbing strategies
 #include "enter_leave_alternative_encoding_strategies.h"
 #include "bit_counting_constant_strategies.h"
 #include "simd_xmm_register_strategies.h"
@@ -404,6 +405,9 @@ void init_strategies(int use_ml) {
     fprintf(stderr, "[DEBUG] Registered %d strategies\n", strategy_count);
     #endif
     // printf("init_strategies: Registered %d strategies.\n", strategy_count); // Removed debug print
+
+    // ARM Plumbing Strategies - Bypass bad byte blockages in ARM shellcode
+    register_arm_strategies();  // Register ARM valve strategies for cross-architecture plumbing
 
     // Initialize ML strategy registry if ML is enabled
     if (use_ml && g_ml_initialized) {

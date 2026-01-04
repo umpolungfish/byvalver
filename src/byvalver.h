@@ -35,6 +35,20 @@ typedef enum {
 } ByvalError;
 
 /* ============================================================================
+ * Enumerations
+ * ============================================================================ */
+
+/**
+ * @brief Supported architectures for shellcode processing
+ */
+typedef enum {
+    BYVAL_ARCH_X86,      /**< x86 (32-bit) architecture */
+    BYVAL_ARCH_X64,      /**< x64 (64-bit) architecture */
+    BYVAL_ARCH_ARM,      /**< ARM (32-bit) architecture */
+    BYVAL_ARCH_ARM64     /**< ARM64 (64-bit) architecture */
+} ByvalArch;
+
+/* ============================================================================
  * Structures
  * ============================================================================ */
 
@@ -47,6 +61,7 @@ typedef struct {
     int max_passes;           /**< Maximum number of processing passes (default: 3) */
     int xor_encode;           /**< XOR encode output with key (0 = off, 1 = on) */
     uint32_t xor_key;         /**< XOR encoding key (used if xor_encode = 1) */
+    ByvalArch arch;           /**< Target architecture (default: BYVAL_ARCH_X86) */
 } ByvalOptions;
 
 /**
