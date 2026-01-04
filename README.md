@@ -42,20 +42,18 @@
 
 ## Overview
 
-`byvalver` is a CLI tool built in `C` for automatically eliminating `bad-bytes` from x86/x64 shellcode while maintaining complete functional equivalence
+`byvalver` is a CLI tool built in `C` for automatically eliminating (or **"banishing"**) `bad-bytes` from x86/x64 shellcode while maintaining complete functional equivalence  
 
-The tool uses the `Capstone` disassembly framework to analyze instructions and applies over 153+ ranked transformation strategies to replace `bad-byte`-containing code with equivalent alternatives. It has been extensively tested on `null-byte` elimination and achieves a high success rate across diverse, real-world shellcode test suites, including complex Windows payloads.
+The tool uses the `Capstone` disassembly framework to analyze instructions and applies over 153+ ranked transformation strategies to replace `bad-byte`-containing code with equivalent alternatives  
 
-it has also been extended to a generic `bad-byte` elimination framework with two usage modes:
+The generic `bad-byte` banishment framework provides 2x usage modes:
 
-1. **Direct specification**: The `--bad-bytes` option allows specification of arbitrary bytes to eliminate (e.g., `--bad-bytes "00,0a,0d"` for newline-safe shellcode)
+1. **Direct specification**: The `--bad-bytes` option allows specification of arbitrary bytes to banish (e.g., `--bad-bytes "00,0a,0d"` for newline-safe shellcode)
 2. **Profile-based**: The `--profile` option uses pre-configured bad-byte sets for common exploit scenarios (e.g., `--profile http-newline`, `--profile sql-injection`, `--profile alphanumeric-only`)
 
-**This feature is functional but newly implemented** - the 153+ transformation strategies were originally designed and optimized specifically for null-byte elimination. While they apply to other bad bytes, they have not been extensively tested or optimized for non-null byte scenarios.
+Supports `Windows`, `Linux`, and `macOS`
 
-Supports Windows, Linux, and macOS
-
-**CORE TECHNOLOGIES:**
+**CORE TECH:**
 - Pure `C` implementation for efficiency and low-level control
 - `Capstone` for precise disassembly
 - `NASM` for generating decoder stubs
@@ -64,9 +62,7 @@ Supports Windows, Linux, and macOS
 - Biphasic processing: Obfuscation followed by denullification
 
 > [!NOTE]
-> **Null-byte elimination** (`--bad-bytes "00"` or default): Well-tested with 100% success rate on diverse test corpus
->
-> **Generic bad-byte elimination** (`--bad-bytes "00,0a,0d"` etc.): Newly implemented in v3.0. The framework is functional and strategies apply generically, but effectiveness for non-null characters has not been comprehensively validated. Success rates may vary depending on the specific bad bytes and shellcode complexity.
+> **Null-byte elimination** (`--bad-bytes "00"` or default): WELL-TESTED / **Generic bad-byte elimination** (`--bad-bytes "00,0a,0d"` etc.): NEWLY IMPLEMENTED
 
 ### BAD-BYTE BANISHMENT IN ACTION
 
@@ -94,7 +90,7 @@ sudo make install-man  # Install man page
 
 ### Basic Usage
 
-**ELIMINATE NULL BYTES (DEFAULT):**
+**banish NULL BYTES (DEFAULT):**
 ```bash
 byvalver input.bin output.bin
 ```
@@ -113,7 +109,7 @@ byvalver --profile alphanumeric-only input.bin output.bin
 
 **MANUAL BAD-BYTE SPECIFICATION:**
 ```bash
-# Eliminate null bytes and newlines
+# banish null bytes and newlines
 byvalver --bad-bytes "00,0a,0d" input.bin output.bin
 ```
 
@@ -170,15 +166,15 @@ byvalver -r --profile http-newline input_dir/ output_dir/
 
 ---
 
-`byvalver` includes an **interactive TUI** (Text User Interface) with **complete CLI feature parity**.  
+`byvalver` includes an **interactive TUI** (Text User Interface) with **1:1 CLI feature parity**.  
 
-The TUI provides an intuitive, visual interface for all bad-byte elimination operations, including:  
+The TUI provides an intuitive, visual interface for all `bad-byte` banishment operations, including:  
 
 + batch processing with live statistics
 + ML configuration &
 + comprehensive file browsing
 
-Launch the interactive mode with the `--menu` flag:
+Launch the TUI with the `--menu` flag:
 
 ```bash
 byvalver --menu
@@ -358,11 +354,11 @@ The TUI has been tested with:
 
 For complete TUI documentation, troubleshooting, and advanced usage, see [TUI_README.md](TUI_README.md).
 
-## TARGETED BAD-BYTE ELIMINATION
+## TARGETED BAD-BYTE BANISHMENT
 
 ### OVERVIEW
 
-The `--bad-bytes` option allows you to specify any set of bytes to eliminate from your shellcode.
+The `--bad-bytes` option allows you to specify any set of bytes to banish from your shellcode.
 
 ### IMPLEMENTATION DETAILS
 
@@ -383,7 +379,7 @@ The `--bad-bytes` option allows you to specify any set of bytes to eliminate fro
 
 ### RECOMMENDATIONS
 
-1. **For production use:** Stick with default null-byte elimination mode
+1. **For production use:** Stick with default null-byte banishment mode
 2. **For experimentation:** Test the `--bad-bytes` feature with your specific use case and validate the output
 3. **Always verify:** Use `verify_denulled.py --bad-bytes "XX,YY"` to confirm all bad bytes were eliminated
 4. **Expect variability:** Some shellcode may not be fully cleanable with certain bad byte sets
@@ -458,15 +454,15 @@ For detailed profile documentation, see [docs/BAD_BYTE_PROFILES.md](docs/BAD_BYT
 
 ## FEATURES
 
-### HIGH NULL-BYTE ELIMINATION SUCCESS RATE
+### HIGH NULL-BYTE banishment SUCCESS RATE
 <div align="center">
-  <strong>Achieved 100% null-byte elimination on a diverse test corpus representing common and complex null sources.</strong>
+  <strong>Achieved 100% null-byte banishment on a diverse test corpus representing common and complex null sources.</strong>
 </div>
 
 > This success rate applies specifically to null-byte (`\x00`) elimination, which has been extensively tested and optimized.
 
 ### ADVANCED TRANSFORMATION ENGINE
-153+ strategy implementations covering virtually all common null-byte sources (multiple new strategy families added in v3.0 and v3.6):
+163+ strategy implementations covering virtually all common null-byte sources and general bad-byte patterns (multiple new strategy families added in v3.0, v3.6, and v3.7):
 - `CALL/POP` and stack-based immediate loading
 - `PEB` traversal with hashed API resolution
 - Advanced hash-based API resolution with complex algorithms
@@ -491,6 +487,16 @@ For detailed profile documentation, see [docs/BAD_BYTE_PROFILES.md](docs/BAD_BYT
 - **NEW in v3.6**: `POPCNT`/`LZCNT`/`TZCNT` bit counting for constants
 - **NEW in v3.6**: `SIMD` `XMM` register immediate loading
 - **NEW in v3.6**: `JECXZ`/`JRCXZ` zero-test jump transformations
+- **NEW in v3.7**: Conditional jump opcode bad-byte elimination (JE/JNE/JG/JL with bad opcodes)
+- **NEW in v3.7**: Register-to-register transfer bad-byte opcodes (MOV/XCHG alternatives)
+- **NEW in v3.7**: Stack frame pointer bad-byte elimination (PUSH/POP EBP alternatives)
+- **NEW in v3.7**: ModR/M and SIB byte bad-byte elimination (alternative register combinations)
+- **NEW in v3.7**: Multi-byte immediate partial bad-byte (rotation optimization)
+- **NEW in v3.7**: Bitwise operation immediate bad-byte (AND/OR/XOR/TEST with registers)
+- **NEW in v3.7**: One-byte opcode substitution (INC/DEC/PUSH/POP alternatives)
+- **NEW in v3.7**: String instruction prefix bad-byte (REP prefix to loop conversion)
+- **NEW in v3.7**: Operand size prefix bad-byte (16-bit to 32-bit conversion)
+- **NEW in v3.7**: Segment register bad-byte detection (FS/GS prefix detection)
 - Comprehensive support for `MOV`, `ADD/SUB`, `XOR`, `LEA`, `CMP`, `PUSH`, and more
 
 The engine employs multi-pass processing (obfuscation → denulling) with robust fallback mechanisms for edge cases
@@ -534,7 +540,7 @@ Avg Confidence:          0.0015              ░░░░░░░░░░░�
 Strategy                                  Attempts    Success%    Confidence
 --------                                  --------    --------    ----------
 ret_immediate                                  134    █████████████░░░░░░░░░░░░   50.00%
-MOVZX/MOVSX Null-Byte Elimination              162    █████████████░░░░░░░░░░░░   50.00%
+MOVZX/MOVSX Null-Byte banishment              162    █████████████░░░░░░░░░░░░   50.00%
 transform_mov_reg_mem_self                     774    █████████████░░░░░░░░░░░░   50.00%
 cmp_mem_reg_null                                96    ████████████░░░░░░░░░░░░░   46.88%
 cmp_mem_reg                                    264    ████████████░░░░░░░░░░░░░   46.97%
@@ -544,7 +550,7 @@ Push Optimized                                4214    ███████░�
 ModRM Byte Null Bypass                          82    ██████░░░░░░░░░░░░░░░░░░░   25.61%
 conservative_arithmetic                       5172    █████░░░░░░░░░░░░░░░░░░░░   21.37%
 arithmetic_addsub_enhanced                    1722    ████░░░░░░░░░░░░░░░░░░░░░   18.12%
-PUSH Immediate Null-Byte Elimination          3066    ████░░░░░░░░░░░░░░░░░░░░░   16.54%
+PUSH Immediate Null-Byte banishment          3066    ████░░░░░░░░░░░░░░░░░░░░░   16.54%
 SIB Addressing                                9560    ████░░░░░░░░░░░░░░░░░░░░░   16.03%
 generic_mem_null_disp_enhanced               22130    ███░░░░░░░░░░░░░░░░░░░░░░   15.52%
 SALC-based Zero Comparison                    1654    ███░░░░░░░░░░░░░░░░░░░░░░   12.88%
@@ -654,7 +660,7 @@ When using `--stats` flag, `byvalver` provides detailed analytics:
 - Most complex files (by instruction count)
 - Largest/smallest files by input size
 - Files with largest expansion ratios
-- Bad byte elimination statistics per file
+- Bad byte banishment statistics per file
 
 **BATCH PROCESSING SUMMARY:**
 - Success/failure percentages
@@ -833,7 +839,7 @@ byvalver [OPTIONS] <input> [output]
 - `-v, --version`: Version
 - `-V, --verbose`: Verbose
 - `-q, --quiet`: Quiet
-- `--bad-bytes BYTES`: Comma-separated hex bytes to eliminate (default: "00")
+- `--bad-bytes BYTES`: Comma-separated hex bytes to banish (default: "00")
 - `--profile NAME`: Use predefined bad-byte profile (e.g., http-newline, sql-injection)
 - `--list-profiles`: List all available bad-byte profiles
 - `--biphasic`: Obfuscate + denull
@@ -849,7 +855,7 @@ byvalver [OPTIONS] <input> [output]
 
 **EXAMPLES:**
 ```bash
-# Default: eliminate null bytes only (well-tested, recommended)
+# Default: banish null bytes only (well-tested, recommended)
 byvalver shellcode.bin clean.bin
 
 # v3.0 NEW: List available bad-byte profiles
@@ -979,7 +985,7 @@ Model auto-loaded at runtime with path resolution.
 cat ml_metrics.log
 ```
 
-**RECOMMENDATION:** ML mode needs retraining with diverse bad-byte datasets before production use. Currently optimized for null-byte elimination only.
+**RECOMMENDATION:** ML mode needs retraining with diverse bad-byte datasets before production use. Currently optimized for null-byte banishment only.
 
 ## DEVELOPMENT
 
@@ -997,7 +1003,7 @@ cat ml_metrics.log
 
 For persistent issues, use verbose mode and check logs  
 
-If bad-byte elimination fails on specific shellcode, consider adding targeted strategies to the registry.
+If bad-byte banishment fails on specific shellcode, consider adding targeted strategies to the registry.
 
 ## LICENSE
 

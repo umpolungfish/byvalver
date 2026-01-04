@@ -489,7 +489,7 @@ python3 verify_denulled.py output3.bin --bad-bytes "00,0a,0d"
 
 ### Current Strategy Count
 
-**Total Strategies:** 153+ (after implementing Tier 1, additional high-priority strategies, and 20 new strategies)
+**Total Strategies:** 163+ (after implementing Tier 1, additional high-priority strategies, and 30 new strategies including 10 general bad-byte strategies)
 
 **Strategy Categories:**
 - MOV instruction strategies: 20+ variants
@@ -1120,6 +1120,421 @@ Reference implementation commits:
 - Strategy Updates (Phase 4): Bulk strategy refactoring
 - Verification (Phase 5): Python tool updates
 - ML Integration (Phase 6): Feature extraction updates
+
+---
+
+## v3.7 General Bad-Byte Elimination Strategies (2026-01-03)
+
+The following 10 strategies were added specifically to enhance general bad-byte elimination capabilities beyond null-byte-only scenarios. These strategies target instruction encoding elements (opcodes, ModR/M bytes, SIB bytes, prefixes) that may contain arbitrary bad bytes.
+
+### Strategy: Conditional Jump Opcode Bad-Byte Elimination (Priority 92)
+
+**File:** `src/conditional_jump_opcode_badbyte_strategies.c`
+**File:** `src/conditional_jump_opcode_badbyte_strategies.h`
+
+**Problem Statement:**
+Conditional jump instructions (JE, JNE, JG, JL, etc.) use opcodes in the range 0x70-0x7F which may themselves be bad bytes in certain contexts.
+
+**Target Patterns:**
+```asm
+je target     ; 0x74 XX - opcode 0x74 may be bad byte
+jne target    ; 0x75 XX - opcode 0x75 may be bad byte
+jg target     ; 0x7F XX - opcode 0x7F may be bad byte
+```
+
+**Transformation Strategy:**
+```c
+// Original: JE target (0x74 XX)
+// Transform to:
+jne skip      ; Inverse condition (0x75 02)
+jmp target    ; Unconditional jump (0xEB XX)
+skip:
+```
+
+**Implementation:**
+- Detects conditional jumps with bad opcodes
+- Uses inverse condition lookup table (JE→JNE, JG→JLE, etc.)
+- Replaces with inverse conditional + unconditional jump pattern
+- Size: 2 bytes → 4 bytes
+
+**Applicability:**
+- Common in shellcode with restrictive bad-byte sets
+- Essential for profile-based elimination (http-newline, sql-injection)
+- Priority 92 (highest of the new strategies)
+
+---
+
+### Strategy: Register-to-Register Transfer Bad-Byte Opcodes (Priority 90)
+
+**File:** `src/reg_to_reg_badbyte_strategies.c`
+**File:** `src/reg_to_reg_badbyte_strategies.h`
+
+**Problem Statement:**
+MOV and XCHG register-to-register operations may encode with bad bytes in their opcodes (0x89, 0x8B, 0x90-0x97 for XCHG).
+
+**Target Patterns:**
+```asm
+mov eax, ebx  ; 0x89 D8 - opcode 0x89 may be bad
+xchg eax, ecx ; 0x91 - opcode 0x91 may be bad
+```
+
+**Transformation Strategy:**
+```c
+// Original: MOV EAX, EBX (0x89 D8)
+// Transform to:
+push ebx      ; 0x53
+pop eax       ; 0x58
+
+// Original: XCHG EAX, ECX (0x91)
+// Transform to:
+push eax      ; 0x50
+push ecx      ; 0x51
+pop eax       ; 0x58
+pop ecx       ; 0x59
+```
+
+**Applicability:**
+- Very common operation in shellcode
+- PUSH/POP opcodes (0x50-0x5F) unlikely to be bad bytes
+- Size overhead: 2 bytes → 2-4 bytes
+
+---
+
+### Strategy: Stack Frame Pointer Bad-Byte Elimination (Priority 89)
+
+**File:** `src/stack_frame_badbyte_strategies.c`
+**File:** `src/stack_frame_badbyte_strategies.h`
+
+**Problem Statement:**
+PUSH EBP (0x55) and POP EBP (0x5D) are common prologue/epilogue instructions whose opcodes may be bad bytes.
+
+**Target Patterns:**
+```asm
+push ebp      ; 0x55 - common function prologue
+pop ebp       ; 0x5D - common function epilogue
+```
+
+**Transformation Strategy:**
+```c
+// Original: PUSH EBP (0x55)
+// Transform to:
+sub esp, 4    ; 0x83 EC 04
+mov [esp], ebp ; 0x89 2C 24
+
+// Original: POP EBP (0x5D)
+// Transform to:
+mov ebp, [esp] ; 0x8B 2C 24
+add esp, 4    ; 0x83 C4 04
+```
+
+**Applicability:**
+- Essential for function prologue/epilogue patterns
+- Common in compiler-generated shellcode
+- Size: 1 byte → 6 bytes
+
+---
+
+### Strategy: ModR/M and SIB Byte Bad-Byte Elimination (Priority 88)
+
+**File:** `src/modrm_sib_badbyte_strategies.c`
+**File:** `src/modrm_sib_badbyte_strategies.h`
+
+**Problem Statement:**
+Memory operations encode addressing information in ModR/M and SIB bytes which may contain bad bytes based on register combinations and addressing modes.
+
+**Target Patterns:**
+```asm
+mov [eax], ebx  ; ModR/M byte depends on registers
+mov [esp+4], eax ; SIB byte may contain bad bytes
+```
+
+**Transformation Strategy:**
+```c
+// Original: MOV [EAX], EBX (ModR/M byte is bad)
+// Transform to:
+push ebx       ; Save source
+push eax       ; Save address
+pop edi        ; Address to EDI
+pop eax        ; Source to EAX
+mov [edi], eax ; Use different register combination
+```
+
+**Implementation Considerations:**
+- Requires calculation of ModR/M byte for each instruction
+- Must find alternative register combinations
+- SIB byte handling for complex addressing modes
+- Size: 2-3 bytes → 8-12 bytes
+
+**Applicability:**
+- Critical for memory operations
+- Common in data manipulation shellcode
+- May require temporary register allocation
+
+---
+
+### Strategy: Multi-Byte Immediate Partial Bad-Byte (Priority 87)
+
+**File:** `src/partial_immediate_badbyte_strategies.c`
+**File:** `src/partial_immediate_badbyte_strategies.h`
+
+**Problem Statement:**
+32-bit immediate values where only specific bytes are bad can be optimized using rotation instead of full reconstruction.
+
+**Target Patterns:**
+```asm
+mov eax, 0x12340056  ; Only byte at offset 2 is bad (0x00)
+mov ebx, 0x78005634  ; Only byte at offset 1 is bad (0x00)
+```
+
+**Transformation Strategy:**
+```c
+// Original: MOV EAX, 0x12340056 (byte 2 is 0x00)
+// Rotate to: 0x00561234 → Load → Rotate back
+mov eax, 0x00561234  ; Load rotated value (may still have bad byte)
+ror eax, 16          ; Rotate right 16 bits → 0x12340056
+
+// Better: Find rotation with no bad bytes
+mov eax, 0x34005612  ; Rotated left 8 bits
+rol eax, 24          ; Rotate left 24 bits → 0x12340056
+```
+
+**Implementation:**
+- Tests all 4 rotation positions (0, 8, 16, 24 bits)
+- Selects rotation with fewest bad bytes
+- Only applies if rotated value has fewer bad bytes than original
+- Size: 5 bytes → 10 bytes (MOV + ROR/ROL)
+
+**Applicability:**
+- Optimizes partial bad-byte immediates (common case)
+- More efficient than full reconstruction
+- Particularly effective for network byte order values
+
+---
+
+### Strategy: Bitwise Operation Immediate Bad-Byte (Priority 86)
+
+**File:** `src/bitwise_immediate_badbyte_strategies.c`
+**File:** `src/bitwise_immediate_badbyte_strategies.h`
+
+**Problem Statement:**
+Bitwise operations (AND, OR, XOR, TEST) with immediate values may encode with bad bytes in the immediate operand.
+
+**Target Patterns:**
+```asm
+and eax, 0x00FFFF00  ; Immediate contains bad bytes
+or ebx, 0x12005678   ; Immediate contains bad bytes
+xor ecx, 0x00000001  ; Immediate contains bad bytes
+test edx, 0xFF000000 ; Immediate contains bad bytes
+```
+
+**Transformation Strategy:**
+```c
+// Original: AND EAX, 0x00FFFF00
+// Transform to:
+push ecx             ; Save temp register
+mov ecx, 0x00FFFF00  ; Load immediate (using null-free MOV strategy)
+and eax, ecx         ; Perform operation with register
+pop ecx              ; Restore temp register
+```
+
+**Implementation:**
+- Uses temporary register (ECX or EDX based on destination)
+- Leverages existing MOV immediate bad-byte strategies
+- Preserves flags (except for TEST which only reads)
+- Size: 6 bytes → 15 bytes
+
+**Applicability:**
+- Common in bitmask operations
+- Essential for flag manipulation
+- Frequently used in shellcode arithmetic
+
+---
+
+### Strategy: One-Byte Opcode Substitution (Priority 85)
+
+**File:** `src/one_byte_opcode_sub_strategies.c`
+**File:** `src/one_byte_opcode_sub_strategies.h`
+
+**Problem Statement:**
+Single-byte opcodes in the 0x40-0x5F range (INC/DEC/PUSH/POP registers) may themselves be bad bytes.
+
+**Target Patterns:**
+```asm
+inc eax       ; 0x40 - may be bad byte
+dec ebx       ; 0x4B - may be bad byte
+push ecx      ; 0x51 - may be bad byte
+pop edx       ; 0x5A - may be bad byte
+```
+
+**Transformation Strategy:**
+```c
+// Original: INC EAX (0x40)
+// Transform to:
+add eax, 1    ; 0x83 C0 01
+
+// Original: DEC EBX (0x4B)
+// Transform to:
+sub ebx, 1    ; 0x83 EB 01
+
+// Original: PUSH ECX (0x51)
+// Transform to:
+sub esp, 4    ; 0x83 EC 04
+mov [esp], ecx ; 0x89 0C 24
+
+// Original: POP EDX (0x5A)
+// Transform to:
+mov edx, [esp] ; 0x8B 14 24
+add esp, 4    ; 0x83 C4 04
+```
+
+**Applicability:**
+- Extremely common operations
+- Simple transformations with predictable results
+- Size: 1 byte → 3-6 bytes
+
+---
+
+### Strategy: String Instruction Length Prefix Bad-Byte (Priority 84)
+
+**File:** `src/string_prefix_badbyte_strategies.c`
+**File:** `src/string_prefix_badbyte_strategies.h`
+
+**Problem Statement:**
+String instructions with REP prefix (0xF3 for REP/REPE, 0xF2 for REPNE) may contain bad bytes in the prefix.
+
+**Target Patterns:**
+```asm
+rep stosb     ; 0xF3 0xAA - REP prefix may be bad
+rep movsb     ; 0xF3 0xA4 - REP prefix may be bad
+repne scasb   ; 0xF2 0xAE - REPNE prefix may be bad
+```
+
+**Transformation Strategy:**
+```c
+// Original: REP STOSB (0xF3 0xAA)
+// Transform to loop:
+loop_start:
+  stosb       ; 0xAA - Store AL to [EDI], increment EDI
+  dec ecx     ; 0x49 or 0x83 0xE9 0x01 (if 0x49 is bad)
+  jnz loop_start ; 0x75 XX - Jump if not zero
+```
+
+**Implementation:**
+- Replaces REP prefix with manual loop
+- Checks if DEC ECX opcode (0x49) is bad, uses SUB ECX, 1 alternative
+- Loop offset calculated based on instruction size
+- Size: 2 bytes → 5-8 bytes
+
+**Performance Impact:**
+- Significantly slower for large counts (10-100x)
+- Acceptable for shellcode (typically small counts)
+
+**Applicability:**
+- Common in memory initialization (REP STOSB)
+- Common in memory copying (REP MOVSB)
+- Essential for string operations
+
+---
+
+### Strategy: Operand Size Prefix Bad-Byte (Priority 83)
+
+**File:** `src/operand_size_prefix_badbyte_strategies.c`
+**File:** `src/operand_size_prefix_badbyte_strategies.h`
+
+**Problem Statement:**
+16-bit operations use operand-size prefix 0x66 which may be a bad byte.
+
+**Target Patterns:**
+```asm
+push ax       ; 0x66 0x50 - 16-bit PUSH
+mov ax, 0x1234 ; 0x66 0xB8 0x34 0x12 - 16-bit MOV
+```
+
+**Transformation Strategy:**
+```c
+// Original: PUSH AX (0x66 0x50)
+// Transform to:
+push eax      ; 0x50 - Use 32-bit version
+
+// Original: MOV AX, 0x1234
+// Transform to:
+xor eax, eax  ; Zero full register
+mov ax, 0x1234 ; Would still have 0x66 prefix...
+// Better approach: Use 32-bit with masking
+mov eax, 0x1234 ; 0xB8 0x34 0x12 0x00 0x00
+and eax, 0xFFFF ; Mask to 16 bits
+```
+
+**Implementation:**
+- Converts 16-bit register operations to 32-bit equivalents
+- Maps AX→EAX, CX→ECX, DX→EDX, BX→EBX, etc.
+- Adds masking for value-preserving operations
+- Size: 2-3 bytes → 5-10 bytes
+
+**Applicability:**
+- Less common in modern shellcode
+- More common in legacy or size-optimized code
+
+---
+
+### Strategy: Segment Register Bad-Byte (Priority 81)
+
+**File:** `src/segment_prefix_badbyte_strategies.c`
+**File:** `src/segment_prefix_badbyte_strategies.h`
+
+**Problem Statement:**
+Segment override prefixes (FS: 0x64, GS: 0x65) may be bad bytes. These are commonly used for TEB/PEB access on Windows.
+
+**Target Patterns:**
+```asm
+mov eax, fs:[0x30]  ; 0x64 0xA1 0x30 0x00 0x00 0x00 - FS prefix
+mov ebx, gs:[0x60]  ; 0x65 0x8B 0x1D 0x60 0x00 0x00 0x00 - GS prefix
+```
+
+**Transformation Strategy:**
+```c
+// For FS:[offset], detecting is implemented
+// Full transformation requires TEB base calculation:
+// 1. Get FS base from TEB
+// 2. Add offset to base
+// 3. Access via normal memory operation
+
+// Current implementation: Detection only
+// Returns true if FS/GS prefix is bad byte
+// Actual transformation is a limitation (noted in comments)
+```
+
+**Current Status:**
+- **Detection**: Fully implemented
+- **Transformation**: Placeholder (copies original)
+- **Reason**: TEB/PEB base calculation is architecture-specific and complex
+
+**Future Enhancement:**
+- Implement TEB base retrieval on Windows
+- Use alternative register-based addressing
+- Priority for Windows shellcode optimization
+
+**Applicability:**
+- Critical for Windows shellcode (PEB walking)
+- Common in API resolution techniques
+- Currently limited (transformation TODO)
+
+---
+
+## Strategy Summary Table (New Additions)
+
+| Priority | Strategy Name | File | Purpose | Size Impact |
+|----------|--------------|------|---------|-------------|
+| 92 | Conditional Jump Opcode Bad-Byte | `conditional_jump_opcode_badbyte_strategies.c` | Replace bad jump opcodes | 2B → 4B |
+| 90 | Register-to-Register Transfer | `reg_to_reg_badbyte_strategies.c` | Replace MOV/XCHG bad opcodes | 2B → 2-4B |
+| 89 | Stack Frame Pointer | `stack_frame_badbyte_strategies.c` | Replace PUSH/POP EBP | 1B → 6B |
+| 88 | ModR/M and SIB Byte | `modrm_sib_badbyte_strategies.c` | Alternative register combinations | 2-3B → 8-12B |
+| 87 | Multi-Byte Immediate Partial | `partial_immediate_badbyte_strategies.c` | Rotation optimization | 5B → 10B |
+| 86 | Bitwise Operation Immediate | `bitwise_immediate_badbyte_strategies.c` | AND/OR/XOR/TEST with register | 6B → 15B |
+| 85 | One-Byte Opcode Substitution | `one_byte_opcode_sub_strategies.c` | INC/DEC/PUSH/POP alternatives | 1B → 3-6B |
+| 84 | String Instruction Prefix | `string_prefix_badbyte_strategies.c` | REP prefix to loop | 2B → 5-8B |
+| 83 | Operand Size Prefix | `operand_size_prefix_badbyte_strategies.c` | 16-bit to 32-bit conversion | 2-3B → 5-10B |
+| 81 | Segment Register | `segment_prefix_badbyte_strategies.c` | FS/GS prefix detection | Detection only |
 
 ---
 

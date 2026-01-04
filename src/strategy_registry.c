@@ -52,6 +52,16 @@
 #include "bit_counting_constant_strategies.h"
 #include "simd_xmm_register_strategies.h"
 #include "jecxz_jrcxz_transformation_strategies.h"
+#include "modrm_sib_badbyte_strategies.h"
+#include "reg_to_reg_badbyte_strategies.h"
+#include "conditional_jump_opcode_badbyte_strategies.h"
+#include "one_byte_opcode_sub_strategies.h"
+#include "partial_immediate_badbyte_strategies.h"
+#include "stack_frame_badbyte_strategies.h"
+#include "string_prefix_badbyte_strategies.h"
+#include "bitwise_immediate_badbyte_strategies.h"
+#include "segment_prefix_badbyte_strategies.h"
+#include "operand_size_prefix_badbyte_strategies.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h> // Added for debug prints
@@ -198,6 +208,18 @@ void register_bit_counting_constant_strategies();  // Register POPCNT/LZCNT/TZCN
 void register_simd_xmm_register_strategies();  // Register SIMD XMM register strategies (priority 89)
 void register_jecxz_jrcxz_transformation_strategies();  // Register JECXZ/JRCXZ transformation strategies (priority 85)
 
+// NEW: 10 High-Priority General Bad-Byte Elimination Strategies (v4.0 - 2026-01-03)
+void register_modrm_sib_badbyte_strategies();  // Register ModR/M and SIB bad-byte elimination strategies (priority 88)
+void register_reg_to_reg_badbyte_strategies();  // Register register-to-register transfer bad-byte elimination strategies (priority 90)
+void register_conditional_jump_opcode_badbyte_strategies();  // Register conditional jump opcode bad-byte elimination strategies (priority 92)
+void register_one_byte_opcode_sub_strategies();  // Register one-byte opcode substitution strategies (priority 85)
+void register_partial_immediate_badbyte_strategies();  // Register partial immediate bad-byte optimization strategies (priority 87)
+void register_stack_frame_badbyte_strategies();  // Register stack frame pointer bad-byte elimination strategies (priority 89)
+void register_string_prefix_badbyte_strategies();  // Register string instruction prefix bad-byte elimination strategies (priority 84)
+void register_bitwise_immediate_badbyte_strategies();  // Register bitwise immediate bad-byte elimination strategies (priority 86)
+void register_segment_prefix_badbyte_strategies();  // Register segment prefix bad-byte detection strategies (priority 81)
+void register_operand_size_prefix_badbyte_strategies();  // Register operand size prefix bad-byte elimination strategies (priority 83)
+
 // NEW: 5 Additional Denulling Strategies (v3.0)
 void register_jcxz_null_safe_loop_termination_strategy(); // Priority 86 - JCXZ null-safe loop termination
 void register_push_byte_immediate_stack_construction_strategy(); // Priority 82 - PUSH byte immediate stack construction
@@ -253,6 +275,19 @@ void init_strategies(int use_ml) {
     // NEW: Tier 1 High-Priority Strategies (2025-12-19)
     register_register_dependency_chain_optimization_strategies();  // Priority 91 - Multi-instruction optimization
     register_polymorphic_immediate_construction_strategies();  // Priority 88-90 - Universal immediate encoding
+
+    // NEW: 10 High-Priority General Bad-Byte Elimination Strategies (v4.0 - 2026-01-03)
+    register_conditional_jump_opcode_badbyte_strategies();  // Priority 92 - Conditional jump opcode bad-byte elimination
+    register_reg_to_reg_badbyte_strategies();  // Priority 90 - Register-to-register transfer bad-byte elimination
+    register_stack_frame_badbyte_strategies();  // Priority 89 - Stack frame pointer bad-byte elimination
+    register_modrm_sib_badbyte_strategies();  // Priority 88 - ModR/M and SIB bad-byte elimination
+    register_partial_immediate_badbyte_strategies();  // Priority 87 - Partial immediate bad-byte optimization
+    register_bitwise_immediate_badbyte_strategies();  // Priority 86 - Bitwise immediate bad-byte elimination
+    register_one_byte_opcode_sub_strategies();  // Priority 85 - One-byte opcode substitution
+    register_string_prefix_badbyte_strategies();  // Priority 84 - String instruction prefix bad-byte elimination
+    register_operand_size_prefix_badbyte_strategies();  // Priority 83 - Operand size prefix bad-byte elimination
+    register_segment_prefix_badbyte_strategies();  // Priority 81 - Segment prefix bad-byte detection
+
     register_syscall_number_obfuscation_strategies();  // Priority 85-88 - Linux syscall optimization
     register_setcc_jump_elimination_strategies();  // Priority 84-86 - Jump offset elimination
 
