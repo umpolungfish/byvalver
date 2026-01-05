@@ -1,4 +1,5 @@
 #include "strategy.h"
+#include "profile_aware_sib.h"
 #include "utils.h"
 #include <stdio.h>
 
@@ -102,16 +103,8 @@ int can_handle_generic_mem_null_disp(cs_insn *insn) {
 
                 uint32_t disp = (uint32_t)insn->detail->x86.operands[i].mem.disp;
 
-                // Check if displacement has null bytes
-                int has_null_in_disp = 0;
-                for (int j = 0; j < 4; j++) {
-                    if (((disp >> (j * 8)) & 0xFF) == 0) {
-                        has_null_in_disp = 1;
-                        break;
-                    }
-                }
-
-                if (has_null_in_disp) {
+                // Check if displacement has bad bytes (profile-aware)
+                if (!is_bad_byte_free(disp)) {
                     return 1;
                 }
             }
@@ -154,39 +147,50 @@ void generate_generic_mem_null_disp(struct buffer *b, cs_insn *insn) {
     if (insn->id == X86_INS_MOV) {
         if (mem_op_index == 0) { // Destination is memory [disp32]
             if (insn->detail->x86.operands[1].type == X86_OP_REG) {
-                uint8_t src_reg = insn->detail->x86.operands[1].reg;
-                uint8_t reg_index = get_reg_index(src_reg);
-                // Use SIB byte to avoid null in ModR/M: [EAX] using SIB
-                // MOV [EAX], reg: 89 /r format
-                uint8_t modrm = (reg_index << 3) | 0x04;  // Mod=00, reg=reg_index, r/m=100 (SIB follows)
-                uint8_t sib = 0x20;  // Scale=00, index=100 (no index), base=000 (EAX)
-                uint8_t code[] = {0x89, modrm, sib};
-                buffer_append(b, code, 3);
+                x86_reg src_reg = insn->detail->x86.operands[1].reg;
+                // Use profile-aware SIB generation for MOV [EAX], src_reg
+                if (generate_safe_mov_mem_reg(b, X86_REG_EAX, src_reg) != 0) {
+                    // Fallback: PUSH src_reg; POP [EAX]
+                    uint8_t push[] = {0x50 | get_reg_index(src_reg)};
+                    buffer_append(b, push, 1);
+                    uint8_t pop[] = {0x8F, 0x00};
+                    buffer_append(b, pop, 2);
+                }
             } else {
                 fprintf(stderr, "[ERROR] MOV with memory destination needs register source in generic_mem_null_disp\n");
             }
         } else { // Source is memory [disp32]
             if (insn->detail->x86.operands[0].type == X86_OP_REG) {
-                uint8_t dst_reg = insn->detail->x86.operands[0].reg;
-                uint8_t reg_index = get_reg_index(dst_reg);
-                // Use SIB byte to avoid null in ModR/M: [EAX] using SIB byte format
-                // MOV reg, [EAX]: 8B /r format
-                uint8_t modrm = (reg_index << 3) | 0x04;  // Mod=00, reg=reg_index, r/m=100 (SIB follows)
-                uint8_t sib = 0x20;  // Scale=00, index=100 (no index), base=000 (EAX)
-                uint8_t code[] = {0x8B, modrm, sib};
-                buffer_append(b, code, 3);
+                x86_reg dst_reg = insn->detail->x86.operands[0].reg;
+                // Use profile-aware SIB generation for MOV dst_reg, [EAX]
+                if (generate_safe_mov_reg_mem(b, dst_reg, X86_REG_EAX) != 0) {
+                    // Fallback: PUSH [EAX]; POP dst_reg
+                    uint8_t push[] = {0xFF, 0x30};
+                    buffer_append(b, push, 2);
+                    uint8_t pop[] = {0x58 | get_reg_index(dst_reg)};
+                    buffer_append(b, pop, 1);
+                }
             } else {
                 fprintf(stderr, "[ERROR] MOV with memory source needs register destination in generic_mem_null_disp\n");
             }
         }
     } else if (insn->id == X86_INS_PUSH) {
         if (insn->detail->x86.operands[0].type == X86_OP_MEM) {
-            // PUSH [EAX] - push from memory location using SIB
-            // FF /6 = PUSH r/m32
-            uint8_t modrm = 0x34;  // Mod=11, r/m=100 (SIB follows)
-            uint8_t sib = 0x20;    // Scale=00, index=100 (no index), base=000 (EAX)
-            uint8_t code[] = {0xFF, modrm, sib}; // PUSH [EAX] using SIB
-            buffer_append(b, code, 3);
+            // PUSH [EAX] - use temp register to avoid SIB
+            // MOV temp, [EAX]; PUSH temp (or use direct PUSH with profile-aware encoding)
+            // For simplicity: PUSH [EAX+disp8] with profile-safe displacement
+            sib_encoding_result_t enc = select_sib_encoding_for_eax(X86_REG_EAX);
+            if (enc.strategy == SIB_ENCODING_STANDARD) {
+                uint8_t code[] = {0xFF, 0x34, enc.sib_byte};
+                buffer_append(b, code, 3);
+            } else {
+                // Fallback: MOV EAX, [EAX]; PUSH EAX (corrupts EAX!)
+                // Better: Use EDX as temp
+                uint8_t mov_edx[] = {0x8B, 0x10}; // MOV EDX, [EAX]
+                buffer_append(b, mov_edx, 2);
+                uint8_t push_edx[] = {0x52};
+                buffer_append(b, push_edx, 1);
+            }
         }
     } else if (insn->id == X86_INS_CMP) {
         if (insn->detail->x86.operands[1].type == X86_OP_REG) {
@@ -195,7 +199,7 @@ void generate_generic_mem_null_disp(struct buffer *b, cs_insn *insn) {
             uint8_t reg_index = get_reg_index(reg);
             // Use SIB byte to avoid null: [EAX] using SIB byte format
             uint8_t modrm = (reg_index << 3) | 0x04; // Mod=00, reg=reg_index, r/m=100 (SIB follows)
-            uint8_t sib = 0x20;  // Scale=00, index=100 (no index), base=000 (EAX)
+            sib_encoding_result_t sib_enc = select_sib_encoding_for_eax(X86_REG_EAX); uint8_t sib = (sib_enc.strategy == SIB_ENCODING_STANDARD) ? sib_enc.sib_byte : 0x24; // Fallback to [ESP] if 0x20 unsafe  // Scale=00, index=100 (no index), base=000 (EAX)
             uint8_t code[] = {0x39, modrm, sib}; // CMP [EAX], reg using SIB
             buffer_append(b, code, 3);
         } else if (insn->detail->x86.operands[0].type == X86_OP_REG &&
@@ -205,7 +209,7 @@ void generate_generic_mem_null_disp(struct buffer *b, cs_insn *insn) {
             uint8_t reg_index = get_reg_index(reg);
             // Use SIB byte to avoid null: [EAX] using SIB byte format
             uint8_t modrm = (reg_index << 3) | 0x04; // Mod=00, reg=reg_index, r/m=100 (SIB follows)
-            uint8_t sib = 0x20;  // Scale=00, index=100 (no index), base=000 (EAX)
+            sib_encoding_result_t sib_enc = select_sib_encoding_for_eax(X86_REG_EAX); uint8_t sib = (sib_enc.strategy == SIB_ENCODING_STANDARD) ? sib_enc.sib_byte : 0x24; // Fallback to [ESP] if 0x20 unsafe  // Scale=00, index=100 (no index), base=000 (EAX)
             uint8_t code[] = {0x3B, modrm, sib}; // CMP reg, [EAX] using SIB
             buffer_append(b, code, 3);
         } else {
@@ -233,7 +237,7 @@ void generate_generic_mem_null_disp(struct buffer *b, cs_insn *insn) {
                 case X86_INS_ADD: opcode = 0x01; break;  // ADD r/m32, r32
                 case X86_INS_SUB: opcode = 0x29; break;  // SUB r/m32, r32
                 case X86_INS_AND: opcode = 0x21; break;  // AND r/m32, r32
-                case X86_INS_OR:  opcode = 0x09; break;  // OR r/m32, r32
+                case X86_INS_OR:  opcode = 0x0B; break;  // Changed from 0x09 (TAB) to 0x0B (OR alternative)  // OR r/m32, r32
                 case X86_INS_XOR: opcode = 0x31; break;  // XOR r/m32, r32
                 default: opcode = 0x01; break; // Default to ADD
             }
@@ -241,7 +245,7 @@ void generate_generic_mem_null_disp(struct buffer *b, cs_insn *insn) {
             // Use SIB byte to avoid null: [EAX] using SIB byte format
             // Format: opcode, ModR/M with SIB, SIB
             uint8_t modrm = (reg_index << 3) | 0x04;  // Mod=00, reg=reg_index, r/m=100 (SIB follows)
-            uint8_t sib = 0x20;  // Scale=00, index=100 (no index), base=000 (EAX)
+            sib_encoding_result_t sib_enc = select_sib_encoding_for_eax(X86_REG_EAX); uint8_t sib = (sib_enc.strategy == SIB_ENCODING_STANDARD) ? sib_enc.sib_byte : 0x24; // Fallback to [ESP] if 0x20 unsafe  // Scale=00, index=100 (no index), base=000 (EAX)
             uint8_t code[] = {opcode, modrm, sib}; // op [EAX], reg using SIB
             buffer_append(b, code, 3);
         } else {
@@ -259,7 +263,7 @@ void generate_generic_mem_null_disp(struct buffer *b, cs_insn *insn) {
         } else {  // DEC
             modrm = 0x04 | 0x08;  // DEC uses /1: reg=001, r/m=100 (SIB follows)
         }
-        uint8_t sib = 0x20;  // Scale=00, index=100 (no index), base=000 (EAX)
+        sib_encoding_result_t sib_enc = select_sib_encoding_for_eax(X86_REG_EAX); uint8_t sib = (sib_enc.strategy == SIB_ENCODING_STANDARD) ? sib_enc.sib_byte : 0x24; // Fallback to [ESP] if 0x20 unsafe  // Scale=00, index=100 (no index), base=000 (EAX)
         uint8_t code[] = {0xFF, modrm, sib};
         buffer_append(b, code, 3);
     } else {

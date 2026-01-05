@@ -1,5 +1,6 @@
 #include "strategy.h"
 #include "utils.h"
+#include "profile_aware_sib.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -142,10 +143,13 @@ void generate_lea_complex_displacement(struct buffer *b, cs_insn *insn) {
     // Move result to target register using safe addressing to avoid nulls
     if (target_reg != X86_REG_EAX) {
         // Use SIB addressing to avoid null ModR/M byte when target_reg == EAX
-        uint8_t mov_code[] = {0x89, 0x04, 0x20};
-        mov_code[1] = 0x04 | (get_reg_index(X86_REG_EAX) << 3);  // ModR/M: mod=00, reg=EAX, r/m=SIB
-        mov_code[2] = (0 << 6) | (4 << 3) | get_reg_index(target_reg);  // SIB: scale=0, index=ESP, base=target_reg
-        buffer_append(b, mov_code, 3);
+        // FIXED: Use profile-safe SIB
+    if (generate_safe_mov_mem_reg(b, X86_REG_EAX, X86_REG_EAX) != 0) {
+        uint8_t push[] = {0x50};
+        buffer_append(b, push, 1);
+        uint8_t pop[] = {0x8F, 0x00};
+        buffer_append(b, pop, 2);
+    }
     } else {
         // Target is EAX, already in the right place
     }
@@ -292,10 +296,13 @@ void generate_lea_displacement_adjusted(struct buffer *b, cs_insn *insn) {
     // Move result to target register using SIB addressing to avoid nulls in ModR/M
     if (target_reg != X86_REG_EAX) {
         // MOV target_reg, EAX using SIB addressing to avoid null ModR/M byte
-        uint8_t mov_code[] = {0x89, 0x04, 0x20};
-        mov_code[1] = 0x04 | (get_reg_index(X86_REG_EAX) << 3);  // ModR/M: mod=00, reg=EAX, r/m=SIB
-        mov_code[2] = (0 << 6) | (4 << 3) | get_reg_index(target_reg);  // SIB: scale=0, index=ESP, base=target_reg
-        buffer_append(b, mov_code, 3);
+        // FIXED: Use profile-safe SIB
+    if (generate_safe_mov_mem_reg(b, X86_REG_EAX, X86_REG_EAX) != 0) {
+        uint8_t push[] = {0x50};
+        buffer_append(b, push, 1);
+        uint8_t pop[] = {0x8F, 0x00};
+        buffer_append(b, pop, 2);
+    }
     } else {
         // Target is EAX, already in the right place
     }

@@ -1,5 +1,6 @@
 #include "strategy.h"
 #include "utils.h"
+#include "profile_aware_sib.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -65,11 +66,10 @@ void generate_register_chaining_immediate(struct buffer *b, cs_insn *insn) {
             not_code[1] = 0xD0 + get_reg_index(X86_REG_EAX);
             buffer_append(b, not_code, 2);
 
-            // Move result to target register using SIB addressing to avoid nulls
-            uint8_t mov_to_target[] = {0x89, 0x04, 0x20}; // MOV target_reg, EAX using SIB
-            mov_to_target[1] = 0x04 | (get_reg_index(X86_REG_EAX) << 3);  // ModR/M: reg=EAX, r/m=SIB
-            mov_to_target[2] = (0 << 6) | (4 << 3) | get_reg_index(target_reg);  // SIB: scale=0, index=ESP, base=target_reg
-            buffer_append(b, mov_to_target, 3);
+            // Move result to target register (register-to-register MOV)
+            uint8_t mov_to_target[] = {0x89, 0xC0};
+            mov_to_target[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | get_reg_index(target_reg);
+            buffer_append(b, mov_to_target, 2);
 
             // Restore original EAX
             uint8_t pop_eax[] = {0x58};
@@ -96,11 +96,10 @@ void generate_register_chaining_immediate(struct buffer *b, cs_insn *insn) {
             neg_code[1] = 0xD8 + get_reg_index(X86_REG_EAX);
             buffer_append(b, neg_code, 2);
 
-            // Move result to target register using SIB addressing to avoid nulls
-            uint8_t mov_to_target[] = {0x89, 0x04, 0x20}; // MOV target_reg, EAX using SIB
-            mov_to_target[1] = 0x04 | (get_reg_index(X86_REG_EAX) << 3);  // ModR/M: reg=EAX, r/m=SIB
-            mov_to_target[2] = (0 << 6) | (4 << 3) | get_reg_index(target_reg);  // SIB: scale=0, index=ESP, base=target_reg
-            buffer_append(b, mov_to_target, 3);
+            // Move result to target register (register-to-register MOV)
+            uint8_t mov_to_target[] = {0x89, 0xC0};
+            mov_to_target[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | get_reg_index(target_reg);
+            buffer_append(b, mov_to_target, 2);
 
             // Restore original EAX
             uint8_t pop_eax[] = {0x58};
@@ -130,11 +129,10 @@ void generate_register_chaining_immediate(struct buffer *b, cs_insn *insn) {
             memcpy(addsub_code + 1, &val2, 4);
             buffer_append(b, addsub_code, 5);
 
-            // Move result to target register using SIB addressing to avoid nulls
-            uint8_t mov_to_target[] = {0x89, 0x04, 0x20}; // MOV target_reg, EAX using SIB
-            mov_to_target[1] = 0x04 | (get_reg_index(X86_REG_EAX) << 3);  // ModR/M: reg=EAX, r/m=SIB
-            mov_to_target[2] = (0 << 6) | (4 << 3) | get_reg_index(target_reg);  // SIB: scale=0, index=ESP, base=target_reg
-            buffer_append(b, mov_to_target, 3);
+            // Move result to target register (register-to-register MOV)
+            uint8_t mov_to_target[] = {0x89, 0xC0};
+            mov_to_target[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | get_reg_index(target_reg);
+            buffer_append(b, mov_to_target, 2);
 
             // Restore original EAX
             uint8_t pop_eax[] = {0x58};
@@ -155,11 +153,10 @@ void generate_register_chaining_immediate(struct buffer *b, cs_insn *insn) {
         // Build target value in EAX using reliable null-free construction
         generate_mov_eax_imm(b, target_val);
 
-        // Move result to target register using SIB addressing to avoid nulls
-        uint8_t mov_to_target[] = {0x89, 0x04, 0x20}; // MOV target_reg, EAX using SIB
-        mov_to_target[1] = 0x04 | (get_reg_index(X86_REG_EAX) << 3);  // ModR/M: reg=EAX, r/m=SIB
-        mov_to_target[2] = (0 << 6) | (4 << 3) | get_reg_index(target_reg);  // SIB: scale=0, index=ESP, base=target_reg
-        buffer_append(b, mov_to_target, 3);
+        // Move result to target register (register-to-register MOV)
+        uint8_t mov_to_target[] = {0x89, 0xC0};
+        mov_to_target[1] = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | get_reg_index(target_reg);
+        buffer_append(b, mov_to_target, 2);
 
         // Restore original EAX
         uint8_t pop_eax[] = {0x58};

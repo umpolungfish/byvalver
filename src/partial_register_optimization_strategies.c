@@ -67,9 +67,22 @@ int can_handle_partial_register_optimization(cs_insn *insn) {
     return 0;
 }
 
-size_t get_size_partial_register_optimization(__attribute__((unused)) cs_insn *insn) {
-    // Varies depending on transformation, but typically 2-6 bytes
-    return 6;  // Conservative estimate
+size_t get_size_partial_register_optimization(cs_insn *insn) {
+    // FIXED: More accurate size estimation
+    if (!insn || insn->detail->x86.op_count < 2) {
+        return 6;
+    }
+
+    uint8_t imm_val = (uint8_t)insn->detail->x86.operands[1].imm;
+
+    if (imm_val == 0x00) {
+        return 2;  // XOR reg, reg only
+    } else if (is_bad_byte_free_byte(imm_val)) {
+        return 2 + 3;  // XOR + ADD with imm
+    } else {
+        // Bad byte: worst case is two ADD operations (3 bytes each)
+        return 2 + 6;  // XOR + two ADDs
+    }
 }
 
 void generate_partial_register_optimization(struct buffer *b, cs_insn *insn) {
@@ -115,15 +128,46 @@ void generate_partial_register_optimization(struct buffer *b, cs_insn *insn) {
     buffer_write_byte(b, 0x31);  // XOR reg32, reg32
     buffer_write_byte(b, 0xC0 | (reg_idx << 3) | reg_idx);  // MOD/RM byte
 
-    // Step 2: Only ADD the immediate if it's non-zero
-    // (for zero, XOR alone is sufficient)
+    // Step 2: Set the value if non-zero
     if (imm_val != 0x00) {
-        // ADD partial_reg, imm8 (set the value)
-        // Encoding: 80 /0 imm8 for ADD r/m8, imm8
-        uint8_t partial_idx = get_reg_index_8bit(partial_reg);
-        buffer_write_byte(b, 0x80);  // ADD r/m8, imm8
-        buffer_write_byte(b, 0xC0 | partial_idx);  // MOD/RM: 11 000 r/m
-        buffer_write_byte(b, imm_val);  // Immediate value
+        // FIXED: Don't write bad bytes directly! Construct value without bad bytes
+        if (!is_bad_byte_free_byte(imm_val)) {
+            // Strategy: Find two non-bad bytes that add/subtract to target
+            // Try: imm_val = a + b or imm_val = a - b
+            uint8_t found = 0;
+            for (uint16_t a_val = 1; a_val < 256 && !found; a_val++) {
+                for (uint16_t b_val = 1; b_val < 256 && !found; b_val++) {
+                    if ((a_val + b_val) % 256 == imm_val) {
+                        if (is_bad_byte_free_byte(a_val) && is_bad_byte_free_byte(b_val)) {
+                            uint8_t partial_idx = get_reg_index_8bit(partial_reg);
+                            // ADD partial_reg, a_val
+                            buffer_write_byte(b, 0x80);  // ADD r/m8, imm8
+                            buffer_write_byte(b, 0xC0 | partial_idx);
+                            buffer_write_byte(b, (uint8_t)a_val);
+                            // ADD partial_reg, b_val
+                            buffer_write_byte(b, 0x80);
+                            buffer_write_byte(b, 0xC0 | partial_idx);
+                            buffer_write_byte(b, (uint8_t)b_val);
+                            found = 1;
+                        }
+                    }
+                }
+            }
+            if (!found) {
+                // Fallback: Use INC repeatedly (slow but guaranteed to work)
+                uint8_t partial_idx = get_reg_index_8bit(partial_reg);
+                for (uint8_t i = 0; i < imm_val; i++) {
+                    buffer_write_byte(b, 0xFE);  // INC r/m8
+                    buffer_write_byte(b, 0xC0 | partial_idx);
+                }
+            }
+        } else {
+            // Safe to write directly
+            uint8_t partial_idx = get_reg_index_8bit(partial_reg);
+            buffer_write_byte(b, 0x80);  // ADD r/m8, imm8
+            buffer_write_byte(b, 0xC0 | partial_idx);
+            buffer_write_byte(b, imm_val);
+        }
     }
     // For MOV AL, 0 we just use XOR EAX, EAX (2 bytes total, no nulls)
 }

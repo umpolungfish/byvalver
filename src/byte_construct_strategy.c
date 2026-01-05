@@ -1,5 +1,6 @@
 #include "strategy.h"
 #include "utils.h"
+#include "profile_aware_sib.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -144,7 +145,7 @@ void generate_byte_construct(struct buffer *b, cs_insn *insn) {
                     }
 
                     // OR EAX, ECX shifted
-                    uint8_t or_eax_ecx[] = {0x09, 0xC1};
+                    uint8_t or_eax_ecx[] = {0x0B, 0xC1  /* Changed from 0x09 (TAB) to 0x0B (OR alternative encoding) */};
                     buffer_append(b, or_eax_ecx, 2);
 
                     uint8_t pop_ecx[] = {0x59};
@@ -189,7 +190,7 @@ void generate_byte_construct(struct buffer *b, cs_insn *insn) {
                     }
 
                     // OR EAX, ECX shifted
-                    uint8_t or_eax_ecx[] = {0x09, 0xC1};
+                    uint8_t or_eax_ecx[] = {0x0B, 0xC1  /* Changed from 0x09 (TAB) to 0x0B (OR alternative encoding) */};
                     buffer_append(b, or_eax_ecx, 2);
 
                     uint8_t pop_temp[] = {0x59};
@@ -198,11 +199,14 @@ void generate_byte_construct(struct buffer *b, cs_insn *insn) {
             }
         }
 
-        // Move from EAX to target register using SIB addressing to avoid nulls
-        uint8_t mov_reg_eax[] = {0x89, 0x04, 0x20}; // MOV reg, EAX using SIB
-        mov_reg_eax[1] = 0x04 | (get_reg_index(X86_REG_EAX) << 3);  // ModR/M: reg=EAX, r/m=SIB
-        mov_reg_eax[2] = (0 << 6) | (4 << 3) | get_reg_index(reg);  // SIB: scale=0, index=ESP, base=reg
-        buffer_append(b, mov_reg_eax, 3);
+        // FIXED: Use profile-safe encoding
+        if (generate_safe_mov_mem_reg(b, reg, X86_REG_EAX) != 0) {
+            // Fallback
+            uint8_t push[] = {0x50};  // PUSH EAX
+            buffer_append(b, push, 1);
+            uint8_t pop[] = {(uint8_t)(0x58 | get_reg_index(reg))};  // POP reg (gets value from [reg])
+            buffer_append(b, pop, 1);
+        }
 
         // Restore original EAX
         uint8_t pop_eax[] = {0x58};  // POP EAX

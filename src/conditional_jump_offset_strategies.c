@@ -56,13 +56,10 @@ static uint8_t get_opposite_short_jcc_opcode(x86_insn jcc_id) {
     }
 }
 
-// Check if offset contains null bytes
-static int offset_has_null_bytes(int32_t offset) {
+// Check if offset contains bad bytes (profile-aware)
+static int offset_has_bad_bytes(int32_t offset) {
     uint32_t val = (uint32_t)offset;
-    return ((val & 0xFF) == 0) ||
-           ((val & 0xFF00) == 0) ||
-           ((val & 0xFF0000) == 0) ||
-           ((val & 0xFF000000) == 0);
+    return !is_bad_byte_free(val);
 }
 
 /*
@@ -86,11 +83,11 @@ static int can_handle_conditional_jump_null_offset(cs_insn *insn) {
         return 1;
     }
 
-    // Additional check: if we have an operand, check if it contains nulls
+    // Additional check: if we have an operand, check if it contains bad bytes
     // This may be useful for certain edge cases
     int64_t target = insn->detail->x86.operands[0].imm;
     uint32_t target32 = (uint32_t)target;
-    if (offset_has_null_bytes(target32)) {
+    if (offset_has_bad_bytes(target32)) {
         return 1;
     }
 
@@ -99,12 +96,17 @@ static int can_handle_conditional_jump_null_offset(cs_insn *insn) {
 
 /*
  * Calculate replacement size
- * Opposite short jump (2 bytes) + unconditional JMP (5 bytes minimum)
+ * Opposite short jump (2 bytes) + unconditional JMP (5-12 bytes depending on offset)
  */
 static size_t get_size_conditional_jump_null_offset(cs_insn *insn) {
-    // Short conditional jump (2 bytes) + long JMP (5 bytes)
-    (void)insn; // Unused parameter
-    return 7; // 2 + 5 = 7 bytes
+    // Get target to calculate offset
+    int64_t target = insn->detail->x86.operands[0].imm;
+
+    // Worst case: short jcc (2) + PUSH EAX (1) + MOV EAX,imm (5) + XCHG (3) + RET (1) = 12 bytes
+    // Best case: short jcc (2) + JMP rel32 (5) = 7 bytes
+    // Conservative estimate
+    (void)target;
+    return 12; // Return worst-case size
 }
 
 /*
@@ -115,9 +117,22 @@ static void generate_conditional_jump_null_offset(struct buffer *b, cs_insn *ins
     // Get target address
     int64_t target = insn->detail->x86.operands[0].imm;
 
-    // Calculate skip distance for the opposite short jump
-    // The skip distance is the size of the JMP instruction (5 bytes)
-    uint8_t skip_distance = 0x05;
+    // Pre-calculate JMP offset to determine which approach to use
+    // Assume position after short conditional jump (2 bytes)
+    int32_t jmp_offset = (int32_t)(target - (b->size + 2 + 5)); // +2 for short jcc, +5 for JMP
+
+    // Determine skip distance based on whether offset has bad bytes
+    uint8_t skip_distance;
+    int use_indirect = 0;
+
+    if (!is_bad_byte_free((uint32_t)jmp_offset)) {
+        // Will use indirect PUSH/RET approach: 1 + 5 + 3 + 1 = 10 bytes
+        skip_distance = 0x0A;
+        use_indirect = 1;
+    } else {
+        // Will use direct JMP rel32: 5 bytes
+        skip_distance = 0x05;
+    }
 
     // Generate opposite condition short jump
     uint8_t opposite_opcode = get_opposite_short_jcc_opcode(insn->id);
@@ -126,14 +141,26 @@ static void generate_conditional_jump_null_offset(struct buffer *b, cs_insn *ins
     buffer_write_byte(b, opposite_opcode);
     buffer_write_byte(b, skip_distance);
 
-    // Generate unconditional JMP to target
-    // Calculate the JMP rel32 offset
-    size_t jmp_pos = b->size;  // Position right after the short jump
-    int32_t jmp_offset = (int32_t)(target - (jmp_pos + 5)); // +5 for the JMP instruction
+    // Generate unconditional jump based on calculated approach
+    if (use_indirect) {
+        // Offset contains bad bytes - use PUSH/RET indirect jump
+        // PUSH EAX
+        buffer_write_byte(b, 0x50);
 
-    // Write JMP opcode
-    buffer_write_byte(b, 0xE9);  // JMP rel32
-    buffer_write_dword(b, jmp_offset);
+        // MOV EAX, target (null-free construction)
+        generate_mov_eax_imm(b, (uint32_t)target);
+
+        // XCHG EAX, [ESP] (swap target onto stack, restore EAX)
+        uint8_t xchg[] = {0x87, 0x04, 0x24};
+        buffer_append(b, xchg, 3);
+
+        // RET (jump to target)
+        buffer_write_byte(b, 0xC3);
+    } else {
+        // Safe offset - use direct JMP
+        buffer_write_byte(b, 0xE9);  // JMP rel32
+        buffer_write_dword(b, jmp_offset);
+    }
 }
 
 /* Strategy definition */

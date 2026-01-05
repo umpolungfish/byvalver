@@ -59,7 +59,7 @@ static void generate_bitwise_imm_bad(struct buffer *b, cs_insn *insn) {
         uint8_t and_op[] = {0x21, 0xC0 + (temp_idx << 3) + dst_idx};
         buffer_append(b, and_op, 2);
     } else if (insn->id == X86_INS_OR) {
-        uint8_t or_op[] = {0x09, 0xC0 + (temp_idx << 3) + dst_idx};
+        uint8_t or_op[] = {0x0B, 0xC0  /* Changed from 0x09 (TAB) to 0x0B (OR alternative encoding) */ + (temp_idx << 3) + dst_idx};
         buffer_append(b, or_op, 2);
     } else if (insn->id == X86_INS_XOR) {
         uint8_t xor_op[] = {0x31, 0xC0 + (temp_idx << 3) + dst_idx};

@@ -8,6 +8,7 @@
  */
 
 #include "strategy.h"
+#include "profile_aware_sib.h"
 #include "utils.h"
 #include <stdio.h>
 #include <string.h>

@@ -50,7 +50,7 @@ void generate_test_to_and(struct buffer *b, cs_insn *insn) {
     buffer_append(b, and_bytes, 2);
 
     // OR reg, reg (restores original value, preserves ZF)
-    uint8_t or_bytes[] = {0x09, 0xC0 | (reg_idx << 3) | reg_idx};
+    uint8_t or_bytes[] = {0x0B, 0xC0  /* Changed from 0x09 (TAB) to 0x0B (OR alternative encoding) */ | (reg_idx << 3) | reg_idx};
     buffer_append(b, or_bytes, 2);
 }
 

@@ -7,6 +7,7 @@
  */
 
 #include "strategy.h"
+#include "profile_aware_sib.h"
 #include "utils.h"
 #include <stdio.h>
 #include <string.h>
@@ -156,14 +157,17 @@ void generate_conservative_mov_original(struct buffer *b, cs_insn *insn) {
                 buffer_append(b, sub_eax_esp, 3);
             }
 
-            // MOV reg, EAX to get the result back to original register
+            // MOV [reg], EAX to get the result back to original register
             if (reg == X86_REG_EAX) {
                 // Already done
             } else {
-                uint8_t mov_reg_eax[] = {0x89, 0x04, 0x20};  // MOV reg, EAX using SIB addressing
-                mov_reg_eax[1] = 0x04 | (get_reg_index(X86_REG_EAX) << 3);  // ModR/M: reg=EAX, r/m=SIB
-                mov_reg_eax[2] = (0 << 6) | (4 << 3) | get_reg_index(reg);  // SIB: scale=0, index=ESP, base=reg
-                buffer_append(b, mov_reg_eax, 3);
+                // FIXED: Use profile-aware SIB generation instead of hardcoded 0x20
+                if (generate_safe_mov_mem_reg(b, reg, X86_REG_EAX) != 0) {
+                    // Fallback: use direct MOV reg, EAX encoding (no SIB)
+                    uint8_t modrm = 0xC0 | (get_reg_index(X86_REG_EAX) << 3) | get_reg_index(reg);
+                    uint8_t mov_direct[] = {0x89, modrm};
+                    buffer_append(b, mov_direct, 2);
+                }
             }
 
             // POP EAX to clean up the stack

@@ -223,40 +223,111 @@ void generate_short_conditional_jump_with_nulls(struct buffer *b, cs_insn *insn)
  * This approach creates a more complex but null-free sequence
  */
 int can_handle_conditional_jump_alternative(cs_insn *insn) {
-    // Check for conditional jumps that may not have nulls but could benefit from alternative encoding
+    // Check for conditional jumps with bad bytes (not just nulls)
     if (insn->id < X86_INS_JAE || insn->id > X86_INS_JS) {
         return 0;
     }
 
-    // We'll handle all conditional jumps with alternative patterns
-    return 1;
+    // Handle BOTH short (2-byte) and near (6-byte) conditional jumps with bad bytes
+    // The indirect jump transformation works for both cases
+    // has_null_bytes() checks for ALL bad bytes despite the name (v3.0+)
+    return has_null_bytes(insn);
 }
 
-size_t get_size_conditional_jump_alternative(__attribute__((unused)) cs_insn *insn) {
-    return 15; // Size for alternative jump pattern: test + conditional + unconditional jump
+size_t get_size_conditional_jump_alternative(cs_insn *insn) {
+    // FIXED: Account for variable MOV EAX,imm size
+    if (!insn || !insn->detail || insn->detail->x86.op_count == 0 ||
+        insn->detail->x86.operands[0].type != X86_OP_IMM) {
+        return insn->size; // Fallback to original size
+    }
+
+    uint32_t target = (uint32_t)insn->detail->x86.operands[0].imm;
+    // inverse_jcc(2) + PUSH(1) + MOV EAX,imm(variable) + XCHG(3) + RET(1) + NOP(1)
+    return 2 + 1 + get_mov_eax_imm_size(target) + 3 + 1 + 1;
 }
 
 /*
  * Generate alternative conditional jump pattern that avoids displacement nulls
- * Uses: Test condition -> conditional short jump (if going to near target) -> long jump
+ * Uses: Inverse condition + short jump to skip over target reconstruction + indirect jump
  */
 void generate_conditional_jump_alternative(struct buffer *b, cs_insn *insn) {
-    // Convert conditional jump to a pattern that avoids potential null-byte displacements
-    // Approach: Use the inverse condition with a short jump over a long jump
-    // jz target -> jnz skip; call target; skip:
-    // or: test condition -> jnz over_call; call target; over_call:
-    
-    // This is a complex transformation that depends on the specific conditional jump type
-    // For this implementation, we'll use a simple approach that creates conditional logic
-    // that avoids the original displacement
-    
-    // Example:
-    // Original: jz target  (where target displacement might have nulls)
-    // Alternative: jnz skip; jmp target; skip:
-    
-    // Since the offset calculation is complex in this context, we'll construct the original
-    // but ensure any immediate values are constructed without nulls
-    buffer_append(b, insn->bytes, insn->size);
+    // Extract target address - fallback to original if we can't transform
+    if (!insn || !insn->detail || insn->detail->x86.op_count == 0 ||
+        insn->detail->x86.operands[0].type != X86_OP_IMM) {
+        // Can't transform - copy original instruction
+        buffer_append(b, insn->bytes, insn->size);
+        return;
+    }
+
+    uint64_t target = (uint64_t)insn->detail->x86.operands[0].imm;
+
+    // Get inverse conditional opcode
+    uint8_t inverse_jcc = 0;
+    switch (insn->id) {
+        case X86_INS_JE:  inverse_jcc = 0x75; break; // JNZ
+        case X86_INS_JNE: inverse_jcc = 0x74; break; // JZ
+        case X86_INS_JA:  inverse_jcc = 0x76; break; // JBE
+        case X86_INS_JAE: inverse_jcc = 0x72; break; // JB
+        case X86_INS_JB:  inverse_jcc = 0x73; break; // JAE
+        case X86_INS_JBE: inverse_jcc = 0x77; break; // JA
+        case X86_INS_JG:  inverse_jcc = 0x7E; break; // JLE
+        case X86_INS_JGE: inverse_jcc = 0x7C; break; // JL
+        case X86_INS_JL:  inverse_jcc = 0x7D; break; // JGE
+        case X86_INS_JLE: inverse_jcc = 0x7F; break; // JG
+        case X86_INS_JO:  inverse_jcc = 0x71; break; // JNO
+        case X86_INS_JNO: inverse_jcc = 0x70; break; // JO
+        case X86_INS_JS:  inverse_jcc = 0x79; break; // JNS
+        case X86_INS_JNS: inverse_jcc = 0x78; break; // JS
+        case X86_INS_JP:  inverse_jcc = 0x7B; break; // JNP
+        case X86_INS_JNP: inverse_jcc = 0x7A; break; // JP
+        default:
+            // Unknown conditional - fallback
+            buffer_append(b, insn->bytes, insn->size);
+            return;
+    }
+
+    // FIXED: Calculate skip offset dynamically based on actual MOV size
+    // Save original EAX on stack
+    uint8_t push_eax[] = {0x50};
+
+    // Calculate size of MOV EAX,target construction
+    size_t mov_size = get_mov_eax_imm_size((uint32_t)target);
+
+    // Swap: [ESP] gets target, EAX gets original value back (3 bytes)
+    uint8_t xchg_stack[] = {0x87, 0x04, 0x24}; // XCHG EAX, [ESP]
+
+    // RET: Jump to target (1 byte)
+    uint8_t ret[] = {0xC3};
+
+    // Calculate skip distance: PUSH(1) + MOV(variable) + XCHG(3) + RET(1)
+    uint8_t skip_distance = 1 + mov_size + 3 + 1;
+
+    // Ensure skip distance is not a bad byte
+    uint8_t nop_count = 0;
+    while (!is_bad_byte_free_byte(skip_distance + nop_count)) {
+        nop_count++;
+        if (nop_count > 10) break; // Safety limit
+    }
+
+    // Inverse conditional jump to skip over the indirect jump
+    uint8_t jcc_skip[] = {inverse_jcc, skip_distance + nop_count};
+    buffer_append(b, jcc_skip, 2);
+
+    buffer_append(b, push_eax, 1);
+
+    // Load target into EAX (null-free construction)
+    generate_mov_eax_imm(b, (uint32_t)target);
+
+    buffer_append(b, xchg_stack, 3);
+    buffer_append(b, ret, 1);
+
+    // Add NOPs if needed to avoid bad byte in skip offset
+    for (uint8_t i = 0; i < nop_count; i++) {
+        uint8_t nop[] = {0x90};
+        buffer_append(b, nop, 1);
+    }
+
+    // skip: execution continues here if condition was not met
 }
 
 /*
@@ -283,7 +354,7 @@ strategy_t conditional_jump_alternative_strategy = {
     .can_handle = can_handle_conditional_jump_alternative,
     .get_size = get_size_conditional_jump_alternative,
     .generate = generate_conditional_jump_alternative,
-    .priority = 84  // Medium-high priority
+    .priority = 86  // Higher than conditional_jump_displacement (85) to run first
 };
 
 /*

@@ -35,15 +35,17 @@ int can_handle_bt_imm_null(cs_insn *insn) {
 
 size_t get_size_bt_imm_null(cs_insn *insn) {
     int64_t bit_index = insn->detail->x86.operands[1].imm;
+    uint8_t shift_amount = (uint8_t)(bit_index + 1);
 
-    // For small bit indices (0-7), we can use a simple transformation
-    // PUSH reg (1) + SHR reg, (bit_index+1) (3) + POP reg (1) = 5 bytes
-    if (bit_index >= 0 && bit_index <= 7) {
+    // Check if shift_amount is safe for direct encoding
+    if (shift_amount == 1 || is_bad_byte_free_byte(shift_amount)) {
+        // PUSH reg (1) + SHR reg, imm8 (2-3) + POP reg (1) = 4-5 bytes
         return 5;
     }
 
-    // For larger bit indices, more complex (not common in shellcode)
-    return 10;
+    // shift_amount contains bad byte - use CL register approach
+    // PUSH reg (1) + PUSH temp (1) + generate_mov_eax_imm (5) + MOV CL/DL,AL (2) + SHR reg,CL (2) + POP temp (1) + POP reg (1) = 13 bytes
+    return 13;
 }
 
 void generate_bt_imm_null(struct buffer *b, cs_insn *insn) {
@@ -75,15 +77,37 @@ void generate_bt_imm_null(struct buffer *b, cs_insn *insn) {
     // This shifts the bit we want to test into the CF position
     uint8_t shift_amount = (uint8_t)(bit_index + 1);
 
+    // Check if we can use immediate encoding safely
     if (shift_amount == 1) {
-        // SHR reg, 1 (2 bytes: D1 /5)
+        // SHR reg, 1 (2 bytes: D1 /5) - always safe, opcode 0xD1 is safe
         buffer_write_byte(b, 0xD1);
         buffer_write_byte(b, 0xE8 + reg_idx);
-    } else if (shift_amount != 0) {
-        // SHR reg, imm8 (3 bytes: C1 /5 ib)
+    } else if (shift_amount != 0 && is_bad_byte_free_byte(shift_amount)) {
+        // SHR reg, imm8 (3 bytes: C1 /5 ib) - safe immediate
         buffer_write_byte(b, 0xC1);
         buffer_write_byte(b, 0xE8 + reg_idx);
         buffer_write_byte(b, shift_amount);
+    } else if (shift_amount != 0) {
+        // shift_amount contains bad byte - use CL register instead
+        // Determine temp register (use ECX unless target is ECX, then use EDX)
+        uint8_t temp_idx = (reg_idx == 1) ? 2 : 1;  // ECX=1, EDX=2
+
+        // PUSH temp_reg (save ECX or EDX)
+        buffer_write_byte(b, 0x50 + temp_idx);
+
+        // Construct shift_amount in EAX using null-free method
+        generate_mov_eax_imm(b, (uint32_t)shift_amount);
+
+        // MOV CL/DL, AL (transfer to low byte of temp register)
+        uint8_t mov_temp_al[] = {0x88, 0xC0 + temp_idx};  // MOV CL/DL, AL
+        buffer_append(b, mov_temp_al, 2);
+
+        // SHR reg, CL/DL (D3 /5)
+        buffer_write_byte(b, 0xD3);
+        buffer_write_byte(b, 0xE8 + reg_idx);
+
+        // POP temp_reg (restore)
+        buffer_write_byte(b, 0x58 + temp_idx);
     }
 
     // POP reg (restore original value)

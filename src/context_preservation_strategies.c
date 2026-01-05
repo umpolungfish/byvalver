@@ -8,6 +8,7 @@
 
 #include "strategy.h"
 #include "utils.h"
+#include "profile_aware_sib.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -77,8 +78,13 @@ void generate_mov_reg_reg(struct buffer *b, cs_insn *insn) {
                 return;
             } else if (dst_reg == X86_REG_EAX) {
                 // MOV EAX, [EAX] format with SIB
-                uint8_t sib_code[] = {0x8B, 0x04, 0x20};  // MOV EAX, [EAX] using SIB
-                buffer_append(b, sib_code, 3);
+                // FIXED: Use profile-safe SIB
+    if (generate_safe_mov_reg_mem(b, X86_REG_EAX, X86_REG_EAX) != 0) {
+        uint8_t push[] = {0xFF, 0x30};
+        buffer_append(b, push, 2);
+        uint8_t pop[] = {0x58};
+        buffer_append(b, pop, 1);
+    }
             } else {
                 // Use standard approach avoiding the null byte
                 uint8_t temp_code[] = {0x8B, 0x00};
@@ -189,16 +195,17 @@ size_t get_size_xor_reg_reg(__attribute__((unused)) cs_insn *insn) {
 void generate_xor_reg_reg_context(struct buffer *b, cs_insn *insn) {
     uint8_t reg = insn->detail->x86.operands[0].reg;
 
-    // XOR reg, reg is normally 0x31 /r but if ModR/M creates null, use SIB
+    // XOR reg, reg is normally 0x31 /r but if ModR/M creates null, use alternative
     uint8_t base_code[] = {0x31, 0xC0};
     base_code[1] = (get_reg_index(reg) << 3) + get_reg_index(reg);
 
     if (base_code[1] == 0) {
-        // This would create null in ModR/M, use SIB byte to avoid it
-        // For XOR EAX, EAX specifically
-        uint8_t sib_code[] = {0x31, 0x04, 0x20};  // XOR [EAX], EAX using SIB
-        sib_code[1] = 0x04 + ((get_reg_index(reg) << 3) & 0x38);  // ModR/M: reg=EAX, r/m=SIB
-        buffer_append(b, sib_code, 3);
+        // ModR/M would be null byte for XOR EAX, EAX
+        // FIXED: Use SUB EAX, EAX instead (semantically equivalent, zeroes register)
+        // SUB EAX, EAX = 0x29 0xC0 (no null bytes, same semantic result)
+        uint8_t sub_code[] = {0x29, 0xC0};
+        sub_code[1] = (get_reg_index(reg) << 3) | get_reg_index(reg);
+        buffer_append(b, sub_code, 2);
     } else {
         buffer_append(b, base_code, 2);
     }

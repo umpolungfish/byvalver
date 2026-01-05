@@ -133,14 +133,30 @@ static void generate_mov_mem_reg_bad_modrm(struct buffer *b, cs_insn *insn) {
         uint8_t lea[] = {0x8D, 0x08 | get_reg_index((uint8_t)base)};
         buffer_append(b, lea, 2);
     } else if (base != X86_REG_INVALID) {
-        // LEA ECX, [base+disp]
-        if (disp >= -128 && disp <= 127) {
+        // LEA ECX, [base+disp] - check if disp contains bad bytes
+        if (disp >= -128 && disp <= 127 && is_bad_byte_free_byte((uint8_t)disp)) {
+            // Safe disp8
             uint8_t lea[] = {0x8D, 0x48 | get_reg_index((uint8_t)base), (uint8_t)disp};
             buffer_append(b, lea, 3);
-        } else {
+        } else if (is_bad_byte_free((uint32_t)disp)) {
+            // Safe disp32
             uint8_t lea[] = {0x8D, 0x88 | get_reg_index((uint8_t)base), 0, 0, 0, 0};
             memcpy(lea + 2, &disp, 4);
             buffer_append(b, lea, 6);
+        } else {
+            // disp contains bad bytes - use arithmetic construction
+            // MOV ECX, base
+            uint8_t mov_ecx_base[] = {0x89, 0xC1 | (get_reg_index((uint8_t)base) << 3)};
+            buffer_append(b, mov_ecx_base, 2);
+
+            // PUSH EAX; generate_mov_eax_imm(disp); ADD ECX, EAX; POP EAX
+            uint8_t push_eax[] = {0x50};
+            buffer_append(b, push_eax, 1);
+            generate_mov_eax_imm(b, (uint32_t)disp);
+            uint8_t add_ecx_eax[] = {0x01, 0xC1};
+            buffer_append(b, add_ecx_eax, 2);
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
         }
     }
 
@@ -199,13 +215,30 @@ static void generate_mov_reg_mem_bad_modrm(struct buffer *b, cs_insn *insn) {
         uint8_t lea[] = {0x8D, (temp_idx << 3) | get_reg_index((uint8_t)base)};
         buffer_append(b, lea, 2);
     } else if (base != X86_REG_INVALID) {
-        if (disp >= -128 && disp <= 127) {
+        // Check if disp contains bad bytes
+        if (disp >= -128 && disp <= 127 && is_bad_byte_free_byte((uint8_t)disp)) {
+            // Safe disp8
             uint8_t lea[] = {0x8D, 0x40 | (temp_idx << 3) | get_reg_index((uint8_t)base), (uint8_t)disp};
             buffer_append(b, lea, 3);
-        } else {
+        } else if (is_bad_byte_free((uint32_t)disp)) {
+            // Safe disp32
             uint8_t lea[] = {0x8D, 0x80 | (temp_idx << 3) | get_reg_index((uint8_t)base), 0, 0, 0, 0};
             memcpy(lea + 2, &disp, 4);
             buffer_append(b, lea, 6);
+        } else {
+            // disp contains bad bytes - use arithmetic construction
+            // MOV temp_reg, base
+            uint8_t mov_temp_base[] = {0x89, 0xC0 | (get_reg_index((uint8_t)base) << 3) | temp_idx};
+            buffer_append(b, mov_temp_base, 2);
+
+            // PUSH EAX; generate_mov_eax_imm(disp); ADD temp_reg, EAX; POP EAX
+            uint8_t push_eax[] = {0x50};
+            buffer_append(b, push_eax, 1);
+            generate_mov_eax_imm(b, (uint32_t)disp);
+            uint8_t add_temp_eax[] = {0x01, 0xC0 | temp_idx};
+            buffer_append(b, add_temp_eax, 2);
+            uint8_t pop_eax[] = {0x58};
+            buffer_append(b, pop_eax, 1);
         }
     }
 

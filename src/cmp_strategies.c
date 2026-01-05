@@ -18,19 +18,15 @@ static int has_null_in_immediate(int64_t imm) {
            ((val & 0xFF000000) == 0);
 }
 
-// Helper to check if displacement contains null bytes when encoded as 32-bit
-static int has_null_in_displacement(int32_t disp) {
-    if (disp == 0) return 1; // Zero displacement is null
+// Helper to check if displacement contains bad bytes when encoded as 32-bit (profile-aware)
+static int has_bad_byte_in_displacement(int32_t disp) {
     uint32_t val = (uint32_t)disp;
-    return ((val & 0xFF) == 0) ||
-           (((val >> 8) & 0xFF) == 0) ||
-           (((val >> 16) & 0xFF) == 0) ||
-           (((val >> 24) & 0xFF) == 0);
+    return !is_bad_byte_free(val);
 }
 
-// Helper to check if a byte value is null (for disp8 encoding)
-static int is_disp8_null(int32_t disp) {
-    return ((uint8_t)disp == 0);
+// Helper to check if a byte value contains bad bytes (for disp8 encoding, profile-aware)
+static int is_disp8_bad_byte(int32_t disp) {
+    return !is_bad_byte_free_byte((uint8_t)disp);
 }
 
 // Strategy 1: CMP reg, imm with null bytes in immediate
@@ -310,7 +306,7 @@ void generate_cmp_byte_mem_imm_null(struct buffer *b, cs_insn *insn) {
             // [reg] mode
             uint8_t modrm = 0x00 + (temp_idx << 3) + base_idx;
             buffer_write_byte(b, modrm);
-        } else if (disp >= -128 && disp <= 127 && !is_disp8_null(disp)) {
+        } else if (disp >= -128 && disp <= 127 && !is_disp8_bad_byte(disp)) {
             // [reg+disp8] mode (displacement fits in 8 bits and isn't null)
             uint8_t modrm = 0x40 + (temp_idx << 3) + base_idx;
             buffer_write_byte(b, modrm);
@@ -321,7 +317,7 @@ void generate_cmp_byte_mem_imm_null(struct buffer *b, cs_insn *insn) {
             buffer_write_byte(b, modrm);
 
             // Try to use null-free displacement
-            if (has_null_in_displacement(disp)) {
+            if (has_bad_byte_in_displacement(disp)) {
                 // Use [reg] and adjust base temporarily - complex, for now use disp32
                 buffer_write_dword(b, (uint32_t)disp);
             } else {
@@ -350,7 +346,7 @@ void generate_cmp_byte_mem_imm_null(struct buffer *b, cs_insn *insn) {
         if (disp == 0 && base_reg != X86_REG_EBP) {
             uint8_t modrm = 0x00 + (temp_idx << 3) + base_idx;
             buffer_write_byte(b, modrm);
-        } else if (disp >= -128 && disp <= 127 && !is_disp8_null(disp)) {
+        } else if (disp >= -128 && disp <= 127 && !is_disp8_bad_byte(disp)) {
             uint8_t modrm = 0x40 + (temp_idx << 3) + base_idx;
             buffer_write_byte(b, modrm);
             buffer_write_byte(b, (uint8_t)disp);
@@ -433,12 +429,12 @@ void generate_cmp_mem_reg_null(struct buffer *b, cs_insn *insn) {
 
     // ADD temp, disp (if disp != 0)
     if (disp != 0) {
-        if (disp >= -128 && disp <= 127 && !is_disp8_null(disp)) {
+        if (disp >= -128 && disp <= 127 && !is_disp8_bad_byte(disp)) {
             // ADD temp, imm8 (displacement fits in 8 bits and isn't null)
             buffer_write_byte(b, 0x83);
             buffer_write_byte(b, 0xC0 + get_reg_index(temp_reg));
             buffer_write_byte(b, (uint8_t)disp);
-        } else if (!has_null_in_displacement(disp)) {
+        } else if (!has_bad_byte_in_displacement(disp)) {
             // ADD temp, imm32 (displacement is null-free as 32-bit)
             buffer_write_byte(b, 0x81);
             buffer_write_byte(b, 0xC0 + get_reg_index(temp_reg));

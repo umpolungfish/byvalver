@@ -26,6 +26,7 @@
 #include <string.h>
 #include "strategy.h"
 #include "utils.h"
+#include "profile_aware_sib.h"
 #include <capstone/capstone.h>
 
 /* Forward declarations */
@@ -240,54 +241,48 @@ static void generate_sib_null(struct buffer *b, cs_insn *insn) {
     switch (insn->id) {
         case X86_INS_MOV: {
             if (original_op_idx == 1) {  // Memory operand is source (MOV reg, [sib_addr])
-                // MOV target_reg, [temp_reg] using SIB addressing to avoid nulls
+                // MOV target_reg, [temp_reg] - direct ModR/M encoding (no SIB needed)
                 x86_reg target_reg = x86->operands[0].reg;
-                uint8_t sib_mov_code[] = {0x8B, 0x04, 0x20};
-                sib_mov_code[1] = 0x04 | (get_reg_index(target_reg) << 3);  // ModR/M: mod=00, reg=target_reg, r/m=SIB
-                sib_mov_code[2] = (0 << 6) | (4 << 3) | get_reg_index(temp_reg);  // SIB: scale=0, index=ESP (dummy), base=temp_reg
-                buffer_append(b, sib_mov_code, 3);
+                uint8_t mov_code[] = {0x8B, 0x00};
+                mov_code[1] = (get_reg_index(target_reg) << 3) | get_reg_index(temp_reg);
+                buffer_append(b, mov_code, 2);
             } else {  // Memory operand is destination (MOV [sib_addr], reg)
-                // MOV [temp_reg], source_reg using SIB addressing to avoid nulls
-                x86_reg source_reg = x86->operands[1].reg;  // Second operand is the source
-                uint8_t sib_mov_code[] = {0x89, 0x04, 0x20};
-                sib_mov_code[1] = 0x04 | (get_reg_index(source_reg) << 3);  // ModR/M: mod=00, reg=source_reg, r/m=SIB
-                sib_mov_code[2] = (0 << 6) | (4 << 3) | get_reg_index(temp_reg);  // SIB: scale=0, index=ESP (dummy), base=temp_reg
-                buffer_append(b, sib_mov_code, 3);
+                // MOV [temp_reg], source_reg - direct ModR/M encoding
+                x86_reg source_reg = x86->operands[1].reg;
+                uint8_t mov_code[] = {0x89, 0x00};
+                mov_code[1] = (get_reg_index(source_reg) << 3) | get_reg_index(temp_reg);
+                buffer_append(b, mov_code, 2);
             }
             break;
         }
         case X86_INS_PUSH: {
-            // PUSH [temp_reg] using SIB addressing to avoid nulls
-            uint8_t sib_push_code[] = {0xFF, 0x34, 0x20};
-            sib_push_code[1] = 0x34 | (6 << 3);  // ModR/M: mod=00, reg=110 (PUSH), r/m=SIB
-            sib_push_code[2] = (0 << 6) | (4 << 3) | get_reg_index(temp_reg);  // SIB: scale=0, index=ESP (dummy), base=temp_reg
-            buffer_append(b, sib_push_code, 3);
+            // PUSH [temp_reg] - direct ModR/M encoding
+            uint8_t push_code[] = {0xFF, 0x30};
+            push_code[1] = 0x30 | get_reg_index(temp_reg);  // ModR/M: mod=00, reg=110 (PUSH), r/m=temp_reg
+            buffer_append(b, push_code, 2);
             break;
         }
         case X86_INS_LEA: {
-            // LEA target_reg, [temp_reg] - load address of temp_reg using SIB addressing
+            // LEA target_reg, [temp_reg] - direct ModR/M encoding
             x86_reg target_reg = x86->operands[0].reg;
-            uint8_t sib_lea_code[] = {0x8D, 0x04, 0x20};
-            sib_lea_code[1] = 0x04 | (get_reg_index(target_reg) << 3);  // ModR/M: mod=00, reg=target_reg, r/m=SIB
-            sib_lea_code[2] = (0 << 6) | (4 << 3) | get_reg_index(temp_reg);  // SIB: scale=0, index=ESP (dummy), base=temp_reg
-            buffer_append(b, sib_lea_code, 3);
+            uint8_t lea_code[] = {0x8D, 0x00};
+            lea_code[1] = (get_reg_index(target_reg) << 3) | get_reg_index(temp_reg);
+            buffer_append(b, lea_code, 2);
             break;
         }
         case X86_INS_CMP: {
             if (original_op_idx == 1) {  // Memory operand is source (CMP reg, [sib_addr])
-                // CMP reg, [temp_reg] using SIB addressing
+                // CMP reg, [temp_reg] - direct ModR/M encoding
                 x86_reg reg = x86->operands[0].reg;
-                uint8_t sib_cmp_code[] = {0x3B, 0x04, 0x20};  // FIX: Use 0x3B for CMP r32, r/m32
-                sib_cmp_code[1] = 0x04 | (get_reg_index(reg) << 3);  // ModR/M: mod=00, reg=reg, r/m=SIB
-                sib_cmp_code[2] = (0 << 6) | (4 << 3) | get_reg_index(temp_reg);  // SIB: scale=0, index=ESP (dummy), base=temp_reg
-                buffer_append(b, sib_cmp_code, 3);
+                uint8_t cmp_code[] = {0x3B, 0x00};
+                cmp_code[1] = (get_reg_index(reg) << 3) | get_reg_index(temp_reg);
+                buffer_append(b, cmp_code, 2);
             } else {  // Memory operand is destination (CMP [sib_addr], reg)
-                // CMP [temp_reg], reg using SIB addressing
-                x86_reg reg = x86->operands[1].reg;  // Second operand is the reg
-                uint8_t sib_cmp_code[] = {0x39, 0x04, 0x20};  // FIX: Use 0x39 for CMP r/m32, r32
-                sib_cmp_code[1] = 0x04 | (get_reg_index(reg) << 3);  // ModR/M: mod=00, reg=reg, r/m=SIB
-                sib_cmp_code[2] = (0 << 6) | (4 << 3) | get_reg_index(temp_reg);  // SIB: scale=0, index=ESP (dummy), base=temp_reg
-                buffer_append(b, sib_cmp_code, 3);
+                // CMP [temp_reg], reg - direct ModR/M encoding
+                x86_reg reg = x86->operands[1].reg;
+                uint8_t cmp_code[] = {0x39, 0x00};
+                cmp_code[1] = (get_reg_index(reg) << 3) | get_reg_index(temp_reg);
+                buffer_append(b, cmp_code, 2);
             }
             break;
         }
@@ -297,37 +292,35 @@ static void generate_sib_null(struct buffer *b, cs_insn *insn) {
         case X86_INS_OR:
         case X86_INS_XOR: {
             if (original_op_idx == 1) {  // Memory operand is source (OP reg, [sib_addr])
-                // OP reg, [temp_reg] using SIB addressing
+                // OP reg, [temp_reg] - direct ModR/M encoding
                 x86_reg reg = x86->operands[0].reg;
                 uint8_t op_code;
                 switch (insn->id) {
-                    case X86_INS_ADD: op_code = 0x03; break;  // FIX: ADD r32, r/m32
-                    case X86_INS_SUB: op_code = 0x2B; break;  // FIX: SUB r32, r/m32
-                    case X86_INS_AND: op_code = 0x23; break;  // FIX: AND r32, r/m32
-                    case X86_INS_OR:  op_code = 0x0B; break;  // FIX: OR r32, r/m32
-                    case X86_INS_XOR: op_code = 0x33; break;  // FIX: XOR r32, r/m32
-                    default: op_code = 0x03; break;  // Default to ADD
+                    case X86_INS_ADD: op_code = 0x03; break;
+                    case X86_INS_SUB: op_code = 0x2B; break;
+                    case X86_INS_AND: op_code = 0x23; break;
+                    case X86_INS_OR:  op_code = 0x0B; break;
+                    case X86_INS_XOR: op_code = 0x33; break;
+                    default: op_code = 0x03; break;
                 }
-                uint8_t sib_final_code[] = {op_code, 0x04, 0x20};
-                sib_final_code[1] = 0x04 | (get_reg_index(reg) << 3);  // ModR/M: mod=00, reg=reg, r/m=SIB
-                sib_final_code[2] = (0 << 6) | (4 << 3) | get_reg_index(temp_reg);  // SIB: scale=0, index=ESP (dummy), base=temp_reg
-                buffer_append(b, sib_final_code, 3);
+                uint8_t arith_code[] = {op_code, 0x00};
+                arith_code[1] = (get_reg_index(reg) << 3) | get_reg_index(temp_reg);
+                buffer_append(b, arith_code, 2);
             } else {  // Memory operand is destination (OP [sib_addr], reg)
-                // OP [temp_reg], reg using SIB addressing
-                x86_reg reg = x86->operands[1].reg;  // Second operand is the reg
+                // OP [temp_reg], reg - direct ModR/M encoding
+                x86_reg reg = x86->operands[1].reg;
                 uint8_t op_code;
                 switch (insn->id) {
-                    case X86_INS_ADD: op_code = 0x01; break;  // FIX: ADD r/m32, r32
-                    case X86_INS_SUB: op_code = 0x29; break;  // FIX: SUB r/m32, r32
-                    case X86_INS_AND: op_code = 0x21; break;  // FIX: AND r/m32, r32
-                    case X86_INS_OR:  op_code = 0x09; break;  // FIX: OR r/m32, r32
-                    case X86_INS_XOR: op_code = 0x31; break;  // FIX: XOR r/m32, r32
-                    default: op_code = 0x01; break;  // Default to ADD
+                    case X86_INS_ADD: op_code = 0x01; break;
+                    case X86_INS_SUB: op_code = 0x29; break;
+                    case X86_INS_AND: op_code = 0x21; break;
+                    case X86_INS_OR:  op_code = 0x09; break;
+                    case X86_INS_XOR: op_code = 0x31; break;
+                    default: op_code = 0x01; break;
                 }
-                uint8_t sib_final_code[] = {op_code, 0x04, 0x20};
-                sib_final_code[1] = 0x04 | (get_reg_index(reg) << 3);  // ModR/M: mod=00, reg=reg, r/m=SIB
-                sib_final_code[2] = (0 << 6) | (4 << 3) | get_reg_index(temp_reg);  // SIB: scale=0, index=ESP (dummy), base=temp_reg
-                buffer_append(b, sib_final_code, 3);
+                uint8_t arith_code[] = {op_code, 0x00};
+                arith_code[1] = (get_reg_index(reg) << 3) | get_reg_index(temp_reg);
+                buffer_append(b, arith_code, 2);
             }
             break;
         }

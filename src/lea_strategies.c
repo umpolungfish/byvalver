@@ -1,5 +1,6 @@
 #include "strategy.h"
 #include "utils.h"
+#include "profile_aware_sib.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -51,11 +52,18 @@ void generate_lea_disp_nulls(struct buffer *b, cs_insn *insn) {
     // Use LEA dst_reg, [EAX] to get the address (which is the value in EAX)
     // The ModR/M byte for LEA r32, [r32] is: MM RRR MMM
     // For [EAX] (MMM=000) and dst_reg (RRR), ModR/M = 00 (RRR<<3) 000
-    if (dst_reg == X86_REG_EAX) {
-        // Use SIB byte to avoid null: LEA EAX, [EAX]
-        uint8_t code[] = {0x8D, 0x04, 0x20}; // LEA EAX, [EAX] with SIB byte
-        buffer_append(b, code, 3);
-    } else {
+    // FIXED: Use profile-safe SIB generation
+    if (generate_safe_lea_reg_mem(b, dst_reg, X86_REG_EAX) != 0) {
+        // Fallback - LEA is just MOV for this case
+        uint8_t mov[] = {0x89, (uint8_t)(0xC0 | (get_reg_index(X86_REG_EAX) << 3) | get_reg_index(dst_reg))};
+        buffer_append(b, mov, 2);
+    }
+}
+
+void generate_lea_reg_mem_disp_null_orig(struct buffer *b, cs_insn *insn) {
+    // Original version - keeping for reference but not used
+    uint8_t dst_reg = insn->detail->x86.operands[0].reg;
+    if (dst_reg != X86_REG_EAX) {
         // For other registers, the ModR/M byte is safe (0x8D + ModR/M where ModR/M = (dst_reg_idx << 3) | 0)
         uint8_t code[] = {0x8D, 0x00}; // LEA reg, [EAX] format
         code[1] = (get_reg_index(dst_reg) << 3) | 0;  // Encode dst_reg in reg field, [EAX] in r/m field

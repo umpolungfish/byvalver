@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "strategy.h"
+#include "profile_aware_sib.h"
 #include "utils.h"
 #include <capstone/capstone.h>
 

@@ -103,6 +103,12 @@ size_t ror_rol_immediate_get_size(cs_insn *insn) {
         if (imm8 == 0) {
             return 0;  // No-op, emit nothing
         }
+
+        // Check if imm8 contains bad byte
+        if (!is_bad_byte_free_byte(imm8)) {
+            // PUSH temp_reg (1) + PUSH EAX (1) + generate_mov_eax_imm (5) + MOV CL/DL,AL (2) + POP EAX (1) + ROR/ROL (2) + POP temp_reg (1) = 13 bytes
+            return 13;
+        }
     }
 
     size_t size = 0;
@@ -119,7 +125,7 @@ size_t ror_rol_immediate_get_size(cs_insn *insn) {
     // POP temp_reg: 1 byte
     size += 1;
 
-    return size;  // Total: 6 bytes (or 0 for no-op)
+    return size;  // Total: 6 bytes (or 0 for no-op, or 13 if imm8 is bad)
 }
 
 /*
@@ -152,16 +158,36 @@ void ror_rol_immediate_generate(struct buffer *b, cs_insn *insn) {
     buffer_append(b, &push_code, 1);
 
     // 2. MOV CL/DL, imm8
-    // Encoding: B0+reg imm8 (for 8-bit registers)
-    // CL = B1, DL = B2
-    uint8_t mov_cl_imm[2];
-    if (temp_reg == X86_REG_ECX) {
-        mov_cl_imm[0] = 0xB1;  // MOV CL, imm8
+    // Check if imm8 is safe to use directly
+    if (is_bad_byte_free_byte(imm8)) {
+        // Safe: use direct MOV CL/DL, imm8
+        // Encoding: B0+reg imm8 (for 8-bit registers)
+        // CL = B1, DL = B2
+        uint8_t mov_cl_imm[2];
+        if (temp_reg == X86_REG_ECX) {
+            mov_cl_imm[0] = 0xB1;  // MOV CL, imm8
+        } else {
+            mov_cl_imm[0] = 0xB2;  // MOV DL, imm8
+        }
+        mov_cl_imm[1] = imm8;
+        buffer_append(b, mov_cl_imm, 2);
     } else {
-        mov_cl_imm[0] = 0xB2;  // MOV DL, imm8
+        // imm8 contains bad byte - construct in EAX first
+        // PUSH EAX
+        uint8_t push_eax[] = {0x50};
+        buffer_append(b, push_eax, 1);
+
+        // Generate imm8 in EAX using null-free construction
+        generate_mov_eax_imm(b, (uint32_t)imm8);
+
+        // MOV CL/DL, AL
+        uint8_t mov_temp_al[] = {0x88, 0xC0 + temp_idx};  // MOV CL/DL, AL
+        buffer_append(b, mov_temp_al, 2);
+
+        // POP EAX (restore)
+        uint8_t pop_eax[] = {0x58};
+        buffer_append(b, pop_eax, 1);
     }
-    mov_cl_imm[1] = imm8;
-    buffer_append(b, mov_cl_imm, 2);
 
     // 3. ROR/ROL target_reg, CL/DL
     // Encoding: D3 /digit where digit is rotation opcode extension

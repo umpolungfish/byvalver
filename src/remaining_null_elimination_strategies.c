@@ -1,5 +1,6 @@
 #include "strategy.h"
 #include "utils.h"
+#include "profile_aware_sib.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -166,8 +167,8 @@ int can_handle_mov_mem_disp_enhanced(cs_insn *insn) {
 }
 
 size_t get_size_mov_mem_disp_enhanced(__attribute__((unused)) cs_insn *insn) {
-    // PUSH EAX (1) + MOV EAX, imm32 (7 max) + MOV dst_reg, [EAX] with SIB (3) + POP EAX (1) = 12 max
-    return 15; // Conservative estimate
+    // PUSH EAX (1) + MOV EAX, imm32 (7 max) + safe MOV with compensation (9 max) + POP EAX (1)
+    return 18; // Increased from 15 to account for compensation
 }
 
 void generate_mov_mem_disp_enhanced(struct buffer *b, cs_insn *insn) {
@@ -181,11 +182,16 @@ void generate_mov_mem_disp_enhanced(struct buffer *b, cs_insn *insn) {
     // MOV EAX, disp (null-safe construction)
     generate_mov_eax_imm(b, disp);
 
-    // MOV dst_reg, [EAX] using SIB addressing to completely avoid ModR/M null issues
-    // This uses the format: 8B /r where /r = [SIB] and SIB addresses [EAX]
-    uint8_t mov_inst[] = {0x8B, 0x04, 0x20};  // MOV REG, [EAX] using SIB: [0x04][0x20] where [0x20] = [EAX+0*1]
-    mov_inst[1] = 0x04 | (get_reg_index(dst_reg) << 3);  // Encode destination register in ModR/M reg field
-    buffer_append(b, mov_inst, 3);
+    // MOV dst_reg, [EAX] using PROFILE-SAFE encoding
+    // FIXED: Use profile-aware SIB generation instead of hardcoded 0x20
+    // The old hardcoded approach used SIB byte 0x20 (SPACE) which fails for http-whitespace profile
+    if (generate_safe_mov_reg_mem(b, dst_reg, X86_REG_EAX) != 0) {
+        // Fallback: use PUSH/POP approach if safe encoding fails
+        uint8_t push_mem[] = {0xFF, 0x30};  // PUSH [EAX]
+        buffer_append(b, push_mem, 2);
+        uint8_t pop_dst[] = {(uint8_t)(0x58 | get_reg_index(dst_reg))};  // POP dst_reg
+        buffer_append(b, pop_dst, 1);
+    }
 
     // POP EAX to restore
     uint8_t pop_eax[] = {0x58};
@@ -318,17 +324,22 @@ void generate_arithmetic_imm_enhanced(struct buffer *b, cs_insn *insn) {
     // Apply operation: dst_reg OP temp_reg
     uint8_t op_code = 0;
     switch(insn->id) {
-        case X86_INS_ADD: op_code = 0x01; break;  // ADD r32, r32
-        case X86_INS_SUB: op_code = 0x29; break;  // SUB r32, r32
-        case X86_INS_AND: op_code = 0x21; break;  // AND r32, r32
-        case X86_INS_OR:  op_code = 0x09; break;  // OR r32, r32
-        case X86_INS_XOR: op_code = 0x31; break;  // XOR r32, r32
-        case X86_INS_CMP: op_code = 0x39; break;  // CMP r32, r32
+        case X86_INS_ADD: op_code = 0x01; break;  // ADD r/m32, r32
+        case X86_INS_SUB: op_code = 0x29; break;  // SUB r/m32, r32
+        case X86_INS_AND: op_code = 0x21; break;  // AND r/m32, r32
+        case X86_INS_OR:  op_code = 0x0B; break;  // OR r32, r/m32 (swapped operands to avoid 0x09 TAB)
+        case X86_INS_XOR: op_code = 0x31; break;  // XOR r/m32, r32
+        case X86_INS_CMP: op_code = 0x39; break;  // CMP r/m32, r32
         default: op_code = 0x01; break;  // Default to ADD
     }
 
     uint8_t op_code_bytes[] = {op_code, 0xC0};
-    op_code_bytes[1] = 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(dst_reg);
+    // For OR, operands are swapped (dst, temp instead of temp, dst)
+    if (insn->id == X86_INS_OR) {
+        op_code_bytes[1] = 0xC0 + (get_reg_index(dst_reg) << 3) + get_reg_index(temp_reg);
+    } else {
+        op_code_bytes[1] = 0xC0 + (get_reg_index(temp_reg) << 3) + get_reg_index(dst_reg);
+    }
     buffer_append(b, op_code_bytes, 2);
 
     // POP temp_reg

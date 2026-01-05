@@ -1,5 +1,6 @@
 #include "strategy.h"
 #include "utils.h"
+#include "profile_aware_sib.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -100,11 +101,14 @@ void generate_mov_mem_imm_enhanced(struct buffer *b, cs_insn *insn) {
             
             // Check if modrm creates a null byte (when both regs are EAX)
             if (modrm == 0x00) {
-                // Use SIB to avoid null: [EAX] becomes 04 20 (ModR/M=SIB, SIB=[EAX])
-                uint8_t code[] = {0x89, 0x04, 0x20}; // MOV [EAX], EAX
-                code[1] = 0x04 + (get_reg_index(X86_REG_EAX) << 3); // ModR/M with SIB
-                code[2] = 0x20; // SIB: scale=0, index=ESP, base=EAX
-                buffer_append(b, code, 3);
+                // Use profile-safe approach to avoid null
+                if (generate_safe_mov_mem_reg(b, X86_REG_EAX, X86_REG_EAX) != 0) {
+                    // Fallback: PUSH/POP
+                    uint8_t push[] = {0x50};
+                    buffer_append(b, push, 1);
+                    uint8_t pop[] = {0x8F, 0x00};
+                    buffer_append(b, pop, 2);
+                }
             } else {
                 uint8_t code[] = {0x89, modrm};
                 buffer_append(b, code, 2);
@@ -403,11 +407,13 @@ void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
                 // MOV [addr_reg], src_reg
                 uint8_t modrm = 0x00 + (get_reg_index(src_reg) << 3) + get_reg_index(addr_reg);
                 if (modrm == 0x00) {
-                    // Use SIB to avoid null: MOV [EAX], reg -> becomes [EAX+SIB]
-                    uint8_t mov_sib[] = {0x89, 0x04, 0x20};
-                    mov_sib[1] = 0x04 + (get_reg_index(src_reg) << 3); // ModR/M
-                    mov_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB: scale=0, index=ESP, base=addr_reg
-                    buffer_append(b, mov_sib, 3);
+                    // Use profile-safe approach
+                    if (generate_safe_mov_mem_reg(b, addr_reg, src_reg) != 0) {
+                        uint8_t push[] = {0x50 | get_reg_index(src_reg)};
+                        buffer_append(b, push, 1);
+                        uint8_t pop[] = {0x8F, 0x00 | get_reg_index(addr_reg)};
+                        buffer_append(b, pop, 2);
+                    }
                 } else {
                     uint8_t mov_reg[] = {0x89, modrm};
                     buffer_append(b, mov_reg, 2);
@@ -418,10 +424,14 @@ void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
                     // MOV [addr_reg], imm32
                     uint8_t modrm = 0x80 + get_reg_index(addr_reg);
                     if (modrm == 0x80) {
-                        // Use SIB to avoid null
-                        uint8_t mov_imm_sib[] = {0xC7, 0x04, 0x20, 0, 0, 0, 0};
-                        memcpy(mov_imm_sib + 3, &imm, 4);
-                        buffer_append(b, mov_imm_sib, 7);
+                        // Profile-safe fallback: use EAX as intermediary
+                        generate_mov_eax_imm(b, imm);
+                        if (generate_safe_mov_mem_reg(b, addr_reg, X86_REG_EAX) != 0) {
+                            uint8_t push[] = {0x50};
+                            buffer_append(b, push, 1);
+                            uint8_t pop[] = {0x8F, 0x00 | get_reg_index(addr_reg)};
+                            buffer_append(b, pop, 2);
+                        }
                     } else {
                         uint8_t mov_imm[] = {0xC7, modrm, 0, 0, 0, 0};
                         memcpy(mov_imm + 2, &imm, 4);
@@ -432,11 +442,13 @@ void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
                     generate_mov_eax_imm(b, imm);
                     uint8_t modrm = 0x00 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(addr_reg);
                     if (modrm == 0x00) {
-                        // Use SIB to avoid null
-                        uint8_t mov_eax_sib[] = {0x89, 0x04, 0x20};
-                        mov_eax_sib[1] = 0x04 + (get_reg_index(X86_REG_EAX) << 3); // ModR/M
-                        mov_eax_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB
-                        buffer_append(b, mov_eax_sib, 3);
+                        // Use profile-safe approach
+                        if (generate_safe_mov_mem_reg(b, addr_reg, X86_REG_EAX) != 0) {
+                            uint8_t push[] = {0x50};
+                            buffer_append(b, push, 1);
+                            uint8_t pop[] = {0x8F, 0x00 | get_reg_index(addr_reg)};
+                            buffer_append(b, pop, 2);
+                        }
                     } else {
                         uint8_t mov_eax[] = {0x89, modrm};
                         buffer_append(b, mov_eax, 2);
@@ -450,11 +462,13 @@ void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
                 // MOV dst_reg, [addr_reg]
                 uint8_t modrm = 0x00 + (get_reg_index(dst_reg) << 3) + get_reg_index(addr_reg);
                 if (modrm == 0x00) {
-                    // Use SIB to avoid null
-                    uint8_t mov_sib[] = {0x8B, 0x04, 0x20};
-                    mov_sib[1] = 0x04 + (get_reg_index(dst_reg) << 3); // ModR/M
-                    mov_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB: scale=0, index=ESP, base=addr_reg
-                    buffer_append(b, mov_sib, 3);
+                    // Use profile-safe approach
+                    if (generate_safe_mov_reg_mem(b, dst_reg, addr_reg) != 0) {
+                        uint8_t push[] = {0xFF, 0x30 | get_reg_index(addr_reg)};
+                        buffer_append(b, push, 2);
+                        uint8_t pop[] = {0x58 | get_reg_index(dst_reg)};
+                        buffer_append(b, pop, 1);
+                    }
                 } else {
                     uint8_t mov[] = {0x8B, modrm};
                     buffer_append(b, mov, 2);
@@ -469,11 +483,18 @@ void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
                 // ADD [addr_reg], src_reg
                 uint8_t modrm = 0x00 + (get_reg_index(src_reg) << 3) + get_reg_index(addr_reg);
                 if (modrm == 0x00) {
-                    // Use SIB to avoid null
-                    uint8_t add_sib[] = {0x01, 0x04, 0x20};
-                    add_sib[1] = 0x04 + (get_reg_index(src_reg) << 3); // ModR/M
-                    add_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB
-                    buffer_append(b, add_sib, 3);
+                    // Profile-safe fallback for ADD
+                    // PUSH [addr_reg], POP EDX, ADD EDX,src, PUSH EDX, POP [addr_reg]
+                    uint8_t push_mem[] = {0xFF, 0x30 | get_reg_index(addr_reg)};
+                    buffer_append(b, push_mem, 2);
+                    uint8_t pop_edx[] = {0x5A};
+                    buffer_append(b, pop_edx, 1);
+                    uint8_t add_edx[] = {0x01, 0xC0 | (get_reg_index(src_reg) << 3) | 2};
+                    buffer_append(b, add_edx, 2);
+                    uint8_t push_edx[] = {0x52};
+                    buffer_append(b, push_edx, 1);
+                    uint8_t pop_mem[] = {0x8F, 0x00 | get_reg_index(addr_reg)};
+                    buffer_append(b, pop_mem, 2);
                 } else {
                     uint8_t add[] = {0x01, modrm};
                     buffer_append(b, add, 2);
@@ -484,9 +505,14 @@ void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
                     // ADD [addr_reg], imm32
                     uint8_t modrm = 0x80 + get_reg_index(addr_reg);
                     if (modrm == 0x80) {
-                        // Use SIB to avoid null
-                        uint8_t add_imm_sib[] = {0x83, 0x04, 0x20, (uint8_t)imm};
-                        buffer_append(b, add_imm_sib, 4);
+                        // FIXED: Use PUSH/POP approach instead of hardcoded SIB 0x20
+                        // PUSH [addr_reg], modify TOS, POP back
+                        uint8_t push[] = {0xFF, 0x30 | get_reg_index(addr_reg)};
+                        buffer_append(b, push, 2);
+                        uint8_t add_tos[] = {0x83, 0x04, 0x24, (uint8_t)imm}; // ADD [ESP], imm
+                        buffer_append(b, add_tos, 4);
+                        uint8_t pop[] = {0x8F, 0x00 | get_reg_index(addr_reg)};
+                        buffer_append(b, pop, 2);
                     } else {
                         uint8_t add_imm[] = {0x83, modrm, (uint8_t)imm};
                         buffer_append(b, add_imm, 3);
@@ -497,11 +523,13 @@ void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
                     // ADD [addr_reg], EAX
                     uint8_t modrm = 0x00 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(addr_reg);
                     if (modrm == 0x00) {
-                        // Use SIB to avoid null
-                        uint8_t add_sib[] = {0x01, 0x04, 0x20};
-                        add_sib[1] = 0x04 + (get_reg_index(X86_REG_EAX) << 3); // ModR/M
-                        add_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB
-                        buffer_append(b, add_sib, 3);
+                        // FIXED: Use PUSH/POP approach instead of hardcoded SIB 0x20
+                        uint8_t push[] = {0xFF, 0x30 | get_reg_index(addr_reg)};
+                        buffer_append(b, push, 2);
+                        uint8_t add_tos[] = {0x01, 0x04, 0x24}; // ADD [ESP], EAX
+                        buffer_append(b, add_tos, 3);
+                        uint8_t pop[] = {0x8F, 0x00 | get_reg_index(addr_reg)};
+                        buffer_append(b, pop, 2);
                     } else {
                         uint8_t add[] = {0x01, modrm};
                         buffer_append(b, add, 2);
@@ -517,11 +545,13 @@ void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
                 // CMP [addr_reg], src_reg
                 uint8_t modrm = 0x00 + (get_reg_index(src_reg) << 3) + get_reg_index(addr_reg);
                 if (modrm == 0x00) {
-                    // Use SIB to avoid null
-                    uint8_t cmp_sib[] = {0x39, 0x04, 0x20};
-                    cmp_sib[1] = 0x04 + (get_reg_index(src_reg) << 3); // ModR/M
-                    cmp_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB
-                    buffer_append(b, cmp_sib, 3);
+                    // Profile-safe fallback for CMP
+                    uint8_t push_mem[] = {0xFF, 0x30 | get_reg_index(addr_reg)};
+                    buffer_append(b, push_mem, 2);
+                    uint8_t pop_edx[] = {0x5A};
+                    buffer_append(b, pop_edx, 1);
+                    uint8_t cmp_edx[] = {0x39, 0xC0 | (get_reg_index(src_reg) << 3) | 2};
+                    buffer_append(b, cmp_edx, 2);
                 } else {
                     uint8_t cmp[] = {0x39, modrm};
                     buffer_append(b, cmp, 2);
@@ -532,9 +562,14 @@ void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
                     // CMP [addr_reg], imm32
                     uint8_t modrm = 0x80 + get_reg_index(addr_reg);
                     if (modrm == 0x80) {
-                        // Use SIB to avoid null
-                        uint8_t cmp_imm_sib[] = {0x83, 0x3C, 0x20, (uint8_t)imm};
-                        buffer_append(b, cmp_imm_sib, 4);
+                        // FIXED: Use register-based approach instead of hardcoded SIB 0x20
+                        // Load value, then compare
+                        uint8_t push[] = {0xFF, 0x30 | get_reg_index(addr_reg)};
+                        buffer_append(b, push, 2);
+                        uint8_t pop_edx[] = {0x5A}; // POP EDX
+                        buffer_append(b, pop_edx, 1);
+                        uint8_t cmp_edx[] = {0x83, 0xFA, (uint8_t)imm}; // CMP EDX, imm
+                        buffer_append(b, cmp_edx, 3);
                     } else {
                         uint8_t cmp_imm[] = {0x83, modrm, (uint8_t)imm};
                         buffer_append(b, cmp_imm, 3);
@@ -545,11 +580,13 @@ void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
                     // CMP [addr_reg], EAX
                     uint8_t modrm = 0x00 + (get_reg_index(X86_REG_EAX) << 3) + get_reg_index(addr_reg);
                     if (modrm == 0x00) {
-                        // Use SIB to avoid null
-                        uint8_t cmp_sib[] = {0x39, 0x04, 0x20};
-                        cmp_sib[1] = 0x04 + (get_reg_index(X86_REG_EAX) << 3); // ModR/M
-                        cmp_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB
-                        buffer_append(b, cmp_sib, 3);
+                        // FIXED: Use register-based approach instead of hardcoded SIB 0x20
+                        uint8_t push[] = {0xFF, 0x30 | get_reg_index(addr_reg)};
+                        buffer_append(b, push, 2);
+                        uint8_t pop_edx[] = {0x5A}; // POP EDX
+                        buffer_append(b, pop_edx, 1);
+                        uint8_t cmp_edx[] = {0x39, 0xC2}; // CMP EDX, EAX
+                        buffer_append(b, cmp_edx, 2);
                     } else {
                         uint8_t cmp[] = {0x39, modrm};
                         buffer_append(b, cmp, 2);
@@ -562,11 +599,13 @@ void generate_generic_mem_null_disp_enhanced(struct buffer *b, cs_insn *insn) {
                 // CMP dst_reg, [addr_reg]
                 uint8_t modrm = 0x00 + (get_reg_index(dst_reg) << 3) + get_reg_index(addr_reg);
                 if (modrm == 0x00) {
-                    // Use SIB to avoid null
-                    uint8_t cmp_sib[] = {0x3B, 0x04, 0x20};
-                    cmp_sib[1] = 0x04 + (get_reg_index(dst_reg) << 3); // ModR/M
-                    cmp_sib[2] = 0x20 + get_reg_index(addr_reg); // SIB
-                    buffer_append(b, cmp_sib, 3);
+                    // Profile-safe fallback for CMP
+                    uint8_t push_mem[] = {0xFF, 0x30 | get_reg_index(addr_reg)};
+                    buffer_append(b, push_mem, 2);
+                    uint8_t pop_edx[] = {0x5A};
+                    buffer_append(b, pop_edx, 1);
+                    uint8_t cmp_reg_edx[] = {0x3B, 0xC0 | (get_reg_index(dst_reg) << 3) | 2};
+                    buffer_append(b, cmp_reg_edx, 2);
                 } else {
                     uint8_t cmp[] = {0x3B, modrm};
                     buffer_append(b, cmp, 2);

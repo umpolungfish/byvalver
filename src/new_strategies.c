@@ -1,4 +1,5 @@
 #include "new_strategies.h"
+#include "profile_aware_sib.h"
 #include "utils.h"
 #include <string.h>
 #include <stdio.h>
@@ -349,14 +350,14 @@ void transform_add_mem_reg8_generate(struct buffer *b, cs_insn *insn) {
             }
         } else if (op0.mem.base != X86_REG_INVALID) {
             // LEA EAX, [base]
-            uint8_t lea_eax_base[3];
             if (op0.mem.base == X86_REG_EAX || op0.mem.base == X86_REG_RAX) {
-                // Use SIB byte to avoid null: LEA EAX, [EAX] = 0x8D 0x04 0x20
-                lea_eax_base[0] = 0x8D;
-                lea_eax_base[1] = 0x04;
-                lea_eax_base[2] = 0x20;
-                buffer_append(b, lea_eax_base, 3);
+                // FIXED: LEA EAX, [EAX] is just a NOP for address calculation
+                // Replace with simpler: NOP or just omit (EAX already has the value)
+                // For safety, use: MOV EAX, EAX (0x89 0xC0) which is a NOP
+                uint8_t nop_mov[] = {0x89, 0xC0}; // MOV EAX, EAX
+                buffer_append(b, nop_mov, 2);
             } else {
+                uint8_t lea_eax_base[2];
                 lea_eax_base[0] = 0x8D;
                 uint8_t base_reg_idx = get_capstone_reg_index(op0.mem.base);
                 lea_eax_base[1] = (0 << 6) | (get_capstone_reg_index(X86_REG_EAX) << 3) | base_reg_idx; // Mod=00, reg=000 (EAX), r/m=base

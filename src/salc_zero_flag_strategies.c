@@ -75,7 +75,8 @@ void generate_salc_zero_comparison(struct buffer *b, cs_insn *insn) {
     x86_reg cmp_reg = dst_op->reg;
 
     // Use OR reg, reg to test for zero (preserves reg value, sets flags)
-    uint8_t or_reg_reg[] = {0x09, 0x00};
+    // Changed from 0x09 (TAB) to 0x0B (OR alternative encoding)
+    uint8_t or_reg_reg[] = {0x0B, 0x00};
     or_reg_reg[1] = 0xC0 | (get_reg_index(cmp_reg) << 3) | get_reg_index(cmp_reg);
     buffer_append(b, or_reg_reg, 2);
 }
@@ -123,7 +124,8 @@ void generate_salc_with_flag_setup(struct buffer *b, cs_insn *insn) {
 
     // Use the same approach as above since SALC by itself doesn't compare
     // OR reg, reg is more appropriate for zero-checking
-    uint8_t or_reg_reg[] = {0x09, 0x00};
+    // Changed from 0x09 (TAB) to 0x0B (OR alternative encoding)
+    uint8_t or_reg_reg[] = {0x0B, 0x00};
     or_reg_reg[1] = 0xC0 | (get_reg_index(cmp_reg) << 3) | get_reg_index(cmp_reg);
     buffer_append(b, or_reg_reg, 2);
 }

@@ -10,6 +10,7 @@
 #include <capstone/capstone.h>
 #include <inttypes.h>
 #include "utils.h"
+#include "profile_aware_sib.h"
 #include "core.h"
 #include "strategy.h"
 
@@ -181,7 +182,7 @@ void generate_flag_preserving_test(struct buffer *b, cs_insn *insn) {
     uint8_t reg = insn->detail->x86.operands[0].reg;
     
     // Use OR reg, reg which preserves ZF, SF, PF like TEST reg, reg
-    uint8_t or_reg_reg[] = {0x09, 0xC0};
+    uint8_t or_reg_reg[] = {0x0B, 0xC0  /* Changed from 0x09 (TAB) to 0x0B (OR alternative encoding) */};
     or_reg_reg[1] = or_reg_reg[1] + (get_reg_index(reg) << 3) + get_reg_index(reg);
     buffer_append(b, or_reg_reg, 2);
 }
@@ -250,12 +251,13 @@ void generate_sib_addressing(struct buffer *b, cs_insn *insn) {
                 generate_mov_eax_imm(b, addr);
 
                 // MOV [EAX], src_reg with SIB to avoid null ModR/M byte
-                uint8_t mov_mem_sib[] = {0x89, 0x04, 0x20};  // MOV [EAX], reg with SIB
-                // The SIB byte 0x20 means: scale=0 (00), index=ESP (100), base=EAX (000)
-                // The ModR/M byte 0x04 means: mod=00 (no displacement), r/m=100 (SIB follows)
-                // The reg field is encoded in the middle 3 bits of the ModR/M byte
-                mov_mem_sib[1] = (mov_mem_sib[1] & 0xC7) | (get_reg_index(src_reg) << 3);  // Set reg field to src_reg (fixed: 0xC7 preserves r/m field)
-                buffer_append(b, mov_mem_sib, 3);
+                // FIXED: Use profile-safe SIB
+    if (generate_safe_mov_mem_reg(b, X86_REG_EAX, src_reg) != 0) {
+        uint8_t push[] = {0x50 | get_reg_index(src_reg)};
+        buffer_append(b, push, 1);
+        uint8_t pop[] = {0x8F, 0x00};
+        buffer_append(b, pop, 2);
+    }
                 return;
             }
         }
@@ -282,10 +284,13 @@ void generate_sib_addressing(struct buffer *b, cs_insn *insn) {
                 generate_mov_eax_imm(b, addr);
 
                 // MOV dst_reg, [EAX] with SIB to avoid null ModR/M byte
-                uint8_t mov_reg_mem_sib[] = {0x8B, 0x04, 0x20};  // MOV reg, [EAX] with SIB
-                // Set the reg field in the ModR/M byte
-                mov_reg_mem_sib[1] = (mov_reg_mem_sib[1] & 0xC7) | (get_reg_index(dst_reg) << 3);  // Set reg field to dst_reg
-                buffer_append(b, mov_reg_mem_sib, 3);
+                // FIXED: Use profile-safe SIB
+    if (generate_safe_mov_reg_mem(b, dst_reg, X86_REG_EAX) != 0) {
+        uint8_t push[] = {0xFF, 0x30};
+        buffer_append(b, push, 2);
+        uint8_t pop[] = {0x58 | get_reg_index(dst_reg)};
+        buffer_append(b, pop, 1);
+    }
                 return;
             }
         }

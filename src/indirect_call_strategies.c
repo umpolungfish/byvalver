@@ -1,5 +1,6 @@
 #include "strategy.h"
 #include "utils.h"
+#include "profile_aware_sib.h"
 #include <stdio.h>
 
 /**
@@ -57,9 +58,9 @@ size_t get_size_indirect_call_mem(cs_insn *insn) {
 
     // Size calculation:
     // 1. MOV EAX, addr (null-free) - variable size
-    // 2. MOV EAX, [EAX] using SIB - 3 bytes (8B 04 20)
+    // 2. Safe MOV EAX, [EAX] with compensation - 9 bytes max
     // 3. CALL EAX - 2 bytes (FF D0)
-    return get_mov_eax_imm_size(addr) + 3 + 2;
+    return get_mov_eax_imm_size(addr) + 9 + 2;
 }
 
 void generate_indirect_call_mem(struct buffer *b, cs_insn *insn) {
@@ -69,12 +70,15 @@ void generate_indirect_call_mem(struct buffer *b, cs_insn *insn) {
     generate_mov_eax_imm(b, addr);
 
     // Step 2: Dereference - Load the value at [EAX] into EAX
-    // Use SIB addressing to avoid null byte in ModR/M
-    // MOV EAX, [EAX] using SIB = 8B 04 20 (no null bytes!)
-    // ModR/M: 04 = mod=00 (no disp), reg=000 (EAX), r/m=100 (SIB follows)
-    // SIB: 20 = scale=00 (x1), index=100 (ESP/none), base=000 (EAX)
-    uint8_t mov_eax_deref[] = {0x8B, 0x04, 0x20};
-    buffer_append(b, mov_eax_deref, 3);
+    // FIXED: Use profile-aware SIB generation instead of hardcoded 0x20
+    // The old approach used SIB byte 0x20 (SPACE) which fails for http-whitespace profile
+    if (generate_safe_mov_reg_mem(b, X86_REG_EAX, X86_REG_EAX) != 0) {
+        // Fallback: PUSH [EAX] / POP EAX
+        uint8_t push_mem[] = {0xFF, 0x30};  // PUSH [EAX]
+        buffer_append(b, push_mem, 2);
+        uint8_t pop_eax[] = {0x58};  // POP EAX
+        buffer_append(b, pop_eax, 1);
+    }
 
     // Step 3: Call the function pointer now in EAX
     // CALL EAX = FF D0
@@ -144,9 +148,9 @@ size_t get_size_indirect_jmp_mem(cs_insn *insn) {
 
     // Size calculation:
     // 1. MOV EAX, addr (null-free) - variable size
-    // 2. MOV EAX, [EAX] using SIB - 3 bytes (8B 04 20)
+    // 2. Safe MOV EAX, [EAX] with compensation - 9 bytes max
     // 3. JMP EAX - 2 bytes (FF E0)
-    return get_mov_eax_imm_size(addr) + 3 + 2;
+    return get_mov_eax_imm_size(addr) + 9 + 2;
 }
 
 void generate_indirect_jmp_mem(struct buffer *b, cs_insn *insn) {
@@ -156,12 +160,15 @@ void generate_indirect_jmp_mem(struct buffer *b, cs_insn *insn) {
     generate_mov_eax_imm(b, addr);
 
     // Step 2: Dereference - Load the value at [EAX] into EAX
-    // Use SIB addressing to avoid null byte in ModR/M
-    // MOV EAX, [EAX] using SIB = 8B 04 20 (no null bytes!)
-    // ModR/M: 04 = mod=00 (no disp), reg=000 (EAX), r/m=100 (SIB follows)
-    // SIB: 20 = scale=00 (x1), index=100 (ESP/none), base=000 (EAX)
-    uint8_t mov_eax_deref[] = {0x8B, 0x04, 0x20};
-    buffer_append(b, mov_eax_deref, 3);
+    // FIXED: Use profile-aware SIB generation instead of hardcoded 0x20
+    // The old approach used SIB byte 0x20 (SPACE) which fails for http-whitespace profile
+    if (generate_safe_mov_reg_mem(b, X86_REG_EAX, X86_REG_EAX) != 0) {
+        // Fallback: PUSH [EAX] / POP EAX
+        uint8_t push_mem[] = {0xFF, 0x30};  // PUSH [EAX]
+        buffer_append(b, push_mem, 2);
+        uint8_t pop_eax[] = {0x58};  // POP EAX
+        buffer_append(b, pop_eax, 1);
+    }
 
     // Step 3: Jump to the address now in EAX
     // JMP EAX = FF E0

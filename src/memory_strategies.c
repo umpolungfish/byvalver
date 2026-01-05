@@ -1,5 +1,6 @@
 #include "strategy.h"
 #include "utils.h"
+#include "profile_aware_sib.h"
 #include <stdio.h>
 
 // Memory MOV strategy for [imm32] addressing
@@ -52,10 +53,13 @@ void generate_mov_mem_imm(struct buffer *b, cs_insn *insn) {
     if (dst_reg == temp_reg) {
         // Special case: if dst_reg and temp_reg are the same, we need to be careful
         // Use SIB addressing to avoid null bytes when both registers are the same
-        uint8_t code[] = {0x8B, 0x04, 0x20}; // MOV EAX, [EAX] type with SIB
-        code[1] = 0x04 + (get_reg_index(dst_reg) << 3);  // ModR/M with SIB byte
-        code[2] = (0 << 6) | (4 << 3) | get_reg_index(temp_reg);  // SIB: scale=0, index=ESP, base=temp_reg
-        buffer_append(b, code, 3);
+        // FIXED: Use profile-safe SIB
+    if (generate_safe_mov_reg_mem(b, X86_REG_EAX, X86_REG_EAX) != 0) {
+        uint8_t push[] = {0xFF, 0x30};
+        buffer_append(b, push, 2);
+        uint8_t pop[] = {0x58};
+        buffer_append(b, pop, 1);
+    }
     } else {
         // Standard case: MOV dst_reg, [temp_reg]
         uint8_t modrm = 0x00 + (get_reg_index(dst_reg) << 3) + get_reg_index(temp_reg);
@@ -63,10 +67,13 @@ void generate_mov_mem_imm(struct buffer *b, cs_insn *insn) {
         // Check if modrm creates a problematic byte (when both regs are EAX, it creates 0x00)
         if (modrm == 0x00) {
             // Use SIB to avoid nulls: [EAX] becomes 04 20 (ModR/M=SIB, SIB=[EAX])
-            uint8_t code[] = {0x8B, 0x04, 0x20};
-            code[1] = 0x04 + (get_reg_index(dst_reg) << 3);  // ModR/M
-            code[2] = 0x20 + get_reg_index(temp_reg);  // SIB: scale=0, index=ESP, base=temp_reg
-            buffer_append(b, code, 3);
+            // FIXED: Use profile-safe SIB
+    if (generate_safe_mov_reg_mem(b, X86_REG_EAX, X86_REG_EAX) != 0) {
+        uint8_t push[] = {0xFF, 0x30};
+        buffer_append(b, push, 2);
+        uint8_t pop[] = {0x58};
+        buffer_append(b, pop, 1);
+    }
         } else {
             uint8_t code[] = {0x8B, modrm};
             buffer_append(b, code, 2);
@@ -205,8 +212,11 @@ void generate_lea_disp32(struct buffer *b, cs_insn *insn) {
     // LEA dst_reg, [EAX] - with safe ModR/M encoding
     if (dst_reg == X86_REG_EAX) {
         // Use SIB byte to avoid null: LEA EAX, [EAX] = 8D 04 20
-        uint8_t code[] = {0x8D, 0x04, 0x20}; // LEA EAX, [EAX] with SIB byte (scale=0, index=ESP, base=EAX)
-        buffer_append(b, code, 3);
+        // FIXED: Use profile-safe SIB
+    if (generate_safe_lea_reg_mem(b, X86_REG_EAX, X86_REG_EAX) != 0) {
+        uint8_t mov[] = {0x89, 0xC0};  // MOV EAX, EAX (nop equivalent)
+        buffer_append(b, mov, 2);
+    }
     } else {
         // For other registers: LEA reg, [EAX] = 8D /0
         uint8_t code[] = {0x8D, 0x00}; // LEA reg, [EAX] format

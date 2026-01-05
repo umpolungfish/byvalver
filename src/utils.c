@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "utils.h"
 #include "core.h"
+#include "profile_aware_sib.h"  // For profile-safe SIB generation
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
@@ -65,17 +66,10 @@ void _generate_mov_eax_imm_direct(struct buffer *b, uint32_t imm) {
 }
 
 void generate_mov_eax_imm(struct buffer *b, uint32_t imm) {
-    // Check if the immediate value is already null-byte-free
-    int has_null = 0;
-    for (int i = 0; i < 4; i++) {
-        if (((imm >> (i * 8)) & 0xFF) == 0x00) {
-            has_null = 1;
-            break;
-        }
-    }
-
-    if (!has_null) {
-        // If no null bytes, use the direct MOV EAX, imm32
+    // Check if the immediate value is already bad-byte-free (profile-aware, v3.0+)
+    // Use is_bad_byte_free() to check ALL configured bad bytes, not just 0x00
+    if (is_bad_byte_free(imm)) {
+        // If no bad bytes, use the direct MOV EAX, imm32
         _generate_mov_eax_imm_direct(b, imm);
     } else {
         // Try NEG-based approach
@@ -144,10 +138,47 @@ void generate_mov_eax_imm(struct buffer *b, uint32_t imm) {
                             return;
                         }
 
-                        // Load first non-zero byte into AL using MOV AL, imm8
+                        // Load first non-zero byte into AL using safe construction
                         uint8_t first_byte = (imm >> (first_nonzero * 8)) & 0xFF;
-                        uint8_t mov_al[] = {0xB0, first_byte};  // MOV AL, imm8
-                        buffer_append(b, mov_al, 2);
+
+                        if (is_bad_byte_free_byte(first_byte)) {
+                            // Safe byte - use direct MOV
+                            uint8_t mov_al[] = {0xB0, first_byte};  // MOV AL, imm8
+                            buffer_append(b, mov_al, 2);
+                        } else {
+                            // Bad byte - construct using arithmetic from safe values
+                            // Find two safe bytes that add/sub/xor to target
+                            int found = 0;
+                            for (uint8_t base = 1; base < 0xFF && !found; base++) {
+                                if (!is_bad_byte_free_byte(base)) continue;
+
+                                uint8_t offset = first_byte - base;
+                                if (is_bad_byte_free_byte(offset)) {
+                                    // Use ADD: MOV AL, base; ADD AL, offset
+                                    uint8_t mov_al[] = {0xB0, base};
+                                    buffer_append(b, mov_al, 2);
+                                    uint8_t add_al[] = {0x04, offset};  // ADD AL, imm8
+                                    buffer_append(b, add_al, 2);
+                                    found = 1;
+                                }
+                            }
+                            if (!found) {
+                                // Fallback: use larger value and subtract
+                                for (uint8_t base = first_byte + 1; base != 0 && !found; base++) {
+                                    if (!is_bad_byte_free_byte(base)) continue;
+
+                                    uint8_t offset = base - first_byte;
+                                    if (is_bad_byte_free_byte(offset)) {
+                                        // Use SUB: MOV AL, base; SUB AL, offset
+                                        uint8_t mov_al[] = {0xB0, base};
+                                        buffer_append(b, mov_al, 2);
+                                        uint8_t sub_al[] = {0x2C, offset};  // SUB AL, imm8
+                                        buffer_append(b, sub_al, 2);
+                                        found = 1;
+                                    }
+                                }
+                            }
+                        }
 
                         // Process remaining bytes (including zeros)
                         for (int i = first_nonzero - 1; i >= 0; i--) {
@@ -157,9 +188,27 @@ void generate_mov_eax_imm(struct buffer *b, uint32_t imm) {
 
                             uint8_t byte_val = (imm >> (i * 8)) & 0xFF;
                             if (byte_val != 0) {
-                                // OR in the non-zero byte using OR AL, imm8 (0x0C)
-                                uint8_t or_al[] = {0x0C, byte_val};  // OR AL, imm8
-                                buffer_append(b, or_al, 2);
+                                if (is_bad_byte_free_byte(byte_val)) {
+                                    // Safe byte - use direct OR
+                                    uint8_t or_al[] = {0x0C, byte_val};  // OR AL, imm8
+                                    buffer_append(b, or_al, 2);
+                                } else {
+                                    // Bad byte - construct using ADD from safe values
+                                    int found = 0;
+                                    for (uint8_t base = 1; base < byte_val && !found; base++) {
+                                        if (!is_bad_byte_free_byte(base)) continue;
+
+                                        uint8_t offset = byte_val - base;
+                                        if (is_bad_byte_free_byte(offset)) {
+                                            // ADD AL, base; ADD AL, offset
+                                            uint8_t add_al_base[] = {0x04, base};
+                                            buffer_append(b, add_al_base, 2);
+                                            uint8_t add_al_offset[] = {0x04, offset};
+                                            buffer_append(b, add_al_offset, 2);
+                                            found = 1;
+                                        }
+                                    }
+                                }
                             }
                             // Zero bytes don't need OR - the shift already placed 0x00 in AL
                         }
@@ -343,19 +392,13 @@ void generate_mov_reg_mem_imm(struct buffer *b, cs_insn *insn) {
     generate_mov_eax_imm(b, addr);
     
     // MOV reg, [EAX]
-    // The ModR/M byte for MOV r32, [r32] is: MM RRR MMM
-    // For [EAX] (MMM=000) and reg (RRR), ModR/M = 00 (RRR<<3) 000
-    // If reg is EAX, RRR=000, so ModR/M = 00 000 000 = 0x00 (null byte!)
-    if (reg == X86_REG_EAX) {
-        // Use SIB byte to avoid null: MOV EAX, [EAX]
-        // This becomes: 8B 04 20 (where 04 is ModR/M with SIB, 20 is SIB for [EAX])
-        uint8_t code[] = {0x8B, 0x04, 0x20}; // MOV EAX, [EAX]
-        buffer_append(b, code, 3);
-    } else {
-        // For other registers, the ModR/M byte is safe
-        uint8_t code[] = {0x8B, 0x00}; // MOV reg, [EAX] format
-        code[1] = (get_reg_index(reg) << 3) | 0;  // Encode reg in reg field, [EAX] in r/m field
-        buffer_append(b, code, 2);
+    // FIXED: Use profile-safe SIB generation instead of hardcoded 0x20
+    if (generate_safe_mov_reg_mem(b, reg, X86_REG_EAX) != 0) {
+        // Fallback
+        uint8_t push[] = {0xFF, 0x30};  // PUSH [EAX]
+        buffer_append(b, push, 2);
+        uint8_t pop[] = {(uint8_t)(0x58 | get_reg_index(reg))};  // POP reg
+        buffer_append(b, pop, 1);
     }
 }
 
@@ -373,19 +416,11 @@ void generate_lea_reg_mem_disp32(struct buffer *b, cs_insn *insn) {
     generate_mov_eax_imm(b, addr);
     
     // LEA dst_reg, [EAX]
-    // The ModR/M byte for LEA r32, [r32] is: MM RRR MMM
-    // For [EAX] (MMM=000) and dst_reg (RRR), ModR/M = 00 (RRR<<3) 000  
-    // If dst_reg is EAX, RRR=000, so ModR/M = 00 000 000 = 0x00 (null byte!)
-    if (dst_reg == X86_REG_EAX) {
-        // Use SIB byte to avoid null: LEA EAX, [EAX]
-        // This becomes: 8D 04 20 (where 04 is ModR/M with SIB, 20 is SIB for [EAX])
-        uint8_t code[] = {0x8D, 0x04, 0x20}; // LEA EAX, [EAX]
-        buffer_append(b, code, 3);
-    } else {
-        // For other registers, the ModR/M byte is safe
-        uint8_t code[] = {0x8D, 0x00}; // LEA reg, [EAX] format
-        code[1] = (get_reg_index(dst_reg) << 3) | 0;  // Encode dst_reg in reg field, [EAX] in r/m field
-        buffer_append(b, code, 2);
+    // FIXED: Use profile-safe SIB generation instead of hardcoded 0x20
+    if (generate_safe_lea_reg_mem(b, dst_reg, X86_REG_EAX) != 0) {
+        // Fallback - LEA is just MOV for [reg] with no displacement
+        uint8_t mov[] = {0x89, (uint8_t)(0xC0 | (get_reg_index(X86_REG_EAX) << 3) | get_reg_index(dst_reg))};
+        buffer_append(b, mov, 2);
     }
 }
 
@@ -403,20 +438,13 @@ void generate_mov_disp32_reg(struct buffer *b, cs_insn *insn) {
     generate_mov_eax_imm(b, addr);
     
     // MOV [EAX], src_reg
-    // The ModR/M byte for MOV [r32], r32 is: MM RRR MMM 
-    // For [EAX] (MMM=000) and src_reg (RRR), ModR/M = 00 (RRR<<3) 000
-    // If src_reg is EAX, RRR=000, so ModR/M = 00 000 000 = 0x00 (null byte!)
-    uint8_t src_reg_idx = get_reg_index(src_reg);
-    if (src_reg == X86_REG_EAX) {
-        // Use SIB byte to avoid null: MOV [EAX], EAX
-        // This becomes: 89 04 20 (where 04 is ModR/M with SIB, 20 is SIB for [EAX])
-        uint8_t code[] = {0x89, 0x04, 0x20}; // MOV [EAX], EAX
-        buffer_append(b, code, 3);
-    } else {
-        // For other registers, the ModR/M byte is safe
-        uint8_t code[] = {0x89, 0x00}; // MOV [EAX], reg format
-        code[1] = (src_reg_idx << 3) | 0;  // Encode src_reg in reg field, [EAX] in r/m field
-        buffer_append(b, code, 2);
+    // FIXED: Use profile-safe SIB generation instead of hardcoded 0x20
+    if (generate_safe_mov_mem_reg(b, X86_REG_EAX, src_reg) != 0) {
+        // Fallback
+        uint8_t push[] = {(uint8_t)(0x50 | get_reg_index(src_reg))};  // PUSH src_reg
+        buffer_append(b, push, 1);
+        uint8_t pop[] = {0x8F, 0x00};  // POP [EAX]
+        buffer_append(b, pop, 2);
     }
 }
 
@@ -434,19 +462,19 @@ void generate_cmp_mem32_reg(struct buffer *b, cs_insn *insn) {
     generate_mov_eax_imm(b, addr);
     
     // CMP [EAX], reg
-    // The ModR/M byte for CMP [r32], r32 is: MM RRR MMM
-    // For [EAX] (MMM=000) and reg (RRR), ModR/M = 00 (RRR<<3) 000
-    // If reg is EAX, RRR=000, so ModR/M = 00 000 000 = 0x00 (null byte!)
-    if (reg == X86_REG_EAX) {
-        // Use SIB byte to avoid null: CMP [EAX], EAX
-        // This becomes: 39 04 20 (where 04 is ModR/M with SIB, 20 is SIB for [EAX])
-        uint8_t code[] = {0x39, 0x04, 0x20}; // CMP [EAX], EAX
-        buffer_append(b, code, 3);
+    // FIXED: Use profile-safe SIB generation for CMP instruction
+    sib_encoding_result_t enc = select_sib_encoding_for_eax(reg);
+    if (enc.strategy == SIB_ENCODING_STANDARD) {
+        uint8_t code[3] = {0x39, enc.modrm_byte, enc.sib_byte};
+        buffer_append(b, code, ((enc.modrm_byte & 0x07) == 0x04) ? 3 : 2);
     } else {
-        // For other registers, the ModR/M byte is safe
-        uint8_t code[] = {0x39, 0x00}; // CMP [EAX], reg format
-        code[1] = (get_reg_index(reg) << 3) | 0;  // Encode reg in reg field, [EAX] in r/m field
-        buffer_append(b, code, 2);
+        // Complex fallback for CMP
+        uint8_t push[] = {0xFF, 0x30};  // PUSH [EAX]
+        buffer_append(b, push, 2);
+        uint8_t pop_temp[] = {0x5A};  // POP EDX (temp)
+        buffer_append(b, pop_temp, 1);
+        uint8_t cmp[] = {0x39, (uint8_t)(0xC0 | (get_reg_index(reg) << 3) | 2)};  // CMP EDX, reg
+        buffer_append(b, cmp, 2);
     }
 }
 
@@ -476,16 +504,32 @@ void generate_arith_mem32_imm32(struct buffer *b, cs_insn *insn) {
     }
     
     // For now, using a 32-bit immediate for memory operations
-    // The opcode is 83/8B - but 83 is for 8-bit immediates, 81 is for 32-bit immediates
-    // For memory operations like ADD [EAX], imm32, the format is: 81 /0 imm32
-    // where ModR/M byte 00 is for [EAX], but that creates null byte
-    // Using SIB byte to avoid null: 81 /0 uses ModR/M=04 with SIB=20 (scale=00, index=100/ESP, base=000/EAX)
-    uint8_t fixed_code[] = {0x81, 0x04, 0x20, 0, 0, 0, 0};
-    fixed_code[0] = base_opcode + 0x01; // Switch from 83 to 81 for 32-bit immediate
-    // fixed_code[1] = 0x04; is ModR/M byte that indicates SIB byte follows
-    // fixed_code[2] = 0x20; is SIB byte for [EAX] (scale=00, index=100/ESP=no index, base=000/EAX)
-    memcpy(fixed_code + 3, &imm, 4);
-    buffer_append(b, fixed_code, 7);
+    // FIXED: Use profile-safe SIB generation
+    uint8_t opcode = base_opcode + 0x01;  // Switch from 83 to 81 for 32-bit immediate
+    sib_encoding_result_t enc = select_sib_encoding_for_eax(X86_REG_EAX);
+
+    if (enc.strategy == SIB_ENCODING_STANDARD) {
+        uint8_t fixed_code[] = {opcode, enc.modrm_byte, enc.sib_byte, 0, 0, 0, 0};
+        memcpy(fixed_code + 3, &imm, 4);
+        buffer_append(b, fixed_code, ((enc.modrm_byte & 0x07) == 0x04) ? 7 : 6);
+    } else {
+        // Complex fallback - load value, perform operation, store back
+        uint8_t push[] = {0xFF, 0x30};  // PUSH [EAX]
+        buffer_append(b, push, 2);
+        uint8_t pop[] = {0x5A};  // POP EDX
+        buffer_append(b, pop, 1);
+
+        // Perform operation on EDX
+        uint8_t op_imm[] = {opcode, 0xC2, 0, 0, 0, 0};  // OP EDX, imm32
+        memcpy(op_imm + 2, &imm, 4);
+        buffer_append(b, op_imm, 6);
+
+        // Store result back
+        uint8_t push_edx[] = {0x52};  // PUSH EDX
+        buffer_append(b, push_edx, 1);
+        uint8_t pop_mem[] = {0x8F, 0x00};  // POP [EAX]
+        buffer_append(b, pop_mem, 2);
+    }
 }
 
 size_t get_xor_reg_reg_size(__attribute__((unused)) cs_insn *insn) {
