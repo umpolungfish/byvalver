@@ -8,7 +8,6 @@
 
 <div align="center">
   <img src="https://img.shields.io/badge/C-%2300599C.svg?style=for-the-badge&logo=c&logoColor=white" alt="C">
-  <img src="https://img.shields.io/badge/Build-Clean-Pink?style=for-the-badge&color=FF69B4" alt="Static Badge">
   <img src="https://img.shields.io/badge/shellcode-scrubbing-%238300FF.svg?style=for-the-badge" alt="shellcode scrubbing">
   <img src="https://img.shields.io/badge/cross--platform-windows%20%7C%20linux%20%7C%20macOS-%230071C5.svg?style=for-the-badge" alt="cross-platform">
   <img src="https://img.shields.io/badge/build-clean-%23000000.svg?style=for-the-badge" alt="build clean">
