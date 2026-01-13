@@ -1,20 +1,19 @@
-<DOCUMENT filename="README.md">
-  
-# byvalver (·𐑚𐑲𐑝𐑨𐑤𐑝𐑼)
-
-## THE SHELLCODE BAD-BYTE BANISHER
-
 <div align="center">
-  <img src="./assets/images/byvalver_logo.png" alt="byvalver logo" width="750">
+  <h1>byvalver (·𐑚𐑲𐑝𐑨𐑤𐑝𐑼)</h1>
+  <p><b>THE SHELLCODE BAD-BYTE BANISHER</b></p>
+
+![byvalver banishes bad-bytes with extreme prejudice](https://imgur.com/4cPDzhM)
+
 </div>
 
 <div align="center">
   <img src="https://img.shields.io/badge/C-%2300599C.svg?style=for-the-badge&logo=c&logoColor=white" alt="C">
-  <img src="https://img.shields.io/badge/Shellcode-Analysis-%23FF6B6B.svg?style=for-the-badge" alt="Shellcode Analysis">
-  <img src="https://img.shields.io/badge/Cross--Platform-Windows%20%7C%20Linux%20%7C%20macOS-%230071C5.svg?style=for-the-badge" alt="Cross-Platform">
-  <img src="https://img.shields.io/badge/Security-Hardened-%23000000.svg?style=for-the-badge" alt="Security Hardened">
-  <a href="https://github.com/sponsors/umpolungfish"><img src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github-sponsors&logoColor=white" alt="Sponsor on GitHub"></a>
-  <a href="https://ko-fi.com/umpolungfish"><img src="https://img.shields.io/badge/Ko--fi-Support-%23FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
+  <img src="https://img.shields.io/badge/build-clean-pink?style=flat&logo=%20pterodactyl&logoColor=FFFFFF&labelColor=000000&color=FF69B4" alt="Static Badge">
+  <img src="https://img.shields.io/badge/shellcode-scrubbing-%238300FF.svg?style=for-the-badge" alt="shellcode scrubbing">
+  <img src="https://img.shields.io/badge/cross--platform-windows%20%7C%20linux%20%7C%20macOS-%230071C5.svg?style=for-the-badge" alt="cross-platform">
+  <img src="https://img.shields.io/badge/build-clean-%23000000.svg?style=for-the-badge" alt="build clean">
+  <a href="https://github.com/sponsors/umpolungfish"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github-sponsors&logoColor=white" alt="sponsor on gitHub"></a>
+  <a href="https://ko-fi.com/umpolungfish"><img src="https://img.shields.io/badge/ko--fi-support-%23FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="support on ko-fi"></a>
 </div>
 
 <p align="center">
@@ -66,7 +65,7 @@ Supports `Windows`, `Linux`, and `macOS`
 
 ### BAD-BYTE BANISHMENT IN ACTION
 
-![byvalver batch processing](./assets/images/denulling.gif)
+![bad-byte banishment in action](https://i.imgur.com/b17ejae.gif)
 
 ## QUICK-START
 
@@ -155,13 +154,13 @@ byvalver -r --profile http-newline input_dir/ output_dir/
 ## INTERACTIVE TUI
 
 <div align="center">
-  <img src="./assets/images/menu_main.png" alt="Main TUI Menu" width="750">
+![TUI main menu](https://imgur.com/Ozh0y3N)
 </div>
 
 ---
 
 <div align="center">
-  <img src="./assets/images/menu_proc.png" alt="Dynamic Batch Processing Menu" width="750">
+![TUI batch processing](https://imgur.com/Ozh0y3N)
 </div>
 
 ---
@@ -499,6 +498,13 @@ For detailed profile documentation, see [docs/BAD_BYTE_PROFILES.md](docs/BAD_BYT
 - **NEW in v3.7**: Segment register bad-byte detection (FS/GS prefix detection)
 - **NEW in v3.8**: Profile-aware SIB generation system (eliminates hardcoded 0x20 SIB byte)
 - **NEW in v3.8**: Critical fixes for conditional jump handling and partial register optimization
+- **NEW in v3.9**: Polymorphic NOP insertion with multiple NOP equivalents
+- **NEW in v3.9**: Constant unfolding for immediate value obfuscation
+- **NEW in v3.9**: Register renaming obfuscation with XCHG patterns
+- **NEW in v3.9**: Stack spill obfuscation for arithmetic operations
+- **NEW in v3.9**: Instruction reordering with NOP insertion
+- **NEW in v3.9**: Runtime self-modification strategy (basic implementation)
+- **NEW in v3.9**: Overlapping instruction generation
 - Comprehensive support for `MOV`, `ADD/SUB`, `XOR`, `LEA`, `CMP`, `PUSH`, and more
 
 The engine employs multi-pass processing (obfuscation → denulling) with robust fallback mechanisms for edge cases
@@ -926,6 +932,13 @@ The obfuscation pass of `byvalver` (enabled via `--biphasic`) applies anti-analy
 - **`Register Reassignment`**: Data flow hiding
 - **`Multiplication by One`**: `IMUL` patterns
 - **`NOP Sleds`**: Variable padding
+- **`Polymorphic NOP Insertion`**: Multiple NOP equivalents (XCHG EAX,EAX, LEA, MOV)
+- **`Constant Unfolding`**: Break immediates into arithmetic operations
+- **`Register Renaming`**: XCHG-based register substitution
+- **`Stack Spill Obfuscation`**: Stack-based arithmetic operations
+- **`Instruction Reordering`**: NOP-inserted instruction shuffling
+- **`Runtime Self-Modification`**: Self-modifying code generation
+- **`Overlapping Instructions`**: Multi-interpretation byte sequences
 - **`Jump Decoys`**: Fake targets
 - **`Relative Offsets`**: Calculated jumps
 - **`Switch-Based`**: Computed flow
