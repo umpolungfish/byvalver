@@ -2,7 +2,7 @@
   <h1>byvalver (·𐑚𐑲𐑝𐑨𐑤𐑝𐑼)</h1>
   <p><b>THE SHELLCODE BAD-BYTE BANISHER</b></p>
 
-<img src="https://imgur.com/4cPDzhM" alt="byvalver banishes bad-bytes with extreme prejudice">
+<img src="assets/images/byvalver_logo.png" alt="byvalver banishes bad-bytes with extreme prejudice">
 
 </div>
 
@@ -65,7 +65,7 @@ Supports `Windows`, `Linux`, and `macOS`
 
 ### BAD-BYTE BANISHMENT IN ACTION
 
-<img src="https://i.imgur.com/b17ejae.gif" alt="bad-byte banishment in action">
+<img src="assets/images/denulling.gif" alt="bad-byte banishment in action">
 
 ## QUICK-START
 
@@ -154,13 +154,13 @@ byvalver -r --profile http-newline input_dir/ output_dir/
 ## INTERACTIVE TUI
 
 <div align="center">
-<img src="https://imgur.com/Ozh0y3N" alt="TUI main menu">
+<img src="assets/images/menu_main.png" alt="TUI main menu">
 </div>
 
 ---
 
 <div align="center">
-<img src="https://imgur.com/Gj3pjdd" alt="TUI batch processing">
+<img src="assets/images/menu_proc.png" alt="TUI batch processing">
 </div>
 
 ---
