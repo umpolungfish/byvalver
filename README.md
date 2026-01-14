@@ -43,14 +43,14 @@
 
 `byvalver` is a CLI tool built in `C` for automatically eliminating (or **"banishing"**) `bad-bytes` from x86/x64/ARM/ARM64 shellcode while maintaining complete functional equivalence
 
-**🔥 NEW in v4.0: Cross-Architecture Support**
+**NEW in v4.0: Cross-Architecture Support**
 - **x86** (32-bit Intel/AMD): Full production support (150+ strategies)
 - **x64** (64-bit Intel/AMD): Full production support (150+ strategies) - default
 - **ARM** (32-bit): Experimental support (7 core strategies implemented)
 - **ARM64** (AArch64): Framework ready (basic strategies implemented)
 - Automatic Capstone mode selection via `--arch` flag
 
-**🛠️ v4.0.1 Bug Fixes:**
+**v4.0.1 Bug Fixes:**
 - Fixed ARM SUB instruction encoding (correct opcode 0x2 with I=1 bit)
 - Fixed ARM64 strategy `can_handle` logic for pass-through strategies
 - Added experimental warnings when ARM/ARM64 architecture is selected
