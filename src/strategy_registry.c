@@ -62,8 +62,6 @@
 #include "bitwise_immediate_badbyte_strategies.h"
 #include "segment_prefix_badbyte_strategies.h"
 #include "operand_size_prefix_badbyte_strategies.h"
-#include "arm_strategies.h"
-#include "arm64_strategies.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h> // Added for debug prints
@@ -441,10 +439,12 @@ void init_strategies(int use_ml, byval_arch_t arch) {
     } // End x86/x64 architecture check
 
     else if (arch == BYVAL_ARCH_ARM) {
+        #include "arm_strategies.h"
         register_arm_strategies();
     }
 
     else if (arch == BYVAL_ARCH_ARM64) {
+        #include "arm64_strategies.h"
         register_arm64_strategies();
     }
 

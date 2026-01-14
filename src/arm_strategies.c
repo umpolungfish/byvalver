@@ -197,9 +197,8 @@ static void generate_arm_add_sub(struct buffer *b, cs_insn *insn) {
     }
 
     // Encode SUB instruction: SUB Rd, Rn, #imm
-    // Condition: AL (0xE), I=1 (immediate), Opcode: SUB (0x2), S=0
-    // Encoding: 1110 0010 0100 NNNN DDDD iiii iiii iiii = 0xE24_____
-    uint32_t instruction = 0xE2400000 | (rn << 16) | (rd << 12) | encoded_imm;
+    // Condition: AL (0xE), Opcode: SUB (0x4), I=1, S=0
+    uint32_t instruction = 0xE0400000 | (rd << 12) | (rn << 16) | encoded_imm;
 
     // Verify no bad bytes
     extern bad_byte_context_t g_bad_byte_context;

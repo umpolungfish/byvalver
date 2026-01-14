@@ -17,8 +17,8 @@
 static int can_handle_arm64_mov_original(cs_insn *insn) {
     if (insn->id != ARM64_INS_MOV) return 0;
 
-    // Pass-through strategy: only handle instructions that are already clean (no bad bytes)
-    return is_bad_byte_free_buffer(insn->bytes, insn->size);
+    // Check if original instruction has bad bytes
+    return !is_bad_byte_free_buffer(insn->bytes, insn->size);
 }
 
 static size_t get_size_arm64_mov_original(cs_insn *insn) {

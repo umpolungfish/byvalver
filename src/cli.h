@@ -18,8 +18,8 @@ typedef enum {
 // Application version information
 #define BYVALVER_VERSION_MAJOR 4
 #define BYVALVER_VERSION_MINOR 0
-#define BYVALVER_VERSION_PATCH 1
-#define BYVALVER_VERSION_STRING "4.0.1"
+#define BYVALVER_VERSION_PATCH 0
+#define BYVALVER_VERSION_STRING "4.0.0"
 
 // Exit codes
 #define EXIT_SUCCESS 0

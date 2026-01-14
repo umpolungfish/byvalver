@@ -189,53 +189,6 @@ int process_single_file(const char *input_file, const char *output_file,
         if (config->bad_bytes) {
             fprintf(stderr, "Bad Bytes: %d distinct values\n", config->bad_bytes->bad_byte_count);
         }
-
-        // Warn about experimental ARM64 support
-        if (config->target_arch == BYVAL_ARCH_ARM64) {
-            fprintf(stderr, "\n⚠️  WARNING: ARM64 support is EXPERIMENTAL\n");
-            fprintf(stderr, "   Only basic pass-through strategies are implemented.\n");
-            fprintf(stderr, "   Bad-byte elimination may be limited.\n");
-        }
-
-        // Warn about experimental ARM support
-        if (config->target_arch == BYVAL_ARCH_ARM) {
-            fprintf(stderr, "\n⚠️  WARNING: ARM support is EXPERIMENTAL\n");
-            fprintf(stderr, "   Only 7 core strategies are implemented.\n");
-            fprintf(stderr, "   Use simpler bad-byte profiles (e.g., null-byte only).\n");
-        }
-
-        // Simple heuristic to detect potential architecture mismatch
-        // Check for common x86/x64 prologue patterns in first bytes
-        if (file_size >= 2) {
-            int likely_x86 = 0;
-            int likely_arm = 0;
-
-            // Common x86/x64 patterns: PUSH EBP (0x55), MOV (0x48, 0x89), SUB ESP (0x83 0xEC)
-            if (shellcode[0] == 0x55 ||  // push ebp/rbp
-                (shellcode[0] == 0x48 && file_size >= 2) ||  // REX.W prefix (x64)
-                (shellcode[0] == 0x83 && shellcode[1] == 0xEC)) {  // sub esp, imm8
-                likely_x86 = 1;
-            }
-
-            // ARM instructions are 4-byte aligned, check for common ARM condition codes
-            // ARM instructions typically have condition in top nibble (0xE for AL=always)
-            if (file_size >= 4 && (file_size % 4) == 0) {
-                // Check if first instruction looks like ARM (condition code 0xE in MSB)
-                if ((shellcode[3] & 0xF0) == 0xE0) {
-                    likely_arm = 1;
-                }
-            }
-
-            // Warn if there's a potential mismatch
-            if ((config->target_arch == BYVAL_ARCH_ARM || config->target_arch == BYVAL_ARCH_ARM64) && likely_x86 && !likely_arm) {
-                fprintf(stderr, "\n⚠️  WARNING: Input may be x86/x64 shellcode, but ARM architecture selected.\n");
-                fprintf(stderr, "   Verify --arch flag matches your shellcode architecture.\n");
-            } else if ((config->target_arch == BYVAL_ARCH_X86 || config->target_arch == BYVAL_ARCH_X64) && likely_arm && !likely_x86) {
-                fprintf(stderr, "\n⚠️  WARNING: Input may be ARM shellcode, but x86/x64 architecture selected.\n");
-                fprintf(stderr, "   Verify --arch flag matches your shellcode architecture.\n");
-            }
-        }
-
         fprintf(stderr, "\n");
     }
 
