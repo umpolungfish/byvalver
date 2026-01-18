@@ -168,7 +168,8 @@ void buffer_append(struct buffer *b, const uint8_t *data, size_t size) {
 }
 
 uint8_t get_reg_index(uint8_t reg) {
-    // Map x86 registers to indices 0-7 for EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI
+    // Map x86 registers to indices 0-15 for x64 compatibility
+    // Note: For extended registers (8-15), REX prefix is required but not handled here
     switch (reg) {
         // 32-bit registers
         case X86_REG_EAX: return 0;
@@ -188,6 +189,24 @@ uint8_t get_reg_index(uint8_t reg) {
         case X86_REG_RBP: return 5;
         case X86_REG_RSI: return 6;
         case X86_REG_RDI: return 7;
+        // Extended 64-bit registers (x64 only)
+        case X86_REG_R8: return 8;
+        case X86_REG_R9: return 9;
+        case X86_REG_R10: return 10;
+        case X86_REG_R11: return 11;
+        case X86_REG_R12: return 12;
+        case X86_REG_R13: return 13;
+        case X86_REG_R14: return 14;
+        case X86_REG_R15: return 15;
+        // Extended 32-bit registers (x64 only)
+        case X86_REG_R8D: return 8;
+        case X86_REG_R9D: return 9;
+        case X86_REG_R10D: return 10;
+        case X86_REG_R11D: return 11;
+        case X86_REG_R12D: return 12;
+        case X86_REG_R13D: return 13;
+        case X86_REG_R14D: return 14;
+        case X86_REG_R15D: return 15;
         // 16-bit registers (map to their 32-bit equivalents)
         case X86_REG_AX: return 0;
         case X86_REG_CX: return 1;
@@ -207,10 +226,31 @@ uint8_t get_reg_index(uint8_t reg) {
         case X86_REG_CH: return 1;  // CH -> ECX
         case X86_REG_DH: return 2;  // DH -> EDX
         case X86_REG_BH: return 3;  // BH -> EBX
+        // Extended 8-bit registers (x64 only)
+        case X86_REG_R8B: return 8;
+        case X86_REG_R9B: return 9;
+        case X86_REG_R10B: return 10;
+        case X86_REG_R11B: return 11;
+        case X86_REG_R12B: return 12;
+        case X86_REG_R13B: return 13;
+        case X86_REG_R14B: return 14;
+        case X86_REG_R15B: return 15;
         default:
             fprintf(stderr, "[WARNING] Unknown register in get_reg_index: %d\n", reg);
             return 0;  // Return EAX index as default, but log the issue
     }
+}
+
+/**
+ * Check if an operand is RIP-relative (x64 only)
+ * @param op: Capstone operand
+ * @return: 1 if RIP-relative, 0 otherwise
+ */
+int is_rip_relative_operand(cs_x86_op *op) {
+    if (op->type == X86_OP_MEM && op->mem.base == X86_REG_RIP) {
+        return 1;
+    }
+    return 0;
 }
 
 int is_relative_jump(cs_insn *insn) {

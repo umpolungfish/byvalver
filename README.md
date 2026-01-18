@@ -57,7 +57,7 @@
 - Added architecture mismatch detection heuristics
 - Improved code organization (includes moved to file scope)
 
-The tool uses the `Capstone` disassembly framework to analyze instructions and applies over 153+ ranked transformation strategies to replace `bad-byte`-containing code with equivalent alternatives  
+The tool uses the `Capstone` disassembly framework to analyze instructions and applies over 170+ ranked transformation strategies to replace `bad-byte`-containing code with equivalent alternatives  
 
 The generic `bad-byte` banishment framework provides 2x usage modes:
 
@@ -506,7 +506,7 @@ For detailed profile documentation, see [docs/BAD_BYTE_PROFILES.md](docs/BAD_BYT
 > This success rate applies specifically to null-byte (`\x00`) elimination, which has been extensively tested and optimized.
 
 ### ADVANCED TRANSFORMATION ENGINE
-163+ strategy implementations covering virtually all common null-byte sources and general bad-byte patterns (multiple new strategy families added in v3.0, v3.6, v3.7, v3.8, and v4.0):
+170+ strategy implementations covering virtually all common null-byte sources and general bad-byte patterns (multiple new strategy families added in v3.0, v3.6, v3.7, v3.8, v4.0, and v4.1):
 - `CALL/POP` and stack-based immediate loading
 - `PEB` traversal with hashed API resolution
 - Advanced hash-based API resolution with complex algorithms
@@ -550,12 +550,19 @@ For detailed profile documentation, see [docs/BAD_BYTE_PROFILES.md](docs/BAD_BYT
  - **NEW in v3.9**: Instruction reordering with NOP insertion
  - **NEW in v3.9**: Runtime self-modification strategy (basic implementation)
  - **NEW in v3.9**: Overlapping instruction generation
- - **NEW in v4.0**: ARM/ARM64 cross-architecture support with Capstone dynamic mode selection
- - **NEW in v4.0**: ARM immediate encoding with MVN transformations
- - **NEW in v4.0**: ARM MOV strategies (original, MVN-based null avoidance)
- - **NEW in v4.0**: ARM arithmetic strategies (ADD with SUB transformations)
- - **NEW in v4.0**: ARM memory strategies (LDR/STR pass-through)
- - **NEW in v4.0**: ARM branch strategies (B/BL pass-through)
+  - **NEW in v4.0**: ARM/ARM64 cross-architecture support with Capstone dynamic mode selection
+  - **NEW in v4.0**: ARM immediate encoding with MVN transformations
+  - **NEW in v4.0**: ARM MOV strategies (original, MVN-based null avoidance)
+  - **NEW in v4.0**: ARM arithmetic strategies (ADD with SUB transformations)
+  - **NEW in v4.0**: ARM memory strategies (LDR/STR pass-through)
+  - **NEW in v4.0**: ARM branch strategies (B/BL pass-through)
+  - **NEW in v4.1**: SETcc Flag Accumulation Chains (conditional jump elimination)
+  - **NEW in v4.1**: Polymorphic Immediate Value Construction (multiple encoding variants)
+  - **NEW in v4.1**: Register Dependency Chain Optimization (multi-instruction patterns)
+  - **NEW in v4.1**: RIP-Relative Addressing Optimization (x64 PIC improvements)
+  - **NEW in v4.1**: Negative Displacement Memory Addressing (displacement alternatives)
+  - **NEW in v4.1**: Multi-Byte NOP Interlacing (obfuscation NOP variants)
+  - **NEW in v4.1**: Bit Manipulation Constant Construction (BSWAP, BSF, POPCNT, BMI2)
  - Comprehensive support for `MOV`, `ADD/SUB`, `XOR`, `LEA`, `CMP`, `PUSH`, and more
 
 The engine employs multi-pass processing (obfuscation → denulling) with robust fallback mechanisms for edge cases
@@ -1010,7 +1017,7 @@ See [OBFUSCATION_STRATS](docs/OBFUSCATION_STRATS.md) for detailed strategy docum
 
 ## DENULLIFICATION STRATEGIES
 
-The core denull pass uses over 153 strategies:
+The core denull pass uses over 170 strategies:
 
 ### `MOV` STRATEGIES
 - Original pass-through
@@ -1030,6 +1037,16 @@ The core denull pass uses over 153 strategies:
 - `SIB` addressing
 - `PUSH` optimizations
 - Windows-specific: `CALL/POP`, `PEB` hashing, `SALC`, `LEA` arithmetic, `shifts`, stack strings, etc.
+
+### MODERN x64 FEATURES
+- **RIP-Relative Optimization**: Offset decomposition, double-RIP calculation, stack-based methods
+- **Bit Manipulation**: BSWAP byte reordering, BSF/BSR power-of-2 construction, POPCNT bit counting, BMI2 PEXT/PDEP
+- **Flag Accumulation**: SETcc-based conditional jump elimination with linear flag operations
+
+### OBFUSCATION ENHANCEMENT
+- **Multi-Byte NOP Interlacing**: Arithmetic NOPs, register rotation, conditional NOPs, FPU operations
+- **Register Dependency Chains**: Multi-instruction pattern optimization, instruction reordering
+- **Negative Displacement Addressing**: Base register adjustments, alternative addressing modes
 
 ### MEMORY/DISPLACEMENT
 - Displacement null handling

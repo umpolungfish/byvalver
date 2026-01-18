@@ -88,6 +88,14 @@ int find_arithmetic_equivalent(uint32_t target, uint32_t *base, uint32_t *offset
 // Generic Bad Character Checking Functions (v3.0)
 // ============================================================================
 
+/**
+ * Check if a buffer contains any bad bytes
+ * @param data: Buffer to check
+ * @param size: Buffer size
+ * @return: 1 if any byte is bad, 0 otherwise
+ */
+int has_null_bytes_in_encoding(const uint8_t *data, size_t size);
+
 // Check if a single byte is free of bad bytes
 int is_bad_byte_free_byte(uint8_t byte);
 

@@ -78,6 +78,49 @@ static size_t get_size_jcc_bad_opcode(cs_insn *insn) {
     return 7;
 }
 
+// Helper function to adjust offset to avoid null bytes
+static int32_t adjust_offset_for_nulls(int32_t original_offset, int is_short) {
+    int max_adjust = 10; // Try ±10 adjustments
+
+    for (int adjust = 0; adjust <= max_adjust; adjust++) {
+        // Try +adjust
+        int32_t test_offset = original_offset + adjust;
+        if (is_short) {
+            if (test_offset >= -128 && test_offset <= 127) {
+                uint8_t byte = (uint8_t)(int8_t)test_offset;
+                if (is_bad_byte_free_byte(byte)) {
+                    return test_offset;
+                }
+            }
+        } else {
+            // Check 4 bytes of near offset
+            if (is_bad_byte_free((uint32_t)test_offset)) {
+                return test_offset;
+            }
+        }
+
+        // Try -adjust
+        if (adjust > 0) {
+            test_offset = original_offset - adjust;
+            if (is_short) {
+                if (test_offset >= -128 && test_offset <= 127) {
+                    uint8_t byte = (uint8_t)(int8_t)test_offset;
+                    if (is_bad_byte_free_byte(byte)) {
+                        return test_offset;
+                    }
+                }
+            } else {
+                if (is_bad_byte_free((uint32_t)test_offset)) {
+                    return test_offset;
+                }
+            }
+        }
+    }
+
+    // If no adjustment works, return original
+    return original_offset;
+}
+
 static void generate_jcc_bad_opcode(struct buffer *b, cs_insn *insn) {
     const jcc_info_t *info = get_jcc_info(insn->id);
     if (!info) {
@@ -109,24 +152,31 @@ static void generate_jcc_bad_opcode(struct buffer *b, cs_insn *insn) {
             // Short JMP
             uint8_t jmp_short = 0xEB;
             if (is_bad_byte_free_byte(jmp_short)) {
-                int8_t jmp_offset = (int8_t)(target_addr - (new_current + 2));
+                int32_t adjusted_offset = adjust_offset_for_nulls((int32_t)(target_addr - (new_current + 2)), 1);
+                int8_t jmp_offset = (int8_t)adjusted_offset;
                 uint8_t jmp[] = {jmp_short, (uint8_t)jmp_offset};
                 buffer_append(b, jmp, 2);
+                // Adjust target_addr if offset was adjusted
+                target_addr = new_current + 2 + jmp_offset;
             } else {
                 // JMP short opcode is bad, use near JMP
                 uint8_t jmp_near = 0xE9;
-                int32_t jmp_offset_near = (int32_t)(target_addr - (new_current + 5));
+                int32_t jmp_offset_near = adjust_offset_for_nulls((int32_t)(target_addr - (new_current + 5)), 0);
                 uint8_t jmp[] = {jmp_near, 0, 0, 0, 0};
                 memcpy(jmp + 1, &jmp_offset_near, 4);
                 buffer_append(b, jmp, 5);
+                // Adjust target_addr if offset was adjusted
+                target_addr = new_current + 5 + jmp_offset_near;
             }
         } else {
             // Near JMP
             uint8_t jmp_near = 0xE9;
-            int32_t jmp_offset_near = (int32_t)(target_addr - (new_current + 5));
+            int32_t jmp_offset_near = adjust_offset_for_nulls((int32_t)(target_addr - (new_current + 5)), 0);
             uint8_t jmp[] = {jmp_near, 0, 0, 0, 0};
             memcpy(jmp + 1, &jmp_offset_near, 4);
             buffer_append(b, jmp, 5);
+            // Adjust target_addr if offset was adjusted
+            target_addr = new_current + 5 + jmp_offset_near;
         }
     } else {
         // Inverse opcode is also bad, try near form of inverse
@@ -140,10 +190,12 @@ static void generate_jcc_bad_opcode(struct buffer *b, cs_insn *insn) {
             // JMP target (near)
             int64_t new_current = current_addr + 6;
             uint8_t jmp_near = 0xE9;
-            int32_t jmp_offset_near = (int32_t)(target_addr - (new_current + 5));
+            int32_t jmp_offset_near = adjust_offset_for_nulls((int32_t)(target_addr - (new_current + 5)), 0);
             uint8_t jmp[] = {jmp_near, 0, 0, 0, 0};
             memcpy(jmp + 1, &jmp_offset_near, 4);
             buffer_append(b, jmp, 5);
+            // Adjust target_addr if offset was adjusted
+            target_addr = new_current + 5 + jmp_offset_near;
         } else {
             // Last resort: copy original (may still have bad bytes)
             buffer_append(b, insn->bytes, insn->size);

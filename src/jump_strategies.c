@@ -287,8 +287,10 @@ strategy_t generic_mem_null_disp_strategy = {
 };
 
 void register_jump_strategies() {
+    extern strategy_t call_jump_offset_strategy;  // From call_jump_offset_strategies.c
     register_strategy(&call_imm_strategy);
     register_strategy(&call_mem_disp32_strategy);
     register_strategy(&jmp_mem_disp32_strategy);
     register_strategy(&generic_mem_null_disp_strategy);
+    register_strategy(&call_jump_offset_strategy);  // Priority 90
 }

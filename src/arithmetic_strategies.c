@@ -270,9 +270,13 @@ strategy_t arithmetic_addsub_strategy = {
 // REMOVED: rotation_encoded (doesn't belong in arithmetic_strategies.c)
 
 void register_arithmetic_strategies() {
+    extern strategy_t immediate_arithmetic_strategy;  // From immediate_arithmetic_strategies.c
+    extern strategy_t logical_immediate_strategy;  // From test_immediate_strategies.c
     register_strategy(&arithmetic_original_strategy);
     register_strategy(&arithmetic_neg_strategy);
     // register_strategy(&arithmetic_not_strategy);  // Disabled - doesn't make sense for arithmetic
     register_strategy(&arithmetic_xor_strategy);
     register_strategy(&arithmetic_addsub_strategy);
+    register_strategy(&immediate_arithmetic_strategy);  // Priority 15
+    register_strategy(&logical_immediate_strategy);  // Priority 20
 }

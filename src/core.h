@@ -70,6 +70,7 @@ void buffer_init(struct buffer *b);
 void buffer_free(struct buffer *b);
 void buffer_append(struct buffer *b, const uint8_t *data, size_t size);
 uint8_t get_reg_index(uint8_t reg);
+int is_rip_relative_operand(cs_x86_op *op);
 int is_relative_jump(cs_insn *insn);
 int verify_null_elimination(struct buffer *processed);
 void fallback_general_instruction(struct buffer *b, cs_insn *insn);

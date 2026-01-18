@@ -178,6 +178,8 @@ strategy_t lea_null_modrm_strategy = {
 
 // Register the LEA strategies
 void register_lea_strategies() {
+    extern strategy_t lea_rip_relative_strategy;  // From lea_rip_strategy.c
     register_strategy(&lea_null_modrm_strategy);  // Priority 65
     register_strategy(&lea_disp_nulls_strategy);  // Priority 8
+    register_strategy(&lea_rip_relative_strategy);  // Priority 85
 }

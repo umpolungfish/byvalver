@@ -38,7 +38,12 @@
 #include "polymorphic_immediate_construction_strategies.h"
 #include "setcc_jump_elimination_strategies.h"
 #include "register_dependency_chain_optimization_strategies.h"
+#include "rip_relative_optimization_strategies.h"
+#include "negative_displacement_addressing_strategies.h"
+#include "multibyte_nop_interlacing_strategies.h"
+#include "bit_manipulation_constant_construction_strategies.h"
 #include "syscall_number_obfuscation_strategies.h"
+#include "setcc_flag_accumulation_strategies.h"
 #include "partial_register_optimization_strategies.h"
 #include "segment_register_teb_peb_strategies.h"
 #include "cmov_conditional_elimination_strategies.h"
@@ -167,6 +172,11 @@ void register_stack_string_strategies(); // Forward declaration - Stack-based st
 void register_syscall_strategies(); // Forward declaration - Windows syscall direct invocation (x64) - Priority 95
 void register_rep_stosb_strategies(); // Forward declaration - REP STOSB memory initialization - Priority 92
 void register_salc_strategies(); // Forward declaration - SALC AL zeroing optimization - Priority 91
+void register_register_dependency_chain_optimization_strategies(); // Forward declaration - Register dependency chain optimization - Priority 91
+void register_rip_relative_optimization_strategies();  // Forward declaration - RIP-relative optimization - Priority 85-87
+void register_negative_displacement_addressing_strategies();  // Forward declaration - Negative displacement addressing - Priority 82-84
+void register_multibyte_nop_interlacing_strategies();  // Forward declaration - Multi-byte NOP interlacing - Priority 79-82
+void register_bit_manipulation_constant_construction_strategies();  // Forward declaration - Bit manipulation constants - Priority 80-83
 void register_xchg_preservation_strategies(); // Forward declaration - PUSH immediate optimization - Priority 86
 void register_arithmetic_decomposition_strategies(); // Forward declaration - MOV arithmetic decomposition - Priority 70
 // void register_arithmetic_substitution_strategies(); // Forward declaration - Already registered by register_advanced_transformations() - DISABLED
@@ -218,6 +228,10 @@ void register_stack_frame_badbyte_strategies();  // Register stack frame pointer
 void register_string_prefix_badbyte_strategies();  // Register string instruction prefix bad-byte elimination strategies (priority 84)
 void register_bitwise_immediate_badbyte_strategies();  // Register bitwise immediate bad-byte elimination strategies (priority 86)
 void register_segment_prefix_badbyte_strategies();  // Register segment prefix bad-byte detection strategies (priority 81)
+void register_gs_segment_strategies();  // Register GS segment strategies (priority 70)
+void register_pic_addressing_strategies();  // Register PIC addressing strategies (priority 75)
+void register_syscall_number_obfuscation_strategies();  // Register syscall number obfuscation (priority 85-88)
+void register_setcc_flag_accumulation_strategies();  // Register SETcc flag accumulation (priority 85-86)
 void register_operand_size_prefix_badbyte_strategies();  // Register operand size prefix bad-byte elimination strategies (priority 83)
 
 // NEW: 5 Additional Denulling Strategies (v3.0)
@@ -276,6 +290,10 @@ void init_strategies(int use_ml, byval_arch_t arch) {
 
     // NEW: Tier 1 High-Priority Strategies (2025-12-19)
     register_register_dependency_chain_optimization_strategies();  // Priority 91 - Multi-instruction optimization
+    register_rip_relative_optimization_strategies();  // Priority 85-87 - x64 RIP-relative optimization
+    register_negative_displacement_addressing_strategies();  // Priority 82-84 - Negative displacement addressing
+    register_multibyte_nop_interlacing_strategies();  // Priority 79-82 - Multi-byte NOP interlacing
+    register_bit_manipulation_constant_construction_strategies();  // Priority 80-83 - Bit manipulation constants
     register_polymorphic_immediate_construction_strategies();  // Priority 88-90 - Universal immediate encoding
 
     // NEW: 10 High-Priority General Bad-Byte Elimination Strategies (v4.0 - 2026-01-03)
@@ -291,6 +309,7 @@ void init_strategies(int use_ml, byval_arch_t arch) {
     register_segment_prefix_badbyte_strategies();  // Priority 81 - Segment prefix bad-byte detection
 
     register_syscall_number_obfuscation_strategies();  // Priority 85-88 - Linux syscall optimization
+    register_setcc_flag_accumulation_strategies();  // Priority 85-86 - SETcc flag accumulation
     register_setcc_jump_elimination_strategies();  // Priority 84-86 - Jump offset elimination
 
     // NEW: High-Priority Additional Strategies (2025-12-19)
@@ -426,6 +445,10 @@ void init_strategies(int use_ml, byval_arch_t arch) {
 
     // Register enhanced strategies for better null-byte elimination
     register_enhanced_mov_mem_strategies(); // Enhanced MOV memory strategies (high priority)
+
+    // Register advanced pattern strategies (Phase 5)
+    register_gs_segment_strategies(); // GS segment strategies
+    register_pic_addressing_strategies(); // PIC addressing strategies
     register_enhanced_register_chaining_strategies(); // Enhanced register chaining strategies (medium priority)
     register_enhanced_arithmetic_strategies(); // Enhanced arithmetic strategies (high priority for arithmetic ops)
     register_enhanced_immediate_strategies(); // Enhanced immediate strategies (high priority for immediate ops)

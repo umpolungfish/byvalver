@@ -495,10 +495,12 @@ strategy_t mov_addsub_strategy = {
 // MOV with arithmetic equivalent - REMOVED (redundant with addsub)
 
 void register_mov_strategies() {
+    extern strategy_t mov_rip_relative_strategy;  // From mov_rip_strategy.c
     register_strategy(&mov_original_strategy);
     register_strategy(&mov_shift_strategy);
     register_strategy(&mov_neg_strategy);
     register_strategy(&mov_not_strategy);
     register_strategy(&mov_xor_strategy);
     register_strategy(&mov_addsub_strategy);
+    register_strategy(&mov_rip_relative_strategy);  // Priority 80
 }

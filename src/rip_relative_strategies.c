@@ -181,18 +181,32 @@ void generate_rip_relative_null_free(struct buffer *b, cs_insn *insn) {
     if (insn->id == X86_INS_MOV) {
         // The destination is in dest_op, source was RIP-relative
         // Create MOV dest_reg, [RCX]
-        
+
         // Handle REX prefix if needed
         if (dest_op->size == 8) {  // 64-bit destination
             buffer_write_byte(b, 0x48);  // REX.W prefix
         }
-        
+
         // MOV opcode
         buffer_write_byte(b, 0x8B);  // MOV reg32, r/m32 (or MOV reg64, r/m64 with REX.W)
-        
+
         // ModR/M byte: reg field from dest register, r/m field for [RCX]
-        // 0xC0 + (dest_reg_num << 3) + 1 (for RCX)
-        uint8_t modrm = 0xC0 + ((dest_op->reg - X86_REG_EAX) << 3) + 1;  // RCX is reg 1
+        uint8_t modrm = 0xC0 + (get_reg_index(dest_op->reg) << 3) + get_reg_index(X86_REG_RCX);
+        buffer_write_byte(b, modrm);
+    } else if (insn->id == X86_INS_LEA) {
+        // For LEA reg, [rip+disp] pattern:
+        // Create LEA dest_reg, [RCX]
+
+        // Handle REX prefix if needed
+        if (dest_op->size == 8) {  // 64-bit destination
+            buffer_write_byte(b, 0x48);  // REX.W prefix
+        }
+
+        // LEA opcode
+        buffer_write_byte(b, 0x8D);  // LEA reg32, r/m32 (or LEA reg64, r/m64 with REX.W)
+
+        // ModR/M byte: reg field from dest register, r/m field for [RCX]
+        uint8_t modrm = 0xC0 + (get_reg_index(dest_op->reg) << 3) + get_reg_index(X86_REG_RCX);
         buffer_write_byte(b, modrm);
     }
     // Add more instruction types as needed

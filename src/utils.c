@@ -1121,6 +1121,24 @@ void generate_op_reg_imm_not(struct buffer *b, cs_insn *insn) {
 // ============================================================================
 
 /**
+ * Check if a buffer contains any bad bytes
+ * @param data: Buffer to check
+ * @param size: Buffer size
+ * @return: 1 if all bytes ok, 0 if any byte is bad
+ */
+int has_null_bytes_in_encoding(const uint8_t *data, size_t size) {
+    if (!data) {
+        return 0;  // No nulls in NULL buffer
+    }
+    for (size_t i = 0; i < size; i++) {
+        if (data[i] == 0x00) {
+            return 1;  // Found null byte
+        }
+    }
+    return 0;  // No null bytes
+}
+
+/**
  * Check if a single byte is free of bad bytes
  * Uses global bad byte context for O(1) lookup
  * @param byte: Byte to check

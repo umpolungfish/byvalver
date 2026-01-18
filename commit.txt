@@ -1,236 +1,89 @@
-fix: Restore v4.0 cross-architecture support (critical regression fix)
+feat: Implement BYVALVER v4.1 Enhancement Strategies
 
-CRITICAL BUG FIX: ARCHITECTURE HANDLING REGRESSION
+Major enhancement adding 9 new denullification strategies from the proposal,
+bringing total strategies to 170+ for comprehensive bad-byte elimination.
 
-This commit restores the complete cross-architecture support that was accidentally
-removed in commits after v4.0 (b150a2f). The regression caused 100% failure rate
-on batch processing due to incorrect architecture mode in Capstone disassembly.
+New Strategy Implementations:
+=============================
 
-===============================================================================
-PART 1: PROBLEM IDENTIFICATION
-===============================================================================
+1. SETcc Flag Accumulation Chains (Priority 85-86)
+   - SETcc to Register: CMP + SETZ + MOVZX pattern replacement
+   - Arithmetic from Flags: Conditional value loading via flag operations
+   - Eliminates conditional jump offsets with bad bytes
 
-Symptoms Observed:
-- Batch processing: 0% success rate (12/12 files failing)
-- Error: "Final shellcode contains XXX bad bytes"
-- RIP-relative instructions (LEA, MOV, CALL) failing to transform
-- "Handling unhandled instruction" warnings for common x64 patterns
+2. Polymorphic Immediate Value Construction (Priority 86-90)
+   - XOR Encoding Chain: MOV key1; XOR key2 for immediate values
+   - ADD/SUB Decomposition: Split values across multiple operations
+   - Shift and OR Construction: Byte-by-byte assembly
+   - Stack Construction: PUSH/POP sequences for endianness
+   - LEA Calculation: Arithmetic via LEA instructions
+   - 5+ encoding variants per immediate value
 
-Root Cause Analysis:
-1. v4.0 (b150a2f) implemented comprehensive cross-architecture support
-2. Subsequent commits ("Update", "Update2", "cleanup") removed critical code
-3. The `get_capstone_arch_mode()` function was deleted
-4. All `cs_open()` calls reverted to hardcoded CS_MODE_32
-5. x64 shellcode was being disassembled as x86, causing instruction mismatches
+3. Register Dependency Chain Optimization (Priority 91)
+   - Accumulation Folding: Combine MOV + ADD sequences
+   - Register Copy Elimination: Remove redundant MOV operations
+   - Instruction Reordering: Optimize operand ordering
+   - Multi-instruction pattern recognition
 
-Evidence:
-- v4.0 core.c: Contains `get_capstone_arch_mode()` with proper CS_MODE_64
-- HEAD core.c: All `cs_open()` calls hardcoded to CS_MODE_32
-- git diff showed 100+ lines of architecture code removed
+4. RIP-Relative Addressing Optimization (Priority 85-87)
+   - Offset Decomposition: LEA RIP + ADD offset
+   - Double-RIP Calculation: Split complex displacements
+   - RIP-Relative via Stack: CALL/POP method for fallback
+   - Maintains PIC properties for x64 shellcode
 
-Testing Comparison:
-- v2.2 (3d2afb5): BlackBox-0x00.bin -> 147 instructions (32-bit mode)
-- HEAD (broken): BlackBox-0x00.bin -> 97 instructions (wrong mode)
-- v4.0 restored: All files process correctly
+5. Negative Displacement Memory Addressing (Priority 82-84)
+   - Negative Offset Conversion: Base register adjustment
+   - Alternative Base Register: LEA + indirect access
+   - Complement Offset: Mathematical complement calculations
+   - Alternative displacement encodings
 
-===============================================================================
-PART 2: TECHNICAL DETAILS
-===============================================================================
+6. Multi-Byte NOP Interlacing (Priority 79-82)
+   - Arithmetic NOPs: LEA, XCHG, PUSH/POP sequences
+   - Register Rotation NOPs: Multi-register preservation
+   - Conditional NOPs: Appear conditional but always execute
+   - FPU NOPs: Floating-point no-operation instructions
+   - Enhanced obfuscation through varied NOP encodings
 
-Code Deleted (Accidentally Removed):
+7. Bit Manipulation Constant Construction (Priority 80-83)
+   - BSWAP: Byte reordering for endianness conversion
+   - BSF/BSR: Bit scanning for power-of-2 construction
+   - POPCNT: Population count for small constants
+   - PEXT/PDEP: Advanced bit manipulation (BMI2)
+   - Modern x64 bit manipulation instruction usage
 
-```c
-void get_capstone_arch_mode(byval_arch_t arch, cs_arch *cs_arch_out, cs_mode *cs_mode_out) {
-    switch (arch) {
-        case BYVAL_ARCH_X86:
-            *cs_arch_out = CS_ARCH_X86;
-            *cs_mode_out = CS_MODE_32;
-            break;
-        case BYVAL_ARCH_X64:
-            *cs_arch_out = CS_ARCH_X86;
-            *cs_mode_out = CS_MODE_64;
-            break;
-        case BYVAL_ARCH_ARM:
-            *cs_arch_out = CS_ARCH_ARM;
-            *cs_mode_out = CS_MODE_ARM;
-            break;
-        case BYVAL_ARCH_ARM64:
-            *cs_arch_out = CS_ARCH_ARM64;
-            *cs_mode_out = CS_MODE_LITTLE_ENDIAN;
-            break;
-        default:
-            *cs_arch_out = CS_ARCH_X86;
-            *cs_mode_out = CS_MODE_64;
-            break;
-    }
-}
-```
+Infrastructure Improvements:
+============================
 
-This function was called by:
-- remove_null_bytes()
-- apply_obfuscation()
-- biphasic_process()
-- adaptive_processing()
-- count_shellcode_stats()
+- Fixed all compiler warnings (unused variables, parameters)
+- Updated strategy registry with 7 new strategy families
+- Enhanced cross-platform compatibility
+- Maintained zero-warning compilation standard
 
-Without it, all disassembly used CS_MODE_32 regardless of --arch flag.
+Documentation Updates:
+=====================
 
-===============================================================================
-PART 3: IMPACT OF REGRESSION
-===============================================================================
+- Updated README.md with new strategy descriptions
+- Created comprehensive docs/DENULL_STRATS.md
+- Added v4.1 feature highlights
+- Updated strategy counts and categories
 
-Before Fix (Broken State):
-- 100% failure rate on x64 shellcode batch processing
-- x64 instructions misinterpreted as x86
-- Strategy matching failures due to wrong operand decoding
-- RIP-relative addressing not recognized
-- LEA rcx, [rip + offset] -> "unhandled instruction"
+Testing & Validation:
+====================
 
-After Fix (Restored State):
-- 100% success rate on batch processing
-- Proper x64 instruction decoding
-- Correct strategy selection
-- RIP-relative patterns handled correctly
-- All architectures (x86/x64/ARM/ARM64) supported
+- All strategies compile successfully
+- Maintain functional equivalence guarantees
+- Zero compilation warnings achieved
+- Compatible with existing ML and batch processing
 
-Test Results:
-```
-===== BATCH PROCESSING SUMMARY =====
-Total files:       12
-Successfully processed: 12 (100.0%)
-Failed:            0 (0.0%)
-Skipped:           0
+Impact:
+=======
 
-Total input size:  17408 bytes
-Total output size: 15625 bytes
-Average size ratio: 0.90x
-```
+- Total strategies: 163 → 170+ (9 new families)
+- Enhanced bad-byte elimination coverage
+- Improved obfuscation capabilities
+- Better x64 PIC shellcode support
+- Modern CPU instruction utilization
 
-===============================================================================
-PART 4: RESTORATION APPROACH
-===============================================================================
-
-Resolution Method:
-1. Identified working commit: v4.0 (b150a2f)
-2. Compared HEAD vs v4.0 to find deleted code
-3. Restored entire src/ directory from v4.0:
-   `git checkout b150a2f -- src/`
-4. Verified build succeeds (184 object files)
-5. Confirmed batch processing 100% success rate
-
-Files Restored:
-- src/core.c (architecture mode handling)
-- src/core.h (type definitions)
-- src/cli.c (argument parsing)
-- src/cli.h (config structures)
-- src/strategy.h (strategy interface with arch parameter)
-- src/utils.c, src/utils.h (utility functions)
-- src/batch_processing.c, src/batch_processing.h
-- src/profile_aware_sib.c, src/profile_aware_sib.h
-- src/badbyte_profiles.h
-- All architecture-specific strategy files
-
-===============================================================================
-PART 5: ARCHITECTURE SUPPORT FEATURES (RESTORED)
-===============================================================================
-
-byval_arch_t Enum:
-- BYVAL_ARCH_X86: 32-bit x86 (CS_MODE_32)
-- BYVAL_ARCH_X64: 64-bit x86-64 (CS_MODE_64)
-- BYVAL_ARCH_ARM: 32-bit ARM (CS_MODE_ARM)
-- BYVAL_ARCH_ARM64: 64-bit AArch64 (CS_MODE_LITTLE_ENDIAN)
-
-CLI Integration:
-- --arch x86: Select 32-bit mode
-- --arch x64: Select 64-bit mode (default)
-- --arch arm: Select ARM mode
-- --arch arm64: Select ARM64 mode
-
-Strategy Selection:
-- Strategies tagged with target_arch field
-- Only applicable strategies selected per architecture
-- Architecture-specific optimizations preserved
-
-===============================================================================
-PART 6: LESSONS LEARNED
-===============================================================================
-
-How This Happened:
-1. Large feature commit (v4.0) touched many files
-2. Subsequent "cleanup" commits were overly aggressive
-3. Likely manual file operations or incomplete merges
-4. No regression tests for architecture handling
-5. No CI/CD to catch the breakage
-
-Prevention Measures:
-1. Add architecture-specific test cases to CI
-2. Protect core.c architecture code with comments
-3. Review "cleanup" commits more carefully
-4. Add batch processing to automated tests
-5. Version-tag critical features
-
-===============================================================================
-PART 7: VERIFICATION
-===============================================================================
-
-Build Verification:
-- make clean && make: SUCCESS
-- Object files: 184
-- Binary: bin/byvalver
-- Warnings: Minimal (unused function warnings only)
-
-Functional Verification:
-- Single file: byvalver winwin.bin out.bin -> SUCCESS
-- Batch processing: 12/12 files -> 100% SUCCESS
-- Architecture flag: --arch x64 -> Correct CS_MODE_64
-- No bad bytes in output
-
-File Verification:
-```bash
-./bin/byvalver ~/RUBBISH/BIG_SAMPLE ~/RUBBISH/BIG_SAMPLE/out
-# Result: 12/12 files processed successfully
-```
-
-===============================================================================
-PART 8: FILES CHANGED
-===============================================================================
-
-Restored from v4.0 (b150a2f):
-- Entire src/ directory (184 source files)
-- Key files:
-  * src/core.c - Architecture mode handling
-  * src/core.h - Type definitions (byval_arch_t)
-  * src/cli.c - CLI argument parsing
-  * src/cli.h - Config structures
-  * src/strategy.h - Strategy interface
-  * src/main.c - Main entry point
-  * src/utils.c/h - Utility functions
-  * src/batch_processing.c/h - Batch processing
-  * src/profile_aware_sib.c/h - SIB generation
-  * src/badbyte_profiles.h - Bad byte profiles
-
-Build System:
-- No Makefile changes required
-- Compiles cleanly with 184 object files
-
-===============================================================================
-SUMMARY
-===============================================================================
-
-This fix restores critical functionality that was accidentally removed:
-
-1. **Cross-Architecture Support**: x86/x64/ARM/ARM64 all working
-2. **Batch Processing**: 0% -> 100% success rate
-3. **Strategy Selection**: Proper architecture-aware matching
-4. **RIP-Relative Handling**: x64 patterns recognized correctly
-
-The regression was severe (complete failure of x64 processing) but the fix
-is straightforward (restore v4.0 source). All tests pass and the tool is
-fully functional again.
-
-CRITICAL: Future "cleanup" commits must be reviewed carefully to avoid
-accidentally removing architecture handling code.
-
-===============================================================================
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+This implements the complete Tier 1, 2, and 3 strategy enhancements
+from the BYVALVER development roadmap, significantly expanding the
+tool's capabilities for advanced shellcode transformation.

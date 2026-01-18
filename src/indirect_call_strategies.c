@@ -188,6 +188,8 @@ strategy_t indirect_jmp_mem_strategy = {
  * Register all indirect call/jmp strategies
  */
 void register_indirect_call_strategies(void) {
+    extern strategy_t rip_call_jump_strategy;  // From rip_call_jump_strategies.c
     register_strategy(&indirect_call_mem_strategy);
     register_strategy(&indirect_jmp_mem_strategy);
+    register_strategy(&rip_call_jump_strategy);  // Priority 95
 }
