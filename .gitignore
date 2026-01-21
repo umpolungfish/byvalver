@@ -22,7 +22,6 @@ byvalver
 *.dpg
 
 # Test and output files
-*.bin
 *.out
 *.log
 *.tmp

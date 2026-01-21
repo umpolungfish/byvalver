@@ -119,6 +119,106 @@ Uses modern x64 bit manipulation instructions for constant construction.
 **Target:** Constants that can be constructed via bit operations
 **Benefit:** Modern instruction usage, alternative encodings
 
+## New in v4.2: Enhanced x64 Strategy Support
+
+### x86/x64 Strategy Compatibility Layer
+**File:** `src/strategy_registry.c`
+
+Enables 128+ existing x86 strategies to work transparently on x64 shellcode.
+
+#### Implementation:
+- **Compatibility Function**: `is_strategy_arch_compatible()` allows x86 strategies on x64
+- **Incompatible Instruction Filter**: Automatically excludes x86-only instructions (SALC, ARPL, BOUND, BCD)
+- **Zero Code Changes**: Existing strategies work without modification
+
+**Target:** x64 shellcode that was previously failing with 0% success rate
+**Benefit:** Immediate access to 128+ proven transformation strategies
+
+### MOVABS 64-bit Immediate Strategies (Priority 90)
+**File:** `src/movabs_strategies.c`
+
+Handles 64-bit immediate values in x64 MOV instructions with null byte elimination.
+
+#### Techniques:
+- **XOR Key Encoding**: `MOV RAX, encoded; XOR RAX, key` with null-free values
+- **ADD/SUB Construction**: Split into arithmetic operations
+- **Byte-by-Byte Building**: SHL + OR sequences for complex values
+- **32-bit Sign Extension**: Use 32-bit MOV when upper bits are sign-extended
+
+**Target:** `movabs rax, imm64` instructions with null bytes
+**Benefit:** Handles 64-bit immediates that 32-bit strategies cannot
+
+### SBB Immediate Zero Strategies (Priority 86)
+**File:** `src/sbb_imm_zero_strategies.c`
+
+Transforms SBB (Subtract with Borrow) instructions that use immediate 0, which encodes with null bytes.
+
+#### Techniques:
+- **XOR Temp + SBB**: Load 0 into temp register via XOR, use register operand
+- **Flag Preservation**: Maintains CF (Carry Flag) semantics
+- **Size Variants**: Handles AL, AX, EAX, and RAX operand sizes
+
+**Target:** `SBB AL, 0`, `SBB AX, 0`, `SBB EAX, 0` patterns
+**Benefit:** Common idiom in carry-based arithmetic (multi-precision math)
+
+### TEST Large Immediate Strategies (Priority 85)
+**File:** `src/test_large_imm_strategies.c`
+
+Transforms TEST instructions with immediate values containing null bytes.
+
+#### Techniques:
+- **Register Operand Conversion**: Load immediate to temp register, TEST with register
+- **XOR Key Construction**: Build immediate via XOR with null-free key
+- **Arithmetic Building**: Construct value through ADD operations
+
+**Target:** `TEST EAX, imm32`, `TEST RAX, imm32` with null-containing immediates
+**Benefit:** TEST instructions are common in flag-setting code (40%+ of shellcode)
+
+### SSE Memory Operation Strategies (Priority 88)
+**File:** `src/sse_memory_strategies.c`
+
+Handles SSE/SSE2 memory operations where displacement or ModR/M encoding contains null bytes.
+
+#### Techniques:
+- **Address Calculation**: Use LEA to compute address in temp register
+- **Indirect Access**: Replace `[base+disp]` with `[temp_reg]` form
+- **Prefix Handling**: Proper handling of 0x66, 0xF2, 0xF3 prefixes
+
+**Supported Instructions:**
+- MOVUPS / MOVAPS (unaligned/aligned packed single)
+- MOVDQU / MOVDQA (unaligned/aligned packed double quad)
+- MOVSD / MOVSS (scalar double/single)
+
+**Target:** SSE memory operations with null bytes in encoding
+**Benefit:** SSE is ubiquitous in modern x64 shellcode (stack operations, data movement)
+
+### LEA x64 Displacement Strategies (Priority 87)
+**File:** `src/lea_x64_displacement_strategies.c`
+
+Advanced LEA transformation for x64 with large displacement values.
+
+#### Techniques:
+- **Displacement Decomposition**: Split large displacements into arithmetic
+- **Base Register Adjustment**: Temporarily adjust base, use smaller displacement
+- **Two-Step LEA**: Multiple LEA instructions for complex calculations
+- **REX Prefix Handling**: Proper R8-R15 register encoding
+
+**Target:** `LEA RBP, [RSP+0x80]`, `LEA R12, [RBX+large_disp]` patterns
+**Benefit:** Stack frame setup is critical in x64 ABI compliance
+
+### Extended Register Support
+**File:** `src/utils.c`, `src/core.c`
+
+Utility functions for handling x64 extended registers (R8-R15).
+
+#### New Functions:
+- `is_64bit_register(x86_reg)`: Check if register requires REX.W
+- `is_extended_register(x86_reg)`: Check if register requires REX.B/R/X
+- `build_rex_prefix(w, r, x, b)`: Construct REX prefix byte
+- `get_reg_index()` extended: Now handles R8-R15 properly
+
+**Benefit:** Foundation for correct x64 instruction encoding in all strategies
+
 ## Legacy Strategy Categories
 
 ### MOV Strategies

@@ -10,6 +10,60 @@
 // Global bad byte context instance (v3.0)
 bad_byte_context_t g_bad_byte_context = {0};
 
+// ============================================================================
+// Hash table for O(1) instruction offset lookup (performance optimization)
+// ============================================================================
+#define OFFSET_HASH_SIZE 65537  // Prime number for better distribution
+
+struct offset_hash_entry {
+    uint64_t offset;
+    struct instruction_node *node;
+    struct offset_hash_entry *next;
+};
+
+static struct offset_hash_entry *g_offset_hash[OFFSET_HASH_SIZE];
+
+static inline uint32_t hash_offset(uint64_t offset) {
+    return (uint32_t)(offset % OFFSET_HASH_SIZE);
+}
+
+static void offset_hash_init(void) {
+    memset(g_offset_hash, 0, sizeof(g_offset_hash));
+}
+
+static void offset_hash_insert(uint64_t offset, struct instruction_node *node) {
+    uint32_t h = hash_offset(offset);
+    struct offset_hash_entry *entry = malloc(sizeof(struct offset_hash_entry));
+    entry->offset = offset;
+    entry->node = node;
+    entry->next = g_offset_hash[h];
+    g_offset_hash[h] = entry;
+}
+
+static struct instruction_node *offset_hash_lookup(uint64_t offset) {
+    uint32_t h = hash_offset(offset);
+    struct offset_hash_entry *entry = g_offset_hash[h];
+    while (entry) {
+        if (entry->offset == offset) {
+            return entry->node;
+        }
+        entry = entry->next;
+    }
+    return NULL;
+}
+
+static void offset_hash_free(void) {
+    for (int i = 0; i < OFFSET_HASH_SIZE; i++) {
+        struct offset_hash_entry *entry = g_offset_hash[i];
+        while (entry) {
+            struct offset_hash_entry *next = entry->next;
+            free(entry);
+            entry = next;
+        }
+        g_offset_hash[i] = NULL;
+    }
+}
+
 // Global batch statistics context (for tracking strategy usage during processing)
 batch_stats_t* g_batch_stats_context = NULL;
 
@@ -168,8 +222,12 @@ void buffer_append(struct buffer *b, const uint8_t *data, size_t size) {
 }
 
 uint8_t get_reg_index(uint8_t reg) {
-    // Map x86 registers to indices 0-7 for EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI
+    // Map x86/x64 registers to indices 0-7 (or 0-15 for extended)
+    // For extended registers (R8-R15), returns 0-7 (the low 3 bits)
+    // The caller must use REX.B/REX.R bits to indicate extended registers
     switch (reg) {
+        // Invalid/no register (e.g., no base in memory operand) - return 0 silently
+        case X86_REG_INVALID: return 0;
         // 32-bit registers
         case X86_REG_EAX: return 0;
         case X86_REG_ECX: return 1;
@@ -188,6 +246,42 @@ uint8_t get_reg_index(uint8_t reg) {
         case X86_REG_RBP: return 5;
         case X86_REG_RSI: return 6;
         case X86_REG_RDI: return 7;
+        // x64 extended 64-bit registers R8-R15 (low 3 bits of index)
+        case X86_REG_R8:  return 0;  // REX.B required
+        case X86_REG_R9:  return 1;  // REX.B required
+        case X86_REG_R10: return 2;  // REX.B required
+        case X86_REG_R11: return 3;  // REX.B required
+        case X86_REG_R12: return 4;  // REX.B required
+        case X86_REG_R13: return 5;  // REX.B required
+        case X86_REG_R14: return 6;  // REX.B required
+        case X86_REG_R15: return 7;  // REX.B required
+        // x64 extended 32-bit registers R8D-R15D
+        case X86_REG_R8D:  return 0;
+        case X86_REG_R9D:  return 1;
+        case X86_REG_R10D: return 2;
+        case X86_REG_R11D: return 3;
+        case X86_REG_R12D: return 4;
+        case X86_REG_R13D: return 5;
+        case X86_REG_R14D: return 6;
+        case X86_REG_R15D: return 7;
+        // x64 extended 16-bit registers R8W-R15W
+        case X86_REG_R8W:  return 0;
+        case X86_REG_R9W:  return 1;
+        case X86_REG_R10W: return 2;
+        case X86_REG_R11W: return 3;
+        case X86_REG_R12W: return 4;
+        case X86_REG_R13W: return 5;
+        case X86_REG_R14W: return 6;
+        case X86_REG_R15W: return 7;
+        // x64 extended 8-bit registers R8B-R15B
+        case X86_REG_R8B:  return 0;
+        case X86_REG_R9B:  return 1;
+        case X86_REG_R10B: return 2;
+        case X86_REG_R11B: return 3;
+        case X86_REG_R12B: return 4;
+        case X86_REG_R13B: return 5;
+        case X86_REG_R14B: return 6;
+        case X86_REG_R15B: return 7;
         // 16-bit registers (map to their 32-bit equivalents)
         case X86_REG_AX: return 0;
         case X86_REG_CX: return 1;
@@ -202,11 +296,25 @@ uint8_t get_reg_index(uint8_t reg) {
         case X86_REG_CL: return 1;
         case X86_REG_DL: return 2;
         case X86_REG_BL: return 3;
+        // x64 8-bit low registers (SPL, BPL, SIL, DIL)
+        case X86_REG_SPL: return 4;
+        case X86_REG_BPL: return 5;
+        case X86_REG_SIL: return 6;
+        case X86_REG_DIL: return 7;
         // 8-bit high registers (map to base register for 32-bit context)
         case X86_REG_AH: return 0;  // AH -> EAX
         case X86_REG_CH: return 1;  // CH -> ECX
         case X86_REG_DH: return 2;  // DH -> EDX
         case X86_REG_BH: return 3;  // BH -> EBX
+        // Instruction pointer registers (used in RIP-relative addressing)
+        // In ModR/M encoding, RIP-relative uses r/m=101 (5) with mod=00
+        case X86_REG_RIP: return 5;  // x64 instruction pointer
+        case X86_REG_EIP: return 5;  // x32 instruction pointer
+        case X86_REG_IP:  return 5;  // x16 instruction pointer
+        // Index pseudo-registers (used in SIB byte for "no index")
+        // These use encoding 4 (RSP/ESP slot) which means "no index" in SIB
+        case X86_REG_RIZ: return 4;  // x64 "no index" pseudo-register
+        case X86_REG_EIZ: return 4;  // x32 "no index" pseudo-register
         default:
             fprintf(stderr, "[WARNING] Unknown register in get_reg_index: %d\n", reg);
             return 0;  // Return EAX index as default, but log the issue
@@ -278,8 +386,10 @@ static void process_relative_jump(struct buffer *new_shellcode,
                                    struct instruction_node *current,
                                    struct instruction_node *head) {
 
+#ifdef DEBUG
     fprintf(stderr, "[JUMP] Processing: %s %s, bytes[0]=0x%02x, size=%d\n",
             insn->mnemonic, insn->op_str, insn->bytes[0], insn->size);
+#endif
 
     // Sanity checks
     if (insn->detail->x86.op_count == 0) {
@@ -294,24 +404,23 @@ static void process_relative_jump(struct buffer *new_shellcode,
         return;
     }
 
-    // Find target node
+    // Find target node using O(1) hash lookup
     uint64_t target_addr = (uint64_t)insn->detail->x86.operands[0].imm;
-    struct instruction_node *target_node = head;
-    int found = 0;
+    struct instruction_node *target_node = offset_hash_lookup(target_addr);
+    int found = (target_node != NULL);
+    (void)head;  // Suppress unused parameter warning
 
+#ifdef DEBUG
     fprintf(stderr, "[JUMP] Looking for target address 0x%lx\n", target_addr);
-
-    while (target_node != NULL) {
-        if (target_node->offset == target_addr) {
-            found = 1;
-            fprintf(stderr, "[JUMP] Found target at offset 0x%lx\n", target_addr);
-            break;
-        }
-        target_node = target_node->next;
+    if (found) {
+        fprintf(stderr, "[JUMP] Found target at offset 0x%lx\n", target_addr);
     }
+#endif
 
     if (!found) {
+#ifdef DEBUG
         fprintf(stderr, "[JUMP] Target 0x%lx NOT FOUND! Outputting original bytes.\n", target_addr);
+#endif
         // Target not in our shellcode - external reference
         // Convert to absolute addressing
 
@@ -330,7 +439,9 @@ static void process_relative_jump(struct buffer *new_shellcode,
         } else {
             // Conditional jump to external target
             // Transform using opposite condition + absolute jump to avoid null bytes
+#ifdef DEBUG
             fprintf(stderr, "[JUMP] Conditional jump to external target - transforming\n");
+#endif
 
             // Get opposite condition opcode
             uint8_t opposite_opcode;
@@ -470,11 +581,13 @@ static void process_relative_jump(struct buffer *new_shellcode,
         return;
     }
 
+#ifdef DEBUG
     // Debug: Check what we're processing
     if (strstr(insn->mnemonic, "jne") || strstr(insn->mnemonic, "je")) {
         fprintf(stderr, "[DEBUG] Processing conditional jump: %s, bytes[0]=0x%02x, bytes[1]=0x%02x, size=%d\n",
                 insn->mnemonic, insn->bytes[0], insn->size > 1 ? insn->bytes[1] : 0, insn->size);
     }
+#endif
 
     if (insn->bytes[0] == 0x0F && (insn->bytes[1] >= 0x80 && insn->bytes[1] <= 0x8F)) {
         // Near conditional jump (0F 8x)
@@ -491,8 +604,10 @@ static void process_relative_jump(struct buffer *new_shellcode,
             }
         }
 
+#ifdef DEBUG
         fprintf(stderr, "[DEBUG] Near cond jump: %s, new_rel=%d, has_null=%d, target_offset=%zu\n",
                 insn->mnemonic, (int32_t)new_rel, has_null, target_node->new_offset);
+#endif
 
         if (has_null) {
             // Convert using opposite condition trick
@@ -501,11 +616,15 @@ static void process_relative_jump(struct buffer *new_shellcode,
             size_t mov_size = get_mov_eax_imm_size(target_node->new_offset);
             size_t skip_size = mov_size + 2;
 
+#ifdef DEBUG
             fprintf(stderr, "[DEBUG] Transformation: mov_size=%zu, skip_size=%zu\n", mov_size, skip_size);
+#endif
 
             // Check if skip_size fits in signed byte (range -128 to +127)
             if (skip_size > 127) {
+#ifdef DEBUG
                 fprintf(stderr, "[WARNING] skip_size=%zu too large for short jump! Falling back to original.\n", skip_size);
+#endif
                 buffer_append(new_shellcode, patched, 6);
                 return;
             }
@@ -526,8 +645,10 @@ static void process_relative_jump(struct buffer *new_shellcode,
 
     // Unknown jump type - conservative fallback, but ensure no null bytes
     // Use MOV EAX, target + JMP EAX approach to avoid any nulls
+#ifdef DEBUG
     fprintf(stderr, "[WARNING] Unknown jump type encountered: %s %s\n", insn->mnemonic, insn->op_str);
     fprintf(stderr, "[WARNING] Using safe fallback conversion\n");
+#endif
 
     // Get target address from immediate operand if available
     uint32_t target = 0;
@@ -595,9 +716,11 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size, byval_arc
         return new_shellcode;
     }
 
-    // Create linked list of instructions
+    // Create linked list of instructions and populate hash table for O(1) lookup
     struct instruction_node *head = NULL;
     struct instruction_node *current = NULL;
+
+    offset_hash_init();  // Initialize hash table
 
     for (size_t i = 0; i < count; i++) {
         struct instruction_node *node = malloc(sizeof(struct instruction_node));
@@ -606,6 +729,9 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size, byval_arc
         node->new_size = 0;
         node->new_offset = 0;
         node->next = NULL;
+
+        // Insert into hash table for O(1) target lookup
+        offset_hash_insert(node->offset, node);
 
         if (head == NULL) {
             head = node;
@@ -666,9 +792,11 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size, byval_arc
     while (current != NULL) {
         insn_count++;
         int has_bad_bytes = !is_bad_byte_free_buffer(current->insn->bytes, current->insn->size);
+#ifdef DEBUG
         fprintf(stderr, "[GEN] Insn #%d: %s %s (has_bad_bytes=%d, size=%d)\n",
                 insn_count, current->insn->mnemonic, current->insn->op_str,
                 has_bad_bytes, current->insn->size);
+#endif
 
         if (is_relative_jump(current->insn)) {
             process_relative_jump(&new_shellcode, current->insn, current, head);
@@ -680,8 +808,10 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size, byval_arc
 
             if (strategy_count > 0) {
                 // Use the first (highest priority) strategy to generate code
+#ifdef DEBUG
                 fprintf(stderr, "[TRACE] Using strategy '%s' for: %s %s\n",
                        strategies[0]->name, current->insn->mnemonic, current->insn->op_str);
+#endif
 
                 // Before generating, try to get the ML confidence for this strategy
                 // For now, we'll use a basic approach and record the prediction accuracy after generation
@@ -783,6 +913,7 @@ struct buffer remove_null_bytes(const uint8_t *shellcode, size_t size, byval_arc
     }
 
     // Clean up only AFTER verification
+    offset_hash_free();  // Free hash table
     free_instruction_node_list(head);
     cs_free(insn_array, count);
 

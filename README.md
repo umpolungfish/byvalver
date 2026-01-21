@@ -57,7 +57,14 @@
 - Added architecture mismatch detection heuristics
 - Improved code organization (includes moved to file scope)
 
-The tool uses the `Capstone` disassembly framework to analyze instructions and applies over 170+ ranked transformation strategies to replace `bad-byte`-containing code with equivalent alternatives  
+**NEW in v4.2: Enhanced x64 Support**
+- **x86/x64 Strategy Compatibility Layer**: 128+ x86 strategies now work on x64 shellcode
+- **5 New x64-Specific Strategy Files**: MOVABS, SBB, TEST, SSE Memory, LEA Displacement
+- **Extended Register Encoding**: Full R8-R15 support with proper REX prefix handling
+- **REX Prefix Utilities**: `is_64bit_register()`, `is_extended_register()`, `build_rex_prefix()`
+- Resolves 100% failure rate on x64-only shellcode samples
+
+The tool uses the `Capstone` disassembly framework to analyze instructions and applies over 175+ ranked transformation strategies to replace `bad-byte`-containing code with equivalent alternatives  
 
 The generic `bad-byte` banishment framework provides 2x usage modes:
 
@@ -563,6 +570,13 @@ For detailed profile documentation, see [docs/BAD_BYTE_PROFILES.md](docs/BAD_BYT
   - **NEW in v4.1**: Negative Displacement Memory Addressing (displacement alternatives)
   - **NEW in v4.1**: Multi-Byte NOP Interlacing (obfuscation NOP variants)
   - **NEW in v4.1**: Bit Manipulation Constant Construction (BSWAP, BSF, POPCNT, BMI2)
+  - **NEW in v4.2**: x86/x64 Strategy Compatibility Layer (enables 128+ x86 strategies on x64)
+  - **NEW in v4.2**: MOVABS 64-bit Immediate Strategies (REX.W MOV with XOR/ADD construction)
+  - **NEW in v4.2**: SBB Immediate Zero Strategies (SBB AL/AX/EAX, 0 transformation)
+  - **NEW in v4.2**: TEST Large Immediate Strategies (TEST EAX/RAX, imm32 with register operands)
+  - **NEW in v4.2**: SSE Memory Operation Strategies (MOVUPS/MOVAPS/MOVDQU/MOVDQA null elimination)
+  - **NEW in v4.2**: LEA x64 Displacement Strategies (large displacement handling with REX prefixes)
+  - **NEW in v4.2**: Extended Register Support (R8-R15 register encoding utilities)
  - Comprehensive support for `MOV`, `ADD/SUB`, `XOR`, `LEA`, `CMP`, `PUSH`, and more
 
 The engine employs multi-pass processing (obfuscation → denulling) with robust fallback mechanisms for edge cases

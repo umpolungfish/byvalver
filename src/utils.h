@@ -118,4 +118,68 @@ int is_null_free_byte(uint8_t byte);
 // Create parent directories for a file path if they don't exist
 int create_parent_dirs(const char *filepath);
 
+// ============================================================================
+// x64 REX Prefix Utilities (v4.2)
+// ============================================================================
+
+/**
+ * Check if a register is an extended register (R8-R15)
+ * @param reg: Capstone register enum
+ * @return: 1 if extended (R8-R15), 0 otherwise
+ */
+int is_extended_register(x86_reg reg);
+
+/**
+ * Check if a register is a 64-bit register (RAX-R15)
+ * @param reg: Capstone register enum
+ * @return: 1 if 64-bit register, 0 otherwise
+ */
+int is_64bit_register(x86_reg reg);
+
+/**
+ * Build a REX prefix byte
+ * @param w: 64-bit operand size (REX.W)
+ * @param r: ModR/M reg field extension (REX.R)
+ * @param x: SIB index field extension (REX.X)
+ * @param b: ModR/M r/m or SIB base extension (REX.B)
+ * @return: REX prefix byte (0x40-0x4F), or 0 if no REX needed
+ */
+uint8_t build_rex_prefix(int w, int r, int x, int b);
+
+/**
+ * Generate MOVABS RAX, imm64 (load 64-bit immediate) with null-byte elimination
+ * @param b: Buffer to write to
+ * @param imm: 64-bit immediate value
+ */
+void generate_mov_rax_imm64(struct buffer *b, uint64_t imm);
+
+/**
+ * Generate MOVABS reg, imm64 for any 64-bit register
+ * @param b: Buffer to write to
+ * @param reg: Target register (RAX-R15)
+ * @param imm: 64-bit immediate value
+ */
+void generate_mov_reg_imm64(struct buffer *b, x86_reg reg, uint64_t imm);
+
+/**
+ * Get size of null-free MOVABS encoding
+ * @param imm: 64-bit immediate value
+ * @return: Size in bytes of the null-free encoding
+ */
+size_t get_mov_rax_imm64_size(uint64_t imm);
+
+/**
+ * Check if a 64-bit value is free of bad bytes
+ * @param val: 64-bit value to check
+ * @return: 1 if all 8 bytes ok, 0 if any byte is bad
+ */
+int is_bad_byte_free_qword(uint64_t val);
+
+/**
+ * Write a 64-bit (qword) value to buffer
+ * @param b: Buffer to write to
+ * @param qword: 64-bit value
+ */
+void buffer_write_qword(struct buffer *b, uint64_t qword);
+
 #endif

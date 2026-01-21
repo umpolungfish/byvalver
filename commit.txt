@@ -1,68 +1,104 @@
-fix: Revert broken v4.1 strategies causing 91% batch processing failures
+feat: Implement BYVALVER v4.2 Enhanced x64 Support
 
-Critical regression fix for strategies introduced in v4.1 that used
-incorrect register encoding, causing near-total batch processing failure.
+Major enhancement adding comprehensive x64 shellcode support through
+strategy compatibility layer and 5 new x64-specific strategies.
 
 Problem:
 ========
 
-The v4.1 enhancement strategies used broken register arithmetic:
+Prior to v4.2, x64 shellcode processing had 100% failure rate:
+- Only 5 strategies marked BYVAL_ARCH_X64 out of 163+ total
+- Strategy filter used strict equality, blocking x86 strategies
+- 128+ proven x86 strategies were unavailable for x64 processing
 
-    (dst_reg - X86_REG_RAX) * 8  // WRONG
+Solution:
+=========
 
-Capstone's register enum values are NOT consecutive, so this produces
-garbage opcodes for any register except RAX/EAX. This caused:
+Phase 1: x86/x64 Strategy Compatibility Layer
+---------------------------------------------
+Added is_strategy_arch_compatible() in strategy_registry.c:
+- Allows x86 strategies to work on x64 shellcode
+- Automatically excludes x86-only instructions (SALC, ARPL, BOUND, BCD)
+- Zero code changes required to existing strategies
+- Immediate access to 128+ transformation strategies for x64
 
-- 91.7% failure rate (11/12 files failing)
-- RIP-Relative Optimization strategies: 0% success (355 failures)
-- Bit Manipulation POPCNT: 11.5% success (85 failures)
-- Bit Manipulation PEXT/PDEP: 0% success (9 failures)
+Phase 2: Extended Register Support Utilities
+--------------------------------------------
+Added to utils.c, utils.h, and core.c:
+- is_64bit_register(): Check if register requires REX.W
+- is_extended_register(): Check if register requires REX.B/R/X
+- build_rex_prefix(): Construct REX prefix byte
+- get_reg_index() extended: Now handles R8-R15 properly
 
-Fix Applied:
-============
+Phase 3: New x64-Specific Strategies
+------------------------------------
+Five new strategy files targeting x64 instruction patterns:
 
-1. Reverted strategy_registry.c to remove broken strategy registrations:
-   - RIP-Relative Optimization (Offset Decomposition)
-   - RIP-Relative Optimization (Double RIP)
-   - RIP-Relative Optimization (Stack Method)
-   - Negative Displacement Addressing strategies
-   - Multi-byte NOP Interlacing strategies
-   - Bit Manipulation Constant Construction strategies
+1. src/movabs_strategies.c (Priority 90)
+   - Handles movabs rax, imm64 with null byte elimination
+   - XOR key encoding, ADD/SUB construction, byte-by-byte building
 
-2. Preserved is_rip_relative_operand() helper function in core.c
-   - Required by other working strategies (lea_rip, mov_rip, pic_addressing)
-   - Function itself is correct, only the callers had bugs
+2. src/sbb_imm_zero_strategies.c (Priority 86)
+   - Transforms SBB AL/AX/EAX, 0 instructions
+   - Maintains CF semantics with register operand conversion
 
-Strategies Affected:
-===================
+3. src/test_large_imm_strategies.c (Priority 85)
+   - Handles TEST EAX/RAX, imm32 with null-containing immediates
+   - Register operand conversion with XOR key construction
 
-REMOVED (broken register encoding):
-- rip_relative_optimization_strategies.c
-- negative_displacement_addressing_strategies.c
-- multibyte_nop_interlacing_strategies.c
-- bit_manipulation_constant_construction_strategies.c
-- setcc_flag_accumulation_strategies.c
+4. src/sse_memory_strategies.c (Priority 88)
+   - SSE memory operations (MOVUPS/MOVAPS/MOVDQU/MOVDQA)
+   - Address calculation via LEA to temp register
 
-PRESERVED (working):
-- All existing v4.0 and earlier strategies
-- lea_rip_strategy.c
-- mov_rip_strategy.c
-- pic_addressing_strategies.c
+5. src/lea_x64_displacement_strategies.c (Priority 87)
+   - Large displacement handling with REX prefix support
+   - Displacement decomposition and base register adjustment
 
-Result:
-=======
+Phase 4: Strategy Registration
+------------------------------
+Added to strategy_registry.c:
+- Forward declarations for all new registration functions
+- Registration calls in init_strategies() for x64 architecture
 
-- Batch processing success rate restored to 100%
-- Total strategies reduced from 170+ back to ~163
-- All working functionality preserved
+Files Modified:
+===============
 
-Future Work:
-============
+Core Infrastructure:
+- src/strategy_registry.c - Compatibility layer + registrations
+- src/utils.c - REX prefix utilities
+- src/utils.h - Function declarations
+- src/core.c - Extended get_reg_index()
 
-To properly implement the v4.1 strategies, the register encoding must
-use get_reg_index() instead of direct enum subtraction:
+New Strategy Files:
+- src/movabs_strategies.c (new)
+- src/sbb_imm_zero_strategies.c (new)
+- src/test_large_imm_strategies.c (new)
+- src/sse_memory_strategies.c (new)
+- src/lea_x64_displacement_strategies.c (new)
 
-    // CORRECT approach:
-    uint8_t reg_idx = get_reg_index(dst_reg);
-    opcode = 0x48, 0x8D, 0x05 + reg_idx * 8;
+Documentation:
+- README.md - v4.2 feature documentation
+- docs/DENULL_STRATS.md - New strategy documentation
+- assets/docs/BADBYTEELIM_STRATS.md - v4.2 section added
+
+Results:
+========
+
+Strategy availability:
+- Before: 5 x64-specific strategies
+- After: 133+ strategies (5 existing + 128 compatible x86 + 5 new)
+
+Expected improvement:
+- x64 shellcode: 0% -> significant success rate
+- Total strategies: 163 -> 175+
+
+Technical Notes:
+================
+
+The compatibility layer works by checking strategy names for
+x86-only instruction patterns. This approach:
+1. Requires no changes to existing strategies
+2. Maintains full backward compatibility
+3. Automatically adapts as new strategies are added
+4. Has O(n) overhead only during strategy selection, not execution
 

@@ -1362,3 +1362,329 @@ void generate_mov_eax_imm_byte(struct buffer *b, uint8_t imm) {
     }
 }
 
+// ============================================================================
+// x64 REX Prefix Utilities (v4.2)
+// ============================================================================
+
+/**
+ * Write a 64-bit (qword) value to buffer
+ */
+void buffer_write_qword(struct buffer *b, uint64_t qword) {
+    buffer_append(b, (uint8_t*)&qword, 8);
+}
+
+/**
+ * Check if a register is an extended register (R8-R15)
+ */
+int is_extended_register(x86_reg reg) {
+    switch (reg) {
+        // 64-bit extended registers
+        case X86_REG_R8:
+        case X86_REG_R9:
+        case X86_REG_R10:
+        case X86_REG_R11:
+        case X86_REG_R12:
+        case X86_REG_R13:
+        case X86_REG_R14:
+        case X86_REG_R15:
+        // 32-bit extended registers
+        case X86_REG_R8D:
+        case X86_REG_R9D:
+        case X86_REG_R10D:
+        case X86_REG_R11D:
+        case X86_REG_R12D:
+        case X86_REG_R13D:
+        case X86_REG_R14D:
+        case X86_REG_R15D:
+        // 16-bit extended registers
+        case X86_REG_R8W:
+        case X86_REG_R9W:
+        case X86_REG_R10W:
+        case X86_REG_R11W:
+        case X86_REG_R12W:
+        case X86_REG_R13W:
+        case X86_REG_R14W:
+        case X86_REG_R15W:
+        // 8-bit extended registers
+        case X86_REG_R8B:
+        case X86_REG_R9B:
+        case X86_REG_R10B:
+        case X86_REG_R11B:
+        case X86_REG_R12B:
+        case X86_REG_R13B:
+        case X86_REG_R14B:
+        case X86_REG_R15B:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+/**
+ * Check if a register is a 64-bit register (RAX-R15)
+ */
+int is_64bit_register(x86_reg reg) {
+    switch (reg) {
+        case X86_REG_RAX:
+        case X86_REG_RCX:
+        case X86_REG_RDX:
+        case X86_REG_RBX:
+        case X86_REG_RSP:
+        case X86_REG_RBP:
+        case X86_REG_RSI:
+        case X86_REG_RDI:
+        case X86_REG_R8:
+        case X86_REG_R9:
+        case X86_REG_R10:
+        case X86_REG_R11:
+        case X86_REG_R12:
+        case X86_REG_R13:
+        case X86_REG_R14:
+        case X86_REG_R15:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+/**
+ * Build a REX prefix byte
+ * REX format: 0100WRXB
+ * W = 64-bit operand size
+ * R = ModR/M reg field extension
+ * X = SIB index field extension
+ * B = ModR/M r/m or SIB base field extension
+ */
+uint8_t build_rex_prefix(int w, int r, int x, int b_bit) {
+    uint8_t rex = 0x40;  // Base REX prefix
+    if (w) rex |= 0x08;  // REX.W
+    if (r) rex |= 0x04;  // REX.R
+    if (x) rex |= 0x02;  // REX.X
+    if (b_bit) rex |= 0x01;  // REX.B
+    return rex;
+}
+
+/**
+ * Check if a 64-bit value is free of bad bytes
+ */
+int is_bad_byte_free_qword(uint64_t val) {
+    for (int i = 0; i < 8; i++) {
+        uint8_t byte = (val >> (i * 8)) & 0xFF;
+        if (!is_bad_byte_free_byte(byte)) {
+            return 0;  // Found a bad byte
+        }
+    }
+    return 1;  // All bytes ok
+}
+
+/**
+ * Get size of null-free MOVABS encoding
+ */
+size_t get_mov_rax_imm64_size(uint64_t imm) {
+    // If the immediate is already bad-byte-free, use direct MOVABS
+    if (is_bad_byte_free_qword(imm)) {
+        return 10;  // REX.W + B8 + imm64
+    }
+
+    // Check if value fits in 32 bits (can use sign extension)
+    if ((int64_t)imm >= INT32_MIN && (int64_t)imm <= INT32_MAX) {
+        uint32_t imm32 = (uint32_t)imm;
+        if (is_bad_byte_free(imm32)) {
+            return 7;  // REX.W + C7 C0 + imm32 (sign-extended)
+        }
+    }
+
+    // Try XOR encoding: need XOR key search + MOV + XOR
+    // Conservative estimate: MOV (10) + XOR (10) = 20 bytes
+    return 20;
+}
+
+/**
+ * Generate MOVABS RAX, imm64 with null-byte elimination
+ */
+void generate_mov_rax_imm64(struct buffer *b, uint64_t imm) {
+    // If the immediate is already bad-byte-free, use direct encoding
+    if (is_bad_byte_free_qword(imm)) {
+        uint8_t code[10];
+        code[0] = 0x48;  // REX.W prefix
+        code[1] = 0xB8;  // MOV RAX, imm64
+        memcpy(&code[2], &imm, 8);
+        buffer_append(b, code, 10);
+        return;
+    }
+
+    // Check if value fits in 32 bits and can use sign extension
+    if ((int64_t)imm >= INT32_MIN && (int64_t)imm <= INT32_MAX) {
+        uint32_t imm32 = (uint32_t)imm;
+        if (is_bad_byte_free(imm32)) {
+            // MOV RAX, imm32 (sign-extended to 64 bits)
+            uint8_t code[7];
+            code[0] = 0x48;  // REX.W
+            code[1] = 0xC7;  // MOV r/m64, imm32
+            code[2] = 0xC0;  // ModR/M: RAX
+            memcpy(&code[3], &imm32, 4);
+            buffer_append(b, code, 7);
+            return;
+        }
+    }
+
+    // Try XOR encoding with various keys
+    uint64_t xor_keys[] = {
+        0x0101010101010101ULL, 0x1111111111111111ULL,
+        0x2222222222222222ULL, 0x3333333333333333ULL,
+        0x4141414141414141ULL, 0x5555555555555555ULL,
+        0xAAAAAAAAAAAAAAAAULL, 0xFFFFFFFFFFFFFFFFULL,
+    };
+
+    for (size_t i = 0; i < sizeof(xor_keys) / sizeof(xor_keys[0]); i++) {
+        uint64_t encoded = imm ^ xor_keys[i];
+        if (is_bad_byte_free_qword(encoded) && is_bad_byte_free_qword(xor_keys[i])) {
+            // MOV RAX, encoded_value
+            uint8_t mov_code[10];
+            mov_code[0] = 0x48;  // REX.W
+            mov_code[1] = 0xB8;  // MOV RAX, imm64
+            memcpy(&mov_code[2], &encoded, 8);
+            buffer_append(b, mov_code, 10);
+
+            // XOR RAX, key - use temp register approach for 64-bit XOR
+            // (XOR RAX, imm32 only works with sign-extended 32-bit values)
+            uint8_t mov_r11[10];
+            mov_r11[0] = 0x49;  // REX.WB (for R11)
+            mov_r11[1] = 0xBB;  // MOV R11, imm64
+            memcpy(&mov_r11[2], &xor_keys[i], 8);
+            buffer_append(b, mov_r11, 10);
+
+            // XOR RAX, R11
+            uint8_t xor_rax_r11[] = {0x4C, 0x31, 0xD8};  // XOR RAX, R11
+            buffer_append(b, xor_rax_r11, 3);
+            return;
+        }
+    }
+
+    // Fallback: byte-by-byte construction
+    // XOR RAX, RAX to clear
+    uint8_t xor_rax[] = {0x48, 0x31, 0xC0};  // XOR RAX, RAX
+    buffer_append(b, xor_rax, 3);
+
+    // Find first non-zero byte from MSB
+    int first_nonzero = -1;
+    for (int i = 7; i >= 0; i--) {
+        if (((imm >> (i * 8)) & 0xFF) != 0) {
+            first_nonzero = i;
+            break;
+        }
+    }
+
+    if (first_nonzero == -1) {
+        // Value is 0, already done with XOR RAX, RAX
+        return;
+    }
+
+    // Load first non-zero byte into AL
+    uint8_t first_byte = (imm >> (first_nonzero * 8)) & 0xFF;
+    if (is_bad_byte_free_byte(first_byte)) {
+        uint8_t mov_al[] = {0xB0, first_byte};  // MOV AL, imm8
+        buffer_append(b, mov_al, 2);
+    } else {
+        // Construct using arithmetic
+        for (uint8_t base = 1; base < 0xFF; base++) {
+            if (!is_bad_byte_free_byte(base)) continue;
+            uint8_t offset = first_byte - base;
+            if (is_bad_byte_free_byte(offset)) {
+                uint8_t mov_al[] = {0xB0, base};  // MOV AL, base
+                buffer_append(b, mov_al, 2);
+                uint8_t add_al[] = {0x04, offset};  // ADD AL, offset
+                buffer_append(b, add_al, 2);
+                break;
+            }
+        }
+    }
+
+    // Process remaining bytes
+    for (int i = first_nonzero - 1; i >= 0; i--) {
+        // SHL RAX, 8
+        uint8_t shl_rax_8[] = {0x48, 0xC1, 0xE0, 0x08};  // SHL RAX, 8
+        buffer_append(b, shl_rax_8, 4);
+
+        uint8_t byte_val = (imm >> (i * 8)) & 0xFF;
+        if (byte_val != 0) {
+            if (is_bad_byte_free_byte(byte_val)) {
+                uint8_t or_al[] = {0x0C, byte_val};  // OR AL, imm8
+                buffer_append(b, or_al, 2);
+            } else {
+                // Construct using ADD
+                for (uint8_t base = 1; base < byte_val; base++) {
+                    if (!is_bad_byte_free_byte(base)) continue;
+                    uint8_t offset = byte_val - base;
+                    if (is_bad_byte_free_byte(offset)) {
+                        uint8_t add_al_base[] = {0x04, base};
+                        buffer_append(b, add_al_base, 2);
+                        uint8_t add_al_offset[] = {0x04, offset};
+                        buffer_append(b, add_al_offset, 2);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Generate MOVABS reg, imm64 for any 64-bit register
+ */
+void generate_mov_reg_imm64(struct buffer *b, x86_reg reg, uint64_t imm) {
+    // For RAX, use the specialized function
+    if (reg == X86_REG_RAX) {
+        generate_mov_rax_imm64(b, imm);
+        return;
+    }
+
+    // For other registers, load to RAX first then move
+    // PUSH RAX; generate_mov_rax_imm64; MOV reg, RAX; POP RAX
+
+    // Actually, we can generate directly for most registers
+    // The opcode is REX.W + B8+rd where rd is register index
+
+    int is_extended = is_extended_register(reg);
+    uint8_t reg_idx = get_reg_index(reg);
+
+    // Check if direct encoding is safe
+    if (is_bad_byte_free_qword(imm)) {
+        uint8_t code[10];
+        code[0] = is_extended ? 0x49 : 0x48;  // REX.W or REX.WB
+        code[1] = 0xB8 + (reg_idx & 0x07);    // MOV r64, imm64
+        memcpy(&code[2], &imm, 8);
+        buffer_append(b, code, 10);
+        return;
+    }
+
+    // Use RAX as intermediary
+    // PUSH RAX
+    uint8_t push_rax[] = {0x50};
+    buffer_append(b, push_rax, 1);
+
+    // Load value into RAX
+    generate_mov_rax_imm64(b, imm);
+
+    // MOV reg, RAX
+    uint8_t mov_reg_rax[3];
+    if (is_extended) {
+        mov_reg_rax[0] = 0x49;  // REX.WB
+    } else {
+        mov_reg_rax[0] = 0x48;  // REX.W
+    }
+    mov_reg_rax[1] = 0x89;  // MOV r/m64, r64
+    mov_reg_rax[2] = 0xC0 + (reg_idx & 0x07);  // ModR/M: reg, RAX
+    buffer_append(b, mov_reg_rax, 3);
+
+    // XCHG [RSP], RAX to restore RAX and put value on stack
+    // Actually, simpler: POP RAX (but we need to preserve target reg value)
+    // Let's use XCHG approach
+    uint8_t xchg[] = {0x48, 0x87, 0x04, 0x24};  // XCHG RAX, [RSP]
+    buffer_append(b, xchg, 4);
+
+    // ADD RSP, 8 to clean up stack
+    uint8_t add_rsp[] = {0x48, 0x83, 0xC4, 0x08};  // ADD RSP, 8
+    buffer_append(b, add_rsp, 4);
+}
+

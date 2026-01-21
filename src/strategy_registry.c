@@ -62,12 +62,65 @@
 #include "bitwise_immediate_badbyte_strategies.h"
 #include "segment_prefix_badbyte_strategies.h"
 #include "operand_size_prefix_badbyte_strategies.h"
+// x64-specific strategies (v4.2)
+#include "movabs_strategies.h"
+#include "sse_memory_strategies.h"
+#include "lea_x64_displacement_strategies.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h> // Added for debug prints
 // #include <stdio.h> // Removed for printf
 
 #define MAX_STRATEGIES 400
+
+/**
+ * Check if a strategy is architecture-compatible with the target architecture.
+ * Allows x86 strategies to be used on x64, unless they use incompatible instructions.
+ *
+ * @param strategy: The strategy to check
+ * @param target_arch: The target architecture we're processing for
+ * @return: 1 if compatible, 0 if not
+ */
+static int is_strategy_arch_compatible(strategy_t *strategy, byval_arch_t target_arch) {
+    // Exact match is always compatible
+    if (strategy->target_arch == target_arch) {
+        return 1;
+    }
+
+    // Allow x86 strategies on x64 unless they use incompatible instructions
+    // These instructions were removed or have different semantics in x64 mode:
+    // - SALC: Set AL from Carry (opcode D6) - removed in x64
+    // - ARPL: Adjust RPL Field (opcode 63) - repurposed as MOVSXD in x64
+    // - BOUND: Check Array Index Against Bounds - removed in x64
+    // - BCD instructions (AAA, AAS, DAA, DAS, AAM, AAD) - removed in x64
+    if (target_arch == BYVAL_ARCH_X64 && strategy->target_arch == BYVAL_ARCH_X86) {
+        const char *incompatible[] = {
+            "SALC", "salc",           // Set AL from Carry - removed in x64
+            "ARPL", "arpl",           // Adjust RPL - repurposed as MOVSXD in x64
+            "BOUND", "bound",         // Check Array Bounds - removed in x64
+            "BCD", "bcd",             // BCD arithmetic prefix
+            "AAA", "aaa",             // ASCII Adjust After Addition
+            "AAS", "aas",             // ASCII Adjust After Subtraction
+            "DAA", "daa",             // Decimal Adjust After Addition
+            "DAS", "das",             // Decimal Adjust After Subtraction
+            "AAM", "aam",             // ASCII Adjust After Multiplication
+            "AAD", "aad",             // ASCII Adjust Before Division
+            "PUSHAD", "pushad",       // Push All General-Purpose - removed in x64
+            "POPAD", "popad",         // Pop All General-Purpose - removed in x64
+            "PUSHA", "pusha",         // Push All - removed in x64
+            "POPA", "popa",           // Pop All - removed in x64
+        };
+
+        for (size_t i = 0; i < sizeof(incompatible) / sizeof(incompatible[0]); i++) {
+            if (strstr(strategy->name, incompatible[i])) {
+                return 0;  // Incompatible - uses removed x64 instruction
+            }
+        }
+        return 1;  // Compatible - x86 strategy can be used on x64
+    }
+
+    return 0;  // Not compatible
+}
 
 // Global ML strategist instance for this module
 static ml_strategist_t g_ml_strategist;
@@ -129,6 +182,10 @@ void register_peb_api_resolution_strategies(); // Forward declaration - Enhanced
 void register_advanced_hash_api_resolution_strategies(); // Forward declaration - Advanced hash-based API resolution strategies (priority 96)
 void register_multi_stage_peb_traversal_strategies(); // Forward declaration - Multi-stage PEB traversal strategies (priority 97)
 void register_stack_based_structure_construction_strategies(); // Forward declaration - Stack-based structure construction strategies (priority 94)
+
+// x64-specific strategy forward declarations (v4.2)
+void register_sbb_imm_zero_strategies(); // Forward declaration - SBB/ADC reg, 0 null elimination (priority 86)
+void register_test_large_imm_strategies(); // Forward declaration - TEST with large immediate null elimination (priority 84-85)
 void register_conditional_jump_displacement_strategies(); // Forward declaration - Conditional jump displacement strategies (priority 88)
 void register_register_allocation_strategies(); // Forward declaration - Register allocation strategies for null avoidance (priority 78)
 void register_lea_displacement_optimization_strategies(); // Forward declaration - LEA displacement optimization strategies (priority 82)
@@ -289,6 +346,16 @@ void init_strategies(int use_ml, byval_arch_t arch) {
     register_string_prefix_badbyte_strategies();  // Priority 84 - String instruction prefix bad-byte elimination
     register_operand_size_prefix_badbyte_strategies();  // Priority 83 - Operand size prefix bad-byte elimination
     register_segment_prefix_badbyte_strategies();  // Priority 81 - Segment prefix bad-byte detection
+
+    // NEW: x64-Specific High-Priority Strategies (v4.2 - 2026-01-21)
+    // These strategies handle x64-specific patterns that cause null bytes
+    if (arch == BYVAL_ARCH_X64) {
+        register_movabs_strategies();  // Priority 89-90 - MOVABS 64-bit immediate handling
+        register_sbb_imm_zero_strategies();  // Priority 86 - SBB/ADC reg, 0 handling
+        register_test_large_imm_strategies();  // Priority 84-85 - TEST with large immediate
+        register_sse_memory_strategies();  // Priority 88 - SSE memory operations
+        register_lea_x64_displacement_strategies();  // Priority 86-87 - LEA with null displacement
+    }
 
     register_syscall_number_obfuscation_strategies();  // Priority 85-88 - Linux syscall optimization
     register_setcc_jump_elimination_strategies();  // Priority 84-86 - Jump offset elimination
@@ -471,8 +538,8 @@ strategy_t** get_strategies_for_instruction(cs_insn *insn, int *count, byval_arc
     int applicable_count = 0;
 
     for (int i = 0; i < strategy_count; i++) {
-        // Filter by target architecture
-        if (strategies[i]->target_arch != arch) {
+        // Filter by target architecture (using compatibility check for x86/x64)
+        if (!is_strategy_arch_compatible(strategies[i], arch)) {
             continue;
         }
         DEBUG_LOG("  Trying strategy: %s", strategies[i]->name);
