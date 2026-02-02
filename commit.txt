@@ -1,104 +1,86 @@
-feat: Implement BYVALVER v4.2 Enhanced x64 Support
+docs: Expand WHITEPAPER.md references section with 37 academic citations
 
-Major enhancement adding comprehensive x64 shellcode support through
-strategy compatibility layer and 5 new x64-specific strategies.
+Enhanced technical whitepaper with comprehensive reference list covering
+all major topics discussed in the BYVALVER documentation.
 
-Problem:
+Changes:
 ========
 
-Prior to v4.2, x64 shellcode processing had 100% failure rate:
-- Only 5 strategies marked BYVAL_ARCH_X64 out of 163+ total
-- Strategy filter used strict equality, blocking x86 strategies
-- 128+ proven x86 strategies were unavailable for x64 processing
+Expanded references from 5 to 37 citations, organized into 9 categories:
 
-Solution:
-=========
+1. Architecture & Instruction Set Documentation (5 refs)
+   - Intel 64 and IA-32 Software Developer's Manual
+   - AMD64 Architecture Programmer's Manual
+   - ARM Architecture Reference Manual (A-profile)
+   - ARM Cortex-A Series Programmer's Guide
+   - Agner Fog's Instruction Tables
 
-Phase 1: x86/x64 Strategy Compatibility Layer
----------------------------------------------
-Added is_strategy_arch_compatible() in strategy_registry.c:
-- Allows x86 strategies to work on x64 shellcode
-- Automatically excludes x86-only instructions (SALC, ARPL, BOUND, BCD)
-- Zero code changes required to existing strategies
-- Immediate access to 128+ transformation strategies for x64
+2. Disassembly & Binary Analysis (5 refs)
+   - Capstone disassembly framework (Nguyen Anh Quynh)
+   - Keystone assembler framework
+   - BAP Binary Analysis Platform (CMU)
+   - SOK: State of the Art of War (IEEE S&P 2016)
+   - Native x86 Decompilation (USENIX Security 2013)
 
-Phase 2: Extended Register Support Utilities
---------------------------------------------
-Added to utils.c, utils.h, and core.c:
-- is_64bit_register(): Check if register requires REX.W
-- is_extended_register(): Check if register requires REX.B/R/X
-- build_rex_prefix(): Construct REX prefix byte
-- get_reg_index() extended: Now handles R8-R15 properly
+3. Shellcode & Exploit Development (5 refs)
+   - Shell-Storm shellcode database
+   - Exploit-DB shellcode archive
+   - English Shellcode (ACM CCS 2009)
+   - Comprehensive Shellcode Detection (ACSAC 2010)
+   - PIE performance analysis (ETH Zurich)
 
-Phase 3: New x64-Specific Strategies
-------------------------------------
-Five new strategy files targeting x64 instruction patterns:
+4. Code Obfuscation & Transformation (5 refs)
+   - Taxonomy of Obfuscating Transformations (Collberg 1997)
+   - Limits of Static Analysis for Malware Detection
+   - Obfuscation of Executable Code (ACM CCS 2003)
+   - Automatic Patch-Based Exploit Generation
+   - Binary Stirring self-randomization (ACM CCS 2012)
 
-1. src/movabs_strategies.c (Priority 90)
-   - Handles movabs rax, imm64 with null byte elimination
-   - XOR key encoding, ADD/SUB construction, byte-by-byte building
+5. Machine Learning in Security (4 refs)
+   - Deep Neural Network Malware Detection (Saxe & Berlin)
+   - Malware Detection by Eating a Whole EXE
+   - EMBER open dataset for PE malware ML
+   - Neural Nets for Function Type Signatures
 
-2. src/sbb_imm_zero_strategies.c (Priority 86)
-   - Transforms SBB AL/AX/EAX, 0 instructions
-   - Maintains CF semantics with register operand conversion
+6. Security Tools & Frameworks (4 refs)
+   - Metasploit Framework documentation
+   - Black Hat Python (Seitz)
+   - Hacking: The Art of Exploitation (Erickson)
+   - The Shellcoder's Handbook (Anley et al.)
 
-3. src/test_large_imm_strategies.c (Priority 85)
-   - Handles TEST EAX/RAX, imm32 with null-containing immediates
-   - Register operand conversion with XOR key construction
+7. x86 Encoding & Low-Level Programming (3 refs)
+   - The Art of Assembly Language (Hyde)
+   - Assembly Language Step-by-Step (Duntemann)
+   - Optimizing Subroutines in Assembly (Agner Fog)
 
-4. src/sse_memory_strategies.c (Priority 88)
-   - SSE memory operations (MOVUPS/MOVAPS/MOVDQU/MOVDQA)
-   - Address calculation via LEA to temp register
+8. Return-Oriented Programming & Code Reuse (3 refs)
+   - Geometry of Innocent Flesh on the Bone (Shacham, CCS 2007)
+   - Return-Oriented Programming on RISC (CCS 2008)
+   - Jump-Oriented Programming (ASIACCS 2011)
 
-5. src/lea_x64_displacement_strategies.c (Priority 87)
-   - Large displacement handling with REX prefix support
-   - Displacement decomposition and base register adjustment
-
-Phase 4: Strategy Registration
-------------------------------
-Added to strategy_registry.c:
-- Forward declarations for all new registration functions
-- Registration calls in init_strategies() for x64 architecture
+9. Defensive Techniques & Detection (3 refs)
+   - Transparent ROP Exploit Mitigation
+   - Control-Flow Integrity (Abadi et al., CCS 2005)
+   - Survey on Automated Dynamic Malware Analysis
 
 Files Modified:
 ===============
 
-Core Infrastructure:
-- src/strategy_registry.c - Compatibility layer + registrations
-- src/utils.c - REX prefix utilities
-- src/utils.h - Function declarations
-- src/core.c - Extended get_reg_index()
+- WHITEPAPER.md - Expanded references section (lines 996-1037)
 
-New Strategy Files:
-- src/movabs_strategies.c (new)
-- src/sbb_imm_zero_strategies.c (new)
-- src/test_large_imm_strategies.c (new)
-- src/sse_memory_strategies.c (new)
-- src/lea_x64_displacement_strategies.c (new)
+Rationale:
+==========
 
-Documentation:
-- README.md - v4.2 feature documentation
-- docs/DENULL_STRATS.md - New strategy documentation
-- assets/docs/BADBYTEELIM_STRATS.md - v4.2 section added
+A comprehensive technical whitepaper requires proper academic citations
+to support its claims and provide readers with resources for deeper
+study. The expanded references:
 
-Results:
-========
+- Cover all major technical domains discussed in the paper
+- Include foundational academic papers from top security venues
+- Reference authoritative architecture documentation
+- Cite relevant tools and frameworks mentioned in the text
+- Provide both theoretical and practical resources
 
-Strategy availability:
-- Before: 5 x64-specific strategies
-- After: 133+ strategies (5 existing + 128 compatible x86 + 5 new)
-
-Expected improvement:
-- x64 shellcode: 0% -> significant success rate
-- Total strategies: 163 -> 175+
-
-Technical Notes:
-================
-
-The compatibility layer works by checking strategy names for
-x86-only instruction patterns. This approach:
-1. Requires no changes to existing strategies
-2. Maintains full backward compatibility
-3. Automatically adapts as new strategies are added
-4. Has O(n) overhead only during strategy selection, not execution
+The categorized organization improves readability and helps readers
+locate references relevant to their specific interests.
 
