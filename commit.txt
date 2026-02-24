@@ -1,99 +1,46 @@
-infra: Add project infrastructure, CI/CD, Docker, docs hierarchy, and community files
+feat: Add Agent Menagerie — AI-powered auto-technique generation pipeline
 
-Comprehensive open-source infrastructure overhaul to improve developer
-onboarding, project reliability, and community contribution pathways.
+Introduces a four-stage autonomous agent pipeline (agents/) built on the
+AjintK multi-provider LLM framework. A single command discovers all
+existing strategies, proposes a novel one, generates a complete C
+implementation, patches strategy_registry.c, and verifies the build.
 
 Changes:
 ========
 
-1. Documentation Hierarchy (docs/)
-   - Created docs/README.md as central documentation index
-   - Copied 10 docs from assets/docs/ into root-level docs/ for GitHub rendering
-   - USAGE.md, BUILD.md, TUI_README.md, DENULL_STRATS.md, OBFUSCATION_STRATS.md
-   - BAD_BYTE_PROFILES.md, BADBYTEELIM_STRATS.md, STRATEGY_HIERARCHY.md
-   - ADVANCED_STRATEGIES.md, WHITEPAPER.md
+1. Agent Pipeline (agents/)
+   - agents/__init__.py — package init
+   - agents/strategy_discovery_agent.py — scans src/, catalogs 340+
+     strategies across all categories, produces LLM-summarised gap
+     analysis for downstream agents
+   - agents/technique_proposal_agent.py — given the catalog, asks the
+     LLM to propose one genuinely novel technique not already covered;
+     returns structured JSON (name, approach, arch, priority, example)
+   - agents/code_generation_agent.py — generates complete .h + .c
+     files conforming to strategy_t using strategy.h / utils.h /
+     mov_strategies.c as live reference material
+   - agents/implementation_agent.py — writes generated files to src/,
+     applies three targeted patches to strategy_registry.c (include,
+     forward declaration, register call), runs make
 
-2. README.md Restructure
-   - Added hierarchical Table of Contents (35 entries with subsection nesting)
-   - Added architecture maturity table (Stable v4.2 / Experimental v0.1)
-   - Added ML maturity indicator (Beta v2.0)
-   - Added Documentation section with table linking all docs/ files
-   - Updated Development section with links to tests, Docker, contributing, roadmap
+2. Entry Point
+   - run_technique_generator.py — orchestrates the four-stage pipeline;
+     supports --dry-run, --arch, --provider, --model, --verbose
+   - Multi-provider: anthropic (default), deepseek, qwen, mistral, google
+   - Provider API key validated before any LLM calls are made
 
-3. CI/CD Pipeline (.github/workflows/ci.yml)
-   - GitHub Actions workflow triggered on push to main and PRs
-   - Ubuntu latest with apt-based dependency installation
-   - Build verification via make, test execution via tests/run_tests.sh
+3. Documentation
+   - README.md — added ## AGENT MENAGERIE section with pipeline table,
+     quick-start, options reference, requirements; added nav link and
+     TOC entry; added docs/AGENT_MENAGERIE.md to documentation table
+   - docs/USAGE.md — added ## What's New in v4.3 section with full
+     usage guide, option table, agent architecture table, registry
+     patching details, example run output, and provider reference table
 
-4. Docker Support
-   - Dockerfile: Ubuntu 22.04 base with gcc, nasm, capstone, ncurses, python3
-   - docker-compose.yml: Dev build service with volume mounts for source and output
+Registry patch anchors (confirmed present in strategy_registry.c):
+  - Include  : #include <stdlib.h>
+  - Fwd decl : void init_strategies(int use_ml, byval_arch_t arch)
+  - Reg call : register_remaining_null_elimination_strategies();
 
-5. Testing Infrastructure (tests/)
-   - tests/run_tests.sh: Master test runner (build, fixture processing, verification)
-   - tests/README.md: Test documentation and execution guide
-   - tests/fixtures/{x86,x64,arm}/: Architecture-specific test fixture directories
-
-6. Community Governance
-   - CONTRIBUTING.md: Bug reporting, strategy addition, code style, PR process
-   - CODE_OF_CONDUCT.md: Contributor Covenant v2.1 reference
-   - ROADMAP.md: Feature maturity levels, v4.3/v5.0/v6.0 milestones
-
-7. GitHub Templates
-   - .github/ISSUE_TEMPLATE/bug_report.md: Structured bug report form
-   - .github/ISSUE_TEMPLATE/feature_request.md: Feature proposal template
-   - .github/PULL_REQUEST_TEMPLATE.md: PR checklist with testing section
-
-8. Developer Configuration
-   - .clang-format: LLVM-based C style config (4-space indent, Linux braces)
-   - requirements-dev.txt: Python 3.6+ requirement documentation
-
-Files Created (New):
-====================
-
-- docs/README.md
-- docs/USAGE.md
-- docs/BUILD.md
-- docs/TUI_README.md
-- docs/DENULL_STRATS.md
-- docs/OBFUSCATION_STRATS.md
-- docs/BAD_BYTE_PROFILES.md
-- docs/BADBYTEELIM_STRATS.md
-- docs/STRATEGY_HIERARCHY.md
-- docs/ADVANCED_STRATEGIES.md
-- docs/WHITEPAPER.md
-- ROADMAP.md
-- CONTRIBUTING.md
-- CODE_OF_CONDUCT.md
-- Dockerfile
-- docker-compose.yml
-- .clang-format
-- requirements-dev.txt
-- tests/README.md
-- tests/run_tests.sh
-- tests/fixtures/x86/ (empty, awaiting fixture samples)
-- tests/fixtures/x64/ (empty, awaiting fixture samples)
-- tests/fixtures/arm/ (empty, awaiting fixture samples)
-- .github/workflows/ci.yml
-- .github/ISSUE_TEMPLATE/bug_report.md
-- .github/ISSUE_TEMPLATE/feature_request.md
-- .github/PULL_REQUEST_TEMPLATE.md
-
-Files Modified (Existing):
-==========================
-
-- README.md - Added TOC, maturity table, docs section, updated development section
-
-Rationale:
-==========
-
-A mature C project with 212 source files and 170+ strategies lacked
-standard open-source infrastructure: no CI/CD, no Docker, no contribution
-guidelines, no roadmap, and documentation buried in assets/docs/ instead
-of the GitHub-standard docs/ directory. These additions:
-
-- Enable zero-to-working in under 5 minutes via Docker or quickstart
-- Provide automated build/test verification on every push and PR
-- Lower the barrier to contribution with clear guidelines and templates
-- Signal feature maturity explicitly (Stable vs Experimental)
-- Organize documentation for discoverability on GitHub
+Validated with DeepSeek (deepseek-chat) — 343 strategies discovered,
+VEX prefix re-encoding technique proposed, C files generated, build clean.

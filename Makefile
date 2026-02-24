@@ -118,7 +118,7 @@ SRCS = $(filter-out $(EXCLUDE_FILES), $(ALL_SRCS))
 OBJS = $(patsubst $(SRC_DIR)/%.c, $(BIN_DIR)/%.o, $(SRCS))
 
 # Phony targets
-.PHONY: all clean clean-all info test debug release train
+.PHONY: all clean clean-all info test debug release train generate generate-x86 generate-dry agent-setup
 
 # Default target
 all: decoder.h $(BIN_DIR)/$(TARGET)
@@ -274,6 +274,25 @@ format:
 	else \
 		echo "[SKIP] clang-format not installed"; \
 	fi
+
+# Auto-generate a novel strategy using the Claude API
+AGENT_FLAGS ?=
+AGENT_PYTHON = agents/.venv/bin/python
+
+generate:
+	@$(AGENT_PYTHON) agents/technique_generator.py --arch x64 $(AGENT_FLAGS)
+
+generate-x86:
+	@$(AGENT_PYTHON) agents/technique_generator.py --arch x86 $(AGENT_FLAGS)
+
+generate-dry:
+	@$(AGENT_PYTHON) agents/technique_generator.py --dry-run $(AGENT_FLAGS)
+
+# Set up the agent Python environment
+agent-setup:
+	@echo "[AGENT] Setting up uv environment..."
+	@cd agents && uv sync
+	@echo "[OK] Agent environment ready"
 
 # Static analysis (if cppcheck is available)
 lint:

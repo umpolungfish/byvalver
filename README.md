@@ -32,6 +32,7 @@
   <a href="#obfuscation-strategies">Obfuscation Strategies</a> •
   <a href="#denullification-strategies">Denullification Strategies</a> •
   <a href="#ml-training--validation">ML Training</a> •
+  <a href="#agent-menagerie">Agent Menagerie</a> •
   <a href="#development">Development</a> •
   <a href="#troubleshooting">Troubleshooting</a> •
   <a href="#license">License</a>
@@ -67,6 +68,7 @@
 - [Obfuscation Strategies](#obfuscation-strategies)
 - [Denullification Strategies](#denullification-strategies)
 - [ML Training & Validation](#ml-training--validation)
+- [Agent Menagerie](#agent-menagerie)
 - [Development](#development)
 - [Documentation](#documentation)
 - [Troubleshooting](#troubleshooting)
@@ -1146,6 +1148,66 @@ cat ml_metrics.log
 
 **RECOMMENDATION:** ML mode needs retraining with diverse bad-byte datasets before production use. Currently optimized for null-byte banishment only.
 
+## AGENT MENAGERIE
+
+`byvalver` ships an **AI-powered agent pipeline** (`agents/`) that can autonomously discover gaps in the strategy registry, propose a novel bad-byte elimination technique, generate a complete C implementation, and wire it into the project — all in a single command.
+
+The pipeline is built on the [AjintK](AjintK/) multi-provider agent framework and supports **Anthropic**, **DeepSeek**, **Qwen**, **Mistral**, and **Google** as LLM backends.
+
+### QUICK START
+
+```bash
+# Requires API key for your chosen provider
+export ANTHROPIC_API_KEY="..."   # or DEEPSEEK_API_KEY, QWEN_API_KEY, etc.
+
+# Full pipeline: discover → propose → generate → implement + build
+python3 run_technique_generator.py
+
+# Dry-run: discover and propose only, no files written
+python3 run_technique_generator.py --dry-run
+
+# Target a specific architecture
+python3 run_technique_generator.py --arch x64
+
+# Use a different provider / model
+python3 run_technique_generator.py --provider deepseek --model deepseek-chat
+python3 run_technique_generator.py --provider anthropic --model claude-opus-4-6
+```
+
+### PIPELINE STAGES
+
+| Stage | Agent | What it does |
+|---|---|---|
+| 1 | `StrategyDiscoveryAgent` | Scans `src/`, extracts all 340+ strategy names and categories, asks the LLM to summarise coverage gaps |
+| 2 | `TechniqueProposalAgent` | Given the catalog, proposes one genuinely novel technique with rationale, target instruction, and approach |
+| 3 | `CodeGenerationAgent` | Generates a complete `.h` + `.c` implementation conforming to `strategy_t` using `strategy.h`/`utils.h`/`mov_strategies.c` as reference |
+| 4 | `ImplementationAgent` | Writes files to `src/`, patches `strategy_registry.c` (include → forward decl → register call), runs `make` |
+
+### OPTIONS
+
+```
+--dry-run          Stop after Stage 2 — print proposal, write nothing
+--arch             x86 | x64 | both  (default: both)
+--provider         anthropic | deepseek | qwen | mistral | google  (default: anthropic)
+--model            Model ID (provider-specific default applied if omitted)
+--verbose          Print full LLM responses at each stage
+```
+
+### REQUIREMENTS
+
+```bash
+# Install Python dependencies (uses AjintK framework)
+pip install anthropic tenacity httpx pyyaml
+
+# Or with uv (faster)
+uv pip install -r AjintK/requirements.txt
+```
+
+The pipeline has been validated with **DeepSeek** (`deepseek-chat`) and **Anthropic** (`claude-sonnet-4-6`).
+On a typical run it discovers 340+ strategies, proposes a technique (e.g. VEX prefix re-encoding for SSE/AVX instructions), generates ~200 lines of C, and produces a clean build — fully unattended.
+
+See [docs/AGENT_MENAGERIE.md](docs/AGENT_MENAGERIE.md) for architecture details and extending the pipeline with new agents.
+
 ## DEVELOPMENT
 
 - Modern `C` with modularity
@@ -1172,6 +1234,7 @@ Full documentation is available in the [docs/](docs/) directory:
 | [docs/STRATEGY_HIERARCHY.md](docs/STRATEGY_HIERARCHY.md) | Strategy organization and priority |
 | [docs/ADVANCED_STRATEGIES.md](docs/ADVANCED_STRATEGIES.md) | Advanced transformation techniques |
 | [docs/WHITEPAPER.md](docs/WHITEPAPER.md) | Technical whitepaper |
+| [docs/AGENT_MENAGERIE.md](docs/AGENT_MENAGERIE.md) | Agent pipeline: auto-technique generation |
 
 ## TROUBLESHOOTING
 

@@ -66,6 +66,11 @@
 #include "movabs_strategies.h"
 #include "sse_memory_strategies.h"
 #include "lea_x64_displacement_strategies.h"
+#include "vex_encoding_byte_evasion_strategies.h"
+#include "segment_register_load_pointer_construction_strategies.h"
+#include "vex_prefix_encoding_remap_for_avx_instructions_strategies.h"
+#include "vex_escape_badbyte_evasion_strategies.h"
+#include "vex_avx512_immediate_construction_strategies.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h> // Added for debug prints
@@ -300,6 +305,11 @@ void register_remaining_null_elimination_strategies(); // Final strategies for r
 void register_new_strategies(); // Forward declaration - New strategies for specific null-byte patterns
 extern strategy_t delayed_string_termination_strategy;
 
+void register_vex_encoding_byte_evasion_strategies(); // Forward declaration - vex_encoding_byte_evasion_strategies
+void register_segment_register_load_pointer_construction_strategies(); // Forward declaration - segment_register_load_pointer_construction_strategies
+void register_vex_prefix_encoding_remap_for_avx_instructions_strategies(); // Forward declaration - vex_prefix_encoding_remap_for_avx_instructions
+void register_vex_escape_badbyte_evasion_strategies(); // Forward declaration - vex_escape_badbyte_evasion
+void register_vex_avx512_immediate_construction_strategies(); // Forward declaration - vex_avx512_immediate_construction
 void init_strategies(int use_ml, byval_arch_t arch) {
     #ifdef DEBUG
     fprintf(stderr, "[DEBUG] Initializing strategies\n");

@@ -1,0 +1,51 @@
+# Claude Agent Framework Configuration Template
+# Copy this to config.yaml and customize for your project
+
+# Claude API Configuration
+api:
+  # Model to use (see: https://docs.anthropic.com/claude/docs/models-overview)
+  model: "claude-sonnet-4-5-20250929"
+
+  # Maximum tokens in responses
+  max_tokens: 4000
+
+  # Temperature for sampling (0.0 - 1.0)
+  temperature: 1.0
+
+# Orchestration Settings
+orchestration:
+  # Maximum number of agents to run concurrently in swarm mode
+  max_concurrent_agents: 5
+
+  # Default timeout for agent execution (seconds)
+  timeout: 300
+
+# Storage Configuration
+storage:
+  # Directory for agent memory files
+  memory_dir: ".agent_memory"
+
+  # Directory for inter-agent messages
+  messages_dir: ".agent_messages"
+
+  # Directory for agent artifacts
+  artifacts_dir: "./artifacts"
+
+# Agent-Specific Configuration
+# Define settings for individual agents here
+agents:
+  # Example agent configuration
+  example_agent:
+    enabled: true
+    custom_setting: "value"
+
+  # Add your agents here
+  # my_agent:
+  #   enabled: true
+  #   setting1: value1
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: "agent_framework.log"
+  console: true

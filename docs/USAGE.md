@@ -6,6 +6,123 @@ BYVALVER is an advanced command-line tool for automated removal of null bytes fr
 
 **NEW in v3.0:** BYVALVER now supports generic bad-byte elimination via the `--bad-bytes` option, allowing users to specify arbitrary bytes to eliminate beyond just null bytes. This feature is functional but newly implemented - the 122+ transformation strategies were originally designed and optimized specifically for null-byte elimination.
 
+## What's New in v4.3 — Agent Menagerie (February 2026)
+
+### Auto-Technique Generator Pipeline
+
+`byvalver` now ships an **AI-powered agent pipeline** that autonomously extends the strategy registry with new bad-byte elimination techniques.
+
+#### Overview
+
+Running a single command causes the pipeline to:
+
+1. **Discover** all existing strategies by scanning `src/` and summarising coverage gaps
+2. **Propose** a genuinely novel technique not already in the registry
+3. **Generate** a complete C implementation (`.h` + `.c` files) conforming to the `strategy_t` interface
+4. **Implement** — writes the files to `src/`, patches `strategy_registry.c`, and verifies with `make`
+
+#### Usage
+
+```bash
+# Install Python dependencies
+pip install anthropic tenacity httpx pyyaml
+
+# Set your provider API key
+export ANTHROPIC_API_KEY="..."    # Anthropic
+export DEEPSEEK_API_KEY="..."     # DeepSeek (alternative)
+
+# Full pipeline — runs all four stages
+python3 run_technique_generator.py
+
+# Preview mode — discover and propose, no code written
+python3 run_technique_generator.py --dry-run
+
+# Target a specific architecture
+python3 run_technique_generator.py --arch x64
+
+# Use DeepSeek instead of Anthropic
+python3 run_technique_generator.py --provider deepseek
+
+# Full option list
+python3 run_technique_generator.py --help
+```
+
+#### Command-Line Options
+
+| Option | Default | Description |
+|---|---|---|
+| `--dry-run` | off | Stop after Stage 2; print proposal, write nothing |
+| `--arch` | `both` | Architecture hint passed to proposal agent: `x86`, `x64`, `both` |
+| `--provider` | `anthropic` | LLM provider: `anthropic`, `deepseek`, `qwen`, `mistral`, `google` |
+| `--model` | *(provider default)* | Model ID; omit to use the provider's recommended default |
+| `--verbose` | off | Print full LLM responses at each pipeline stage |
+
+#### Agent Architecture
+
+The pipeline is built on the **AjintK** multi-provider async agent framework (`AjintK/`). Each stage is an independent `BaseAgent` subclass:
+
+| File | Agent | Role |
+|---|---|---|
+| `agents/strategy_discovery_agent.py` | `StrategyDiscoveryAgent` | Scans `src/`, catalogs strategies, summarises gaps |
+| `agents/technique_proposal_agent.py` | `TechniqueProposalAgent` | Proposes one novel technique as a structured JSON object |
+| `agents/code_generation_agent.py` | `CodeGenerationAgent` | Generates `.h` + `.c` using `strategy.h`/`utils.h` as reference |
+| `agents/implementation_agent.py` | `ImplementationAgent` | Writes files, patches registry (3 anchors), runs `make` |
+
+#### Registry Patching
+
+The `ImplementationAgent` applies exactly three targeted patches to `strategy_registry.c`:
+
+1. `#include "NAME_strategies.h"` inserted before `#include <stdlib.h>`
+2. `void register_NAME_strategies();` forward declaration inserted before `void init_strategies(...)`
+3. `register_NAME_strategies();` call inserted before `register_remaining_null_elimination_strategies()`
+
+#### Example Run
+
+```
+============================================================
+  BYVALVER Auto-Technique Generator
+============================================================
+  Provider: deepseek
+  Model   : deepseek-chat
+  Arch    : both
+
+[1/4] Discovering existing strategies...
+  Found 343 strategies in 207 files across 136 categories
+
+[2/4] Proposing novel technique...
+  Strategy : vex_encoding_byte_evasion_strategies
+  Name     : VEX Prefix Byte Substitution for SSE/AVX Instructions
+  Targets  : MOVAPS, MOVUPS, XORPS, PADDB, VEX-encodable SSE/AVX
+  Approach : Re-encode legacy SSE instructions using VEX C4/C5 prefix to
+             shift the byte layout and eliminate bad bytes in opcode fields.
+
+[3/4] Generating C implementation...
+  Header : vex_encoding_byte_evasion_strategies.h (312 chars)
+  Source : vex_encoding_byte_evasion_strategies.c (4821 chars)
+
+[4/4] Writing files and registering strategy...
+
+============================================================
+  Result
+============================================================
+  SUCCESS: 'vex_encoding_byte_evasion' implemented and compiled!
+    Wrote: src/vex_encoding_byte_evasion_strategies.h
+    Wrote: src/vex_encoding_byte_evasion_strategies.c
+  Patches: include=added, forward_decl=added, register_call=added
+```
+
+#### Supported Providers
+
+| Provider | Env Var | Default Model |
+|---|---|---|
+| `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` |
+| `qwen` | `QWEN_API_KEY` | `qwen3-max` |
+| `mistral` | `MISTRAL_API_KEY` | `codestral-2508` |
+| `google` | `GOOGLE_API_KEY` | `gemini-pro` |
+
+---
+
 ## What's New in v3.0.3 (December 2025)
 
 ### Partial Register Optimization Strategy Repair
