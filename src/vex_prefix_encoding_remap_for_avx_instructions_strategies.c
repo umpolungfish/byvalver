@@ -30,16 +30,6 @@ static int is_avx_instruction(cs_insn *insn) {
     return 1;
 }
 
-/* Check if instruction has immediate operand */
-static int has_immediate(cs_insn *insn) {
-    for (int i = 0; i < insn->detail->x86.op_count; i++) {
-        if (insn->detail->x86.operands[i].type == X86_OP_IMM) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
 /* Check if any byte in the instruction is bad (0x00) */
 static int has_bad_bytes(cs_insn *insn) {
     for (size_t i = 0; i < insn->size; i++) {
@@ -180,6 +170,7 @@ static size_t get_size_register_remap(cs_insn *insn) {
 }
 
 static void generate_register_remap(struct buffer *b, cs_insn *insn) {
+    (void)insn;
     /* Simplified implementation that remaps registers to avoid bad bytes */
     /* In a full implementation, we would:
        1. Analyze which register encodings cause bad bytes
@@ -265,6 +256,7 @@ static size_t get_size_memory_alternative(cs_insn *insn) {
 }
 
 static void generate_memory_alternative(struct buffer *b, cs_insn *insn) {
+    (void)insn;
     /* Simplified implementation that uses memory operand instead of register */
     /* In a full implementation, we would:
        1. Check if register operand can be changed to memory

@@ -26,29 +26,6 @@ static int has_null_bytes_32(uint32_t value) {
     return 0;
 }
 
-/* Helper function to check if a 16-bit value contains null bytes */
-static int has_null_bytes_16(uint16_t value) {
-    uint8_t *bytes = (uint8_t*)&value;
-    for (int i = 0; i < 2; i++) {
-        if (bytes[i] == 0x00) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-/* Helper to get segment load instruction opcode */
-static uint8_t get_segment_load_opcode(cs_insn *insn) {
-    switch (insn->id) {
-        case X86_INS_LDS: return 0xC5; /* LDS r16/32, m16:32 */
-        case X86_INS_LES: return 0xC4; /* LES r16/32, m16:32 */
-        case X86_INS_LFS: return 0x0F, 0xB4; /* LFS r16/32, m16:32 (2-byte opcode) */
-        case X86_INS_LGS: return 0x0F, 0xB5; /* LGS r16/32, m16:32 (2-byte opcode) */
-        case X86_INS_LSS: return 0x0F, 0xB2; /* LSS r16/32, m16:32 (2-byte opcode) */
-        default: return 0;
-    }
-}
-
 /* Check if this is a segment load instruction with problematic displacement */
 static int can_handle_segment_load(cs_insn *insn) {
     (void)insn; /* Parameter will be used below, but suppress warning for now */

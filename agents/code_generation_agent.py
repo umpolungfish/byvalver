@@ -138,26 +138,31 @@ Every strategy is a `strategy_t` struct with three function pointers:
 </reference_interface>
 
 <hard_constraints>
-**ARCHITECTURE ENUM** — The `.target_arch` field **MUST** be one of:
-  BYVAL_ARCH_X86   (use this for strategies that target x86 OR both x86 and x64)
-  BYVAL_ARCH_X64   (use this only for x64-exclusive strategies)
-  **BYVAL_ARCH_BOTH DOES NOT EXIST** — using it causes a compile error.
+You **MUST** set `.target_arch` to one of exactly two values: `BYVAL_ARCH_X86` (for strategies targeting x86 or both x86 and x64) or `BYVAL_ARCH_X64` (for x64-exclusive strategies). `BYVAL_ARCH_BOTH` **DOES NOT EXIST** — you **MUST NOT** use it; doing so causes a compile error.
 
-**NULL-BYTE PROHIBITION** — The `generate_*` function **MUST NOT** write 0x00 to the output buffer under any circumstances. Every literal byte value passed to buffer_write_byte() / buffer_write_word() / buffer_write_dword() **MUST** be non-zero.
+You **MUST NOT** write `0x00` to the output buffer under any circumstances inside `generate_*`. Every literal byte value you pass to `buffer_write_byte()`, `buffer_write_word()`, or `buffer_write_dword()` **MUST** be non-zero — no exceptions.
 
-**UNUSED PARAMETER SUPPRESSION** — Every function parameter that is not used in the body **MUST** be silenced with `(void)param_name;` immediately as the first line of the function.
+You **MUST** silence every unused function parameter with `(void)param_name;` as the **first line** of the function body — failure to do so is a compile warning under `-Wunused-parameter`.
 
-**UNUSED VARIABLE SUPPRESSION** — Every local variable declared but not subsequently read **MUST** be removed entirely. Dead declarations are a compile warning and indicate incorrect logic.
+You **MUST** remove every local variable that is declared but not subsequently read. Dead declarations are a compile warning and indicate incorrect logic — you are **EXPRESSLY PROHIBITED** from leaving them in the generated code.
 
-**UNUSED FUNCTION SUPPRESSION** — Every `static` helper function defined in the file **MUST** be called at least once. Static functions that are never called **MUST** be deleted — do not define helper functions speculatively.
+Every `static` helper function you define **MUST** be called at least once. You **MUST NOT** define helper functions speculatively — any `static` function that is never called **MUST** be deleted.
 
-**CORRECT CAPSTONE ACCESS** — Access instruction fields only via: insn->id, insn->detail->x86.operands[N], insn->detail->x86.op_count, insn->detail->x86.operands[N].type, insn->detail->x86.operands[N].reg, insn->detail->x86.operands[N].imm.
+You **MUST** use `cs_x86_op *` when declaring a pointer to an operand array element — **NOT** `x86_op *`. `x86_op` does not exist and will cause a compile error. Example: `cs_x86_op *ops = insn->detail->x86.operands;`
 
-**VERIFIED CAPSTONE CONSTANTS ONLY** — Every `X86_INS_*` constant used in a `switch` or `if` **MUST** exist in the installed Capstone headers. Do **NOT** invent or guess instruction ID names (e.g. `X86_INS_VRCPPD` does not exist — use only constants you are certain are defined). When unsure, use `insn->id` comparisons against the known-good subset or omit the case entirely.
+You **MUST NOT** add `#include "buffer.h"` — `buffer.h` does not exist in this project. `struct buffer` and all `buffer_write_*` functions (`buffer_write_byte`, `buffer_write_word`, `buffer_write_dword`) are declared in `utils.h`, which is already included.
 
-**SIZE ESTIMATE** — get_size_* **MUST** return a value strictly greater than or equal to the maximum number of bytes generate_* can ever write.
+You **MUST** access instruction fields exclusively via: `insn->id`, `insn->detail->x86.operands[N]`, `insn->detail->x86.op_count`, `insn->detail->x86.operands[N].type`, `insn->detail->x86.operands[N].reg`, `insn->detail->x86.operands[N].imm`.
 
-**REGISTRATION FUNCTION** — `void register_{base_name}_strategies(void)` **MUST** call `register_strategy(&strategy_struct_name)` for every strategy_t defined in the file.
+Every `X86_INS_*` constant you use in a `switch` or `if` **MUST** exist in the installed Capstone headers. You **MUST NOT** invent or guess instruction ID names — `X86_INS_VRCPPD`, for example, does not exist. When unsure, you **MUST** fall back to `insn->id` comparisons against the known-good subset or omit the case entirely.
+
+`get_size_*` **MUST** return a value strictly greater than or equal to the maximum number of bytes `generate_*` can ever write — you **MUST NOT** underestimate.
+
+You **MUST NOT** redeclare `utils.h` or `core.h` functions — `utils.h` and `core.h` are both transitively included via `strategy.h`. You **MUST NOT** define a `static` version of any symbol they declare — doing so causes: `error: static declaration of 'X' follows non-static declaration`. You are **EXPRESSLY PROHIBITED** from using redefinitions including: `is_bad_byte_free`, `has_null_bytes`, `find_neg_equivalent`, `find_xor_key`, `find_addsub_key`, `buffer_write_byte`, `buffer_write_word`, `buffer_write_dword` (utils.h); `get_reg_index`, `is_rip_relative_operand`, `is_relative_jump`, `fallback_general_instruction`, `fallback_mov_reg_imm`, `fallback_arithmetic_reg_imm`, `fallback_memory_operation` (core.h). These symbols are already in scope — you **MUST** call them directly.
+
+You **MUST NOT** declare a local variable with the same name as a function parameter. The `generate_*` functions always receive `struct buffer *b` as their first parameter — you are **EXPRESSLY PROHIBITED** from declaring any local variable named `b` inside these functions. For EVEX bit-field variables, you **MUST** use names like `broadcast`, `broadcast_bit`, or `evex_b_bit`. Shadowing causes the compiler to treat all subsequent uses of the name as the local type (e.g. `uint8_t`), silently breaking every `buffer_write_byte(b, ...)` call that follows.
+
+`void register_{base_name}_strategies(void)` **MUST** call `register_strategy(&strategy_struct_name)` for every `strategy_t` defined in the file — you **MUST NOT** leave any strategy unregistered.
 </hard_constraints>
 
 <task>

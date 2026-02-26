@@ -71,6 +71,20 @@
 #include "vex_prefix_encoding_remap_for_avx_instructions_strategies.h"
 #include "vex_escape_badbyte_evasion_strategies.h"
 #include "vex_avx512_immediate_construction_strategies.h"
+#include "vex_evx_prefix_modrm_remap_strategies.h"
+#include "bmi2_bzhi_bit_masking_strategies.h"
+#include "bmi1_andn_logic_transformation_strategies.h"
+#include "bmi2_flags_preserving_shift_transformation_strategies.h"
+#include "segment_limit_constant_loading_strategies.h"
+#include "vex_xmm_gpr_bridge_substitution_strategies.h"
+#include "vex_evx_immediate_encoding_shift_strategies.h"
+#include "vex_evex_prefix_remapping_for_avx_immediate_strategies.h"
+#include "vex_escape_byte_remapping_for_simd_mov_strategies.h"
+#include "shrd_double_precision_value_synthesis_strategies.h"
+#include "bmi1_bextr_bitfield_extraction_strategies.h"
+#include "lsl_segment_limit_constant_substitution_strategies.h"
+#include "vex_evx_prefix_byte_remapping_strategies.h"
+#include "vex_escape_byte_remapping_strategies.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h> // Added for debug prints
@@ -310,6 +324,20 @@ void register_segment_register_load_pointer_construction_strategies(); // Forwar
 void register_vex_prefix_encoding_remap_for_avx_instructions_strategies(); // Forward declaration - vex_prefix_encoding_remap_for_avx_instructions
 void register_vex_escape_badbyte_evasion_strategies(); // Forward declaration - vex_escape_badbyte_evasion
 void register_vex_avx512_immediate_construction_strategies(); // Forward declaration - vex_avx512_immediate_construction
+void register_vex_evx_prefix_modrm_remap_strategies(); // Forward declaration - vex_evx_prefix_modrm_remap
+void register_bmi2_bzhi_bit_masking_strategies(); // Forward declaration - bmi2_bzhi_bit_masking
+void register_bmi1_andn_logic_transformation_strategies(); // Forward declaration - bmi1_andn_logic_transformation
+void register_bmi2_flags_preserving_shift_transformation_strategies(); // Forward declaration - bmi2_flags_preserving_shift_transformation
+void register_segment_limit_constant_loading_strategies(); // Forward declaration - segment_limit_constant_loading_strategies
+void register_vex_xmm_gpr_bridge_substitution_strategies(); // Forward declaration - vex_xmm_gpr_bridge_substitution
+void register_vex_evx_immediate_encoding_shift_strategies(); // Forward declaration - vex_evx_immediate_encoding_shift
+void register_vex_evex_prefix_remapping_for_avx_immediate_strategies(); // Forward declaration - vex_evex_prefix_remapping_for_avx_immediate
+void register_vex_escape_byte_remapping_for_simd_mov_strategies(); // Forward declaration - vex_escape_byte_remapping_for_simd_mov
+void register_shrd_double_precision_value_synthesis_strategies(); // Forward declaration - shrd_double_precision_value_synthesis
+void register_bmi1_bextr_bitfield_extraction_strategies(); // Forward declaration - bmi1_bextr_bitfield_extraction
+void register_lsl_segment_limit_constant_substitution_strategies(); // Forward declaration - lsl_segment_limit_constant_substitution
+void register_vex_evx_prefix_byte_remapping_strategies(); // Forward declaration - vex_evx_prefix_byte_remapping
+void register_vex_escape_byte_remapping_strategies(); // Forward declaration - vex_escape_byte_remapping
 void init_strategies(int use_ml, byval_arch_t arch) {
     #ifdef DEBUG
     fprintf(stderr, "[DEBUG] Initializing strategies\n");

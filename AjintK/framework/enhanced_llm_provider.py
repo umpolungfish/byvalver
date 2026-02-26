@@ -85,13 +85,15 @@ class GoogleProvider(LLMProvider):
         if cached_response:
             return cached_response
 
-        import google.generativeai as genai
+        from google import genai
 
-        genai.configure(api_key=self.api_key)
-        model = genai.GenerativeModel(self.model_name)
+        client = genai.Client(api_key=self.api_key)
 
         try:
-            response = await model.generate_content_async(prompt)
+            response = await client.aio.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+            )
             content = response.text if response.text else ""
 
             await self.cache_response(prompt, content, model=self.model_name)

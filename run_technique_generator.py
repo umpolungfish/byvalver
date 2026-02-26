@@ -74,7 +74,7 @@ async def main() -> None:
         "deepseek":  "deepseek-chat",
         "qwen":      "qwen3-max",
         "mistral":   "codestral-2508",
-        "google":    "gemini-pro",
+        "google":    "gemini-3-flash-preview",
     }
     model = args.model or _default_models.get(args.provider, "deepseek-chat")
 

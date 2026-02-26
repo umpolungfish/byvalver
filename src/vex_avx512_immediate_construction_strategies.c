@@ -16,15 +16,6 @@
  */
 
 /**
- * Check if an instruction has an immediate operand with bad bytes
- */
-static int has_immediate_with_bad_bytes(cs_insn *insn) {
-    (void)insn;
-    // We rely on the main can_handle function to check this
-    return 0; // Not used directly
-}
-
-/**
  * Check if the immediate value contains null bytes (0x00)
  */
 static int immediate_has_null_bytes(uint64_t imm, size_t size_bytes) {
@@ -34,25 +25,6 @@ static int immediate_has_null_bytes(uint64_t imm, size_t size_bytes) {
         }
     }
     return 0;
-}
-
-/**
- * Check if a byte is "bad" (null byte)
- */
-static int is_bad_byte(uint8_t b) {
-    return b == 0x00;
-}
-
-/**
- * Check if all bytes in a value are non-zero
- */
-static int is_all_nonzero(uint64_t val, size_t size_bytes) {
-    for (size_t i = 0; i < size_bytes; i++) {
-        if (((val >> (i * 8)) & 0xFF) == 0x00) {
-            return 0;
-        }
-    }
-    return 1;
 }
 
 /**
@@ -219,9 +191,7 @@ static size_t get_size_mov_vex_avx512(cs_insn *insn) {
  */
 static void generate_mov_vex_avx512(struct buffer *b, cs_insn *insn) {
     uint8_t dest_reg = insn->detail->x86.operands[0].reg;
-    uint64_t imm = insn->detail->x86.operands[1].imm;
-    size_t imm_size = get_immediate_size(insn);
-    
+
     // For demonstration, we'll construct a simple pattern
     // In reality, we'd need to analyze the bit pattern and generate
     // appropriate shift operations
@@ -310,8 +280,6 @@ static size_t get_size_arith_vex_avx512(cs_insn *insn) {
  */
 static void generate_arith_vex_avx512(struct buffer *b, cs_insn *insn) {
     uint8_t dest_reg = insn->detail->x86.operands[0].reg;
-    uint64_t imm = insn->detail->x86.operands[1].imm;
-    size_t imm_size = get_immediate_size(insn);
     uint8_t opcode;
     
     // Determine the arithmetic operation

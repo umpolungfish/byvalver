@@ -1,46 +1,36 @@
-feat: Add Agent Menagerie — AI-powered auto-technique generation pipeline
-
-Introduces a four-stage autonomous agent pipeline (agents/) built on the
-AjintK multi-provider LLM framework. A single command discovers all
-existing strategies, proposes a novel one, generates a complete C
-implementation, patches strategy_registry.c, and verifies the build.
+fix: Resolve vex_evx build error and harden CodeGenerationAgent prompt
 
 Changes:
 ========
 
-1. Agent Pipeline (agents/)
-   - agents/__init__.py — package init
-   - agents/strategy_discovery_agent.py — scans src/, catalogs 340+
-     strategies across all categories, produces LLM-summarised gap
-     analysis for downstream agents
-   - agents/technique_proposal_agent.py — given the catalog, asks the
-     LLM to propose one genuinely novel technique not already covered;
-     returns structured JSON (name, approach, arch, priority, example)
-   - agents/code_generation_agent.py — generates complete .h + .c
-     files conforming to strategy_t using strategy.h / utils.h /
-     mov_strategies.c as live reference material
-   - agents/implementation_agent.py — writes generated files to src/,
-     applies three targeted patches to strategy_registry.c (include,
-     forward declaration, register call), runs make
+1. Generated Strategy Build Error Fix
+   - vex_evx_prefix_byte_remapping_strategies.c
+     * Removed conflicting static get_reg_index — core.h:72 declares it
+       as a non-static global; redefining it static caused:
+       "error: static declaration of 'get_reg_index' follows non-static
+       declaration"
+     * Removed unused static is_vex_evex_instruction
+     * Removed unused static get_reg_class
+     * Removed unused local variables bad_third_byte (generate_vex_remapping)
+       and bad_byte2, bad_byte3 (generate_evex_remapping)
+     * Zero-initialized EVEX field variables (evex_r, evex_x, evex_b,
+       evex_r2, evex_mm, evex_w, evex_vvvv, evex_pp, evex_z, evex_bc,
+       evex_aaa) to suppress false "may be used uninitialized" warnings
+       from GCC — values are always set via extract_evex_fields() pointer
+       params before use
 
-2. Entry Point
-   - run_technique_generator.py — orchestrates the four-stage pipeline;
-     supports --dry-run, --arch, --provider, --model, --verbose
-   - Multi-provider: anthropic (default), deepseek, qwen, mistral, google
-   - Provider API key validated before any LLM calls are made
+2. CodeGenerationAgent Prompt Hardening
+   - agents/code_generation_agent.py
+     * Added hard constraint covering core.h functions alongside the
+       existing utils.h constraint — core.h is transitively included via
+       strategy.h and declares get_reg_index, is_rip_relative_operand,
+       is_relative_jump, and all fallback_* functions; redefining any of
+       these as static triggers the same "static declaration follows
+       non-static declaration" error class
+     * Rewrote all hard constraints from passive/title-prefixed framing to
+       second-person authoritative framing throughout — every constraint
+       now opens with a direct "You MUST" / "You MUST NOT" declaration and
+       uses EXPRESSLY PROHIBITED for categorical prohibitions
 
-3. Documentation
-   - README.md — added ## AGENT MENAGERIE section with pipeline table,
-     quick-start, options reference, requirements; added nav link and
-     TOC entry; added docs/AGENT_MENAGERIE.md to documentation table
-   - docs/USAGE.md — added ## What's New in v4.3 section with full
-     usage guide, option table, agent architecture table, registry
-     patching details, example run output, and provider reference table
-
-Registry patch anchors (confirmed present in strategy_registry.c):
-  - Include  : #include <stdlib.h>
-  - Fwd decl : void init_strategies(int use_ml, byval_arch_t arch)
-  - Reg call : register_remaining_null_elimination_strategies();
-
-Validated with DeepSeek (deepseek-chat) — 343 strategies discovered,
-VEX prefix re-encoding technique proposed, C files generated, build clean.
+Validated: make — zero errors, zero warnings on strategy object files
+(pre-existing tui/ permission error unrelated).
