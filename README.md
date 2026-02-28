@@ -12,6 +12,9 @@
    <img src="https://img.shields.io/badge/cross--platform-windows%20%7C%20linux%20%7C%20macOS-%230071C5.svg?style=for-the-badge" alt="cross-platform">
    <img src="https://img.shields.io/badge/Architectures-x86%7Cx64%7CARM%7CARM64-%230071C5.svg?style=for-the-badge" alt="architectures">
    <img src="https://img.shields.io/badge/build-clean-%23000000.svg?style=for-the-badge" alt="build clean">
+  <img src="https://img.shields.io/github/stars/umpolungfish/byvalver?style=for-the-badge&logo=github" alt="GitHub stars">
+  <img src="https://img.shields.io/github/forks/umpolungfish/byvalver?style=for-the-badge&logo=github" alt="GitHub forks">
+  <img src="https://img.shields.io/github/watchers/umpolungfish/byvalver?style=for-the-badge&logo=github" alt="GitHub watchers">
   <a href="https://github.com/sponsors/umpolungfish"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github-sponsors&logoColor=white" alt="sponsor on gitHub"></a>
   <a href="https://ko-fi.com/umpolungfish"><img src="https://img.shields.io/badge/ko--fi-support-%23FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="support on ko-fi"></a>
 </div>
