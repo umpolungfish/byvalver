@@ -50,7 +50,7 @@ class CodeGenerationAgent(BaseAgent):
     async def run(self, task: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         print("[CodeGenerationAgent] Generating C implementation...")
 
-        # Unpack context — supports direct and pipeline shapes
+        # Unpack context - supports direct and pipeline shapes
         proposal: Dict[str, Any] = {}
         catalog: Dict[str, Any] = {}
 
@@ -124,9 +124,9 @@ You are an expert C99 systems programmer. Your task is to {role_focus} as two co
 <system_context>
 BYVALVER uses **Capstone** (cs_insn*) for disassembly and a simple byte buffer for output.
 Every strategy is a `strategy_t` struct with three function pointers:
-  can_handle(cs_insn*)           — returns 1 if this strategy applies, 0 otherwise
-  get_size(cs_insn*)             — returns a **conservative upper-bound** byte count for the replacement
-  generate(struct buffer*, cs_insn*) — writes the replacement bytes into the buffer
+  can_handle(cs_insn*)           - returns 1 if this strategy applies, 0 otherwise
+  get_size(cs_insn*)             - returns a **conservative upper-bound** byte count for the replacement
+  generate(struct buffer*, cs_insn*) - writes the replacement bytes into the buffer
 </system_context>
 
 <strategy_specification>
@@ -175,27 +175,28 @@ RESPOND with exactly two files, separated by markers:
 === SOURCE FILE ===
 /* source file content here */
 === END SOURCE ===
-</output_format>"""
-You **MUST** use `cs_x86_op *` when declaring a pointer to an operand array element — **NOT** `x86_op *`. `x86_op` does not exist and will cause a compile error. Example: `cs_x86_op *ops = insn->detail->x86.operands;`
+</output_format>
 
-You **MUST NOT** add `#include "buffer.h"` — `buffer.h` does not exist in this project. `struct buffer` and all `buffer_write_*` functions (`buffer_write_byte`, `buffer_write_word`, `buffer_write_dword`) are declared in `utils.h`, which is already included.
+You **MUST** use `cs_x86_op *` when declaring a pointer to an operand array element - **NOT** `x86_op *`. `x86_op` does not exist and will cause a compile error. Example: `cs_x86_op *ops = insn->detail->x86.operands;`
+
+You **MUST NOT** add `#include "buffer.h"` - `buffer.h` does not exist in this project. `struct buffer` and all `buffer_write_*` functions (`buffer_write_byte`, `buffer_write_word`, `buffer_write_dword`) are declared in `utils.h`, which is already included.
 
 You **MUST** access instruction fields exclusively via: `insn->id`, `insn->detail->x86.operands[N]`, `insn->detail->x86.op_count`, `insn->detail->x86.operands[N].type`, `insn->detail->x86.operands[N].reg`, `insn->detail->x86.operands[N].imm`.
 
-Every `X86_INS_*` constant you use in a `switch` or `if` **MUST** exist in the installed Capstone headers. You **MUST NOT** invent or guess instruction ID names — `X86_INS_VRCPPD`, for example, does not exist. When unsure, you **MUST** fall back to `insn->id` comparisons against the known-good subset or omit the case entirely.
+Every `X86_INS_*` constant you use in a `switch` or `if` **MUST** exist in the installed Capstone headers. You **MUST NOT** invent or guess instruction ID names - `X86_INS_VRCPPD`, for example, does not exist. When unsure, you **MUST** fall back to `insn->id` comparisons against the known-good subset or omit the case entirely.
 
-`get_size_*` **MUST** return a value strictly greater than or equal to the maximum number of bytes `generate_*` can ever write — you **MUST NOT** underestimate.
+`get_size_*` **MUST** return a value strictly greater than or equal to the maximum number of bytes `generate_*` can ever write - you **MUST NOT** underestimate.
 
-You **MUST NOT** redeclare `utils.h` or `core.h` functions — `utils.h` and `core.h` are both transitively included via `strategy.h`. You **MUST NOT** define a `static` version of any symbol they declare — doing so causes: `error: static declaration of 'X' follows non-static declaration`. You are **EXPRESSLY PROHIBITED** from using redefinitions including: `is_bad_byte_free`, `has_null_bytes`, `find_neg_equivalent`, `find_xor_key`, `find_addsub_key`, `buffer_write_byte`, `buffer_write_word`, `buffer_write_dword` (utils.h); `get_reg_index`, `is_rip_relative_operand`, `is_relative_jump`, `fallback_general_instruction`, `fallback_mov_reg_imm`, `fallback_arithmetic_reg_imm`, `fallback_memory_operation` (core.h). These symbols are already in scope — you **MUST** call them directly.
+You **MUST NOT** redeclare `utils.h` or `core.h` functions - `utils.h` and `core.h` are both transitively included via `strategy.h`. You **MUST NOT** define a `static` version of any symbol they declare - doing so causes: `error: static declaration of 'X' follows non-static declaration`. You are **EXPRESSLY PROHIBITED** from using redefinitions including: `is_bad_byte_free`, `has_null_bytes`, `find_neg_equivalent`, `find_xor_key`, `find_addsub_key`, `buffer_write_byte`, `buffer_write_word`, `buffer_write_dword` (utils.h); `get_reg_index`, `is_rip_relative_operand`, `is_relative_jump`, `fallback_general_instruction`, `fallback_mov_reg_imm`, `fallback_arithmetic_reg_imm`, `fallback_memory_operation` (core.h). These symbols are already in scope - you **MUST** call them directly.
 
-You **MUST NOT** declare a local variable with the same name as a function parameter. The `generate_*` functions always receive `struct buffer *b` as their first parameter — you are **EXPRESSLY PROHIBITED** from declaring any local variable named `b` inside these functions. For EVEX bit-field variables, you **MUST** use names like `broadcast`, `broadcast_bit`, or `evex_b_bit`. Shadowing causes the compiler to treat all subsequent uses of the name as the local type (e.g. `uint8_t`), silently breaking every `buffer_write_byte(b, ...)` call that follows.
+You **MUST NOT** declare a local variable with the same name as a function parameter. The `generate_*` functions always receive `struct buffer *b` as their first parameter - you are **EXPRESSLY PROHIBITED** from declaring any local variable named `b` inside these functions. For EVEX bit-field variables, you **MUST** use names like `broadcast`, `broadcast_bit`, or `evex_b_bit`. Shadowing causes the compiler to treat all subsequent uses of the name as the local type (e.g. `uint8_t`), silently breaking every `buffer_write_byte(b, ...)` call that follows.
 
-`void register_{base_name}_strategies(void)` **MUST** call `register_strategy(&strategy_struct_name)` for every `strategy_t` defined in the file — you **MUST NOT** leave any strategy unregistered.
+`void register_{base_name}_strategies(void)` **MUST** call `register_strategy(&strategy_struct_name)` for every `strategy_t` defined in the file - you **MUST NOT** leave any strategy unregistered.
 </hard_constraints>
 
 <task>
 GENERATE exactly two files delimited by the sentinel strings below.
-The header file template is provided — reproduce it exactly.
+The header file template is provided - reproduce it exactly.
 The source file **MUST** be complete, correct, and compile without errors or warnings under GCC with -Wall -Wextra.
 </task>
 

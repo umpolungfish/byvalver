@@ -7,15 +7,15 @@
 </div>
 
 <div align="center">
-  <img src="https://img.shields.io/badge/C-%2300599C.svg?style=flat&color=blue" alt="C">
-  <img src="https://img.shields.io/badge/shellcode-scrubbing-%238300FF.svg?style=flat&color=black" alt="shellcode scrubbing">
-   <img src="https://img.shields.io/badge/cross--platform-windows%20%7C%20linux%20%7C%20macOS-%230071C5.svg?style=flat&color=green" alt="cross-platform">
-   <img src="https://img.shields.io/badge/Architectures-x86%7Cx64%7CARM%7CARM64-%230071C5.svg?style=flat&color=red" alt="architectures">
-   <img src="https://img.shields.io/badge/build-clean-%23000000.svg?style=flat&color=grey" alt="build clean">
+  <img src="https://img.shields.io/badge/C++-%2300599C.svg?style=flat&color=blue" alt="C++">
+  <img src="https://img.shields.io/badge/SHELLCODE-SCRUBBING-%238300FF.svg?style=flat&color=black" alt="SHELLCODE SCRUBBING">
+   <img src="https://img.shields.io/badge/CROSS--PLATFORM-WINDOWS%20%7C%20LINUX%20%7C%20macOS-%230071C5.svg?style=flat&color=teal" alt="CROSS-PLATFORM">
+   <img src="https://img.shields.io/badge/ARCHITECTURES-x86%7Cx64%7CARM%7CARM64-%230071C5.svg?style=flat&color=red" alt="ARCHITECTURES">
+   <img src="https://img.shields.io/badge/build-clean-%23000000.svg?style=flat&color=violet" alt="BUILD CLEAN">
   <img src="https://img.shields.io/github/stars/umpolungfish/byvalver?style=flat&color=cyan" alt="GitHub stars">
-  <img src="https://img.shields.io/github/forks/umpolungfish/byvalver?style=flat&color=teal" alt="GitHub forks">
-  <a href="https://github.com/sponsors/umpolungfish"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-ea4aaa?style=flat&color=pink" alt="sponsor on gitHub"></a>
-  <a href="https://ko-fi.com/umpolungfish"><img src="https://img.shields.io/badge/ko--fi-support-%23FF5E5B?style=flat&color=brown" alt="support on ko-fi"></a>
+  <img src="https://img.shields.io/github/forks/umpolungfish/byvalver?style=flat&color=pink" alt="GitHub forks">
+  <a href="https://github.com/sponsors/umpolungfish"><img src="https://img.shields.io/badge/SPONSOR-%E2%9D%A4-ea4aaa?style=flat&color=pink" alt="SPONSOR ON gitHub"></a>
+  <a href="https://ko-fi.com/umpolungfish"><img src="https://img.shields.io/badge/ko--fi-SUPPORT-%23FF5E5B?style=flat&color=tan" alt="SUPPORT ON ko-fi"></a>
 </div>
 
 <p align="center">

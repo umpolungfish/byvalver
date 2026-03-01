@@ -180,13 +180,6 @@ RESPOND with a **single raw JSON object** — no markdown fences, no prose outsi
   "example_transformation": "MOV EAX, 0 -> XOR EAX, EAX"
 }}
 </output_format>"""
-  "approach": "Precise technical description of the byte-level substitution, including which fields are affected and how.",
-  "architecture": "x86 | x64 | both",
-  "priority": <integer 70-95>,
-  "rationale": "Specific explanation of why this is novel and not covered by the listed categories.",
-  "example_transformation": "Before: <hex bytes> <mnemonic>. After: <hex bytes> <equivalent sequence>."
-}}
-</output_format>"""
 
         try:
             response = await self.call_llm(
