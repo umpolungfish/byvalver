@@ -23,7 +23,7 @@ class CodeGenerationAgent(BaseAgent):
     """
     Given a technique proposal from TechniqueProposalAgent and the strategy catalog
     from StrategyDiscoveryAgent, generates a complete C implementation conforming to
-    the BYVALVER strategy_t interface.
+    the BYVALVER strategy_t interface. Supports bad-byte, obfuscation, and profile modes.
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -73,12 +73,14 @@ class CodeGenerationAgent(BaseAgent):
         # Derive file base name (strip trailing _strategies if present so we don't double it)
         strategy_name: str = proposal.get("strategy_name", "custom_strategies")
         base_name = strategy_name.removesuffix("_strategies")
+        mode = catalog.get("mode", (context or {}).get("mode", "bad_byte"))
+        
+        # Profile-specific context
+        profile_name = (context or {}).get("profile_name", "none")
+        bad_bytes = (context or {}).get("bad_bytes", [])
+        bad_bytes_hex = ", ".join([f"0x{b:02X}" for b in bad_bytes]) if bad_bytes else "0x00 (NULL only)"
 
         # NOTE: BYVAL_ARCH_BOTH does not exist in byval_arch_t.
-        # The compatibility layer in strategy_registry.c automatically
-        # applies BYVAL_ARCH_X86 strategies to x64 targets (unless they
-        # use removed instructions), so BYVAL_ARCH_X86 is the correct
-        # value for strategies that target both architectures.
         arch_macro = {
             "x86": "BYVAL_ARCH_X86",
             "x64": "BYVAL_ARCH_X64",
@@ -102,8 +104,21 @@ class CodeGenerationAgent(BaseAgent):
             utils_h_trimmed = utils_h[:2500]
             example_c_trimmed = example_c[:2500]
 
+            # Adjust role and constraints based on mode
+            if mode == "obfuscation":
+                role_focus = "implement a BYVALVER code obfuscation strategy"
+                mode_constraints = """You **SHOULD** focus on semantic equivalence with increased pattern complexity.
+The `can_handle` function should return true for instructions where this obfuscation is applicable."""
+            elif mode == "profile":
+                role_focus = f"implement a BYVALVER strategy for the '{profile_name}' bad-byte profile"
+                mode_constraints = f"""You **MUST NOT** write ANY of the following bytes to the output buffer: {bad_bytes_hex}.
+The `can_handle` function should verify if the original instruction contains any of these restricted bytes OR if it's a good candidate for substitution to avoid them."""
+            else:
+                role_focus = "implement a BYVALVER bad-byte elimination strategy"
+                mode_constraints = """You **MUST NOT** write `0x00` to the output buffer under any circumstances."""
+
             prompt = f"""<role>
-You are an expert C99 systems programmer. Your task is to implement a BYVALVER bad-byte elimination strategy as two complete, compilable C source files.
+You are an expert C99 systems programmer. Your task is to {role_focus} as two complete, compilable C source files.
 </role>
 
 <system_context>
@@ -115,6 +130,7 @@ Every strategy is a `strategy_t` struct with three function pointers:
 </system_context>
 
 <strategy_specification>
+  <mode>{mode}</mode>
   <name>{strategy_name}</name>
   <display_name>{proposal.get('display_name', 'Custom Strategy')}</display_name>
   <description>{proposal.get('description', '')}</description>
@@ -138,16 +154,28 @@ Every strategy is a `strategy_t` struct with three function pointers:
 </reference_interface>
 
 <hard_constraints>
-You **MUST** set `.target_arch` to one of exactly two values: `BYVAL_ARCH_X86` (for strategies targeting x86 or both x86 and x64) or `BYVAL_ARCH_X64` (for x64-exclusive strategies). `BYVAL_ARCH_BOTH` **DOES NOT EXIST** — you **MUST NOT** use it; doing so causes a compile error.
+{mode_constraints}
 
-You **MUST NOT** write `0x00` to the output buffer under any circumstances inside `generate_*`. Every literal byte value you pass to `buffer_write_byte()`, `buffer_write_word()`, or `buffer_write_dword()` **MUST** be non-zero — no exceptions.
+You **MUST** set `.target_arch` to one of exactly two values: `BYVAL_ARCH_X86` (for strategies targeting x86 or both x86 and x64) or `BYVAL_ARCH_X64` (for x64-exclusive strategies). `BYVAL_ARCH_BOTH` **DOES NOT EXIST**.
 
-You **MUST** silence every unused function parameter with `(void)param_name;` as the **first line** of the function body — failure to do so is a compile warning under `-Wunused-parameter`.
+You **MUST** silence every unused function parameter with `(void)param_name;` as the **first line** of the function body.
 
-You **MUST** remove every local variable that is declared but not subsequently read. Dead declarations are a compile warning and indicate incorrect logic — you are **EXPRESSLY PROHIBITED** from leaving them in the generated code.
+You **MUST** remove every local variable that is declared but not subsequently read.
 
-Every `static` helper function you define **MUST** be called at least once. You **MUST NOT** define helper functions speculatively — any `static` function that is never called **MUST** be deleted.
+Every `static` helper function you define **MUST** be called at least once.
+</hard_constraints>
 
+<output_format>
+RESPOND with exactly two files, separated by markers:
+
+=== HEADER FILE ===
+/* header file content here */
+=== END HEADER ===
+
+=== SOURCE FILE ===
+/* source file content here */
+=== END SOURCE ===
+</output_format>"""
 You **MUST** use `cs_x86_op *` when declaring a pointer to an operand array element — **NOT** `x86_op *`. `x86_op` does not exist and will cause a compile error. Example: `cs_x86_op *ops = insn->detail->x86.operands;`
 
 You **MUST NOT** add `#include "buffer.h"` — `buffer.h` does not exist in this project. `struct buffer` and all `buffer_write_*` functions (`buffer_write_byte`, `buffer_write_word`, `buffer_write_dword`) are declared in `utils.h`, which is already included.

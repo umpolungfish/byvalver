@@ -19,20 +19,22 @@ from framework import BaseAgent, ToolDefinitions
 class TechniqueProposalAgent(BaseAgent):
     """
     Given an existing strategy catalog from StrategyDiscoveryAgent, proposes
-    one novel bad-byte elimination strategy by reasoning about uncovered x86/x64
-    instruction families and encoding quirks.
+    one novel strategy by reasoning about uncovered x86/x64
+    instruction families and encoding quirks. Supports bad-byte,
+    obfuscation, and profile-specific modes.
     """
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(
             agent_id="technique_proposal_agent",
             name="Technique Proposal Agent",
-            description="Proposes a novel bad-byte elimination strategy not already in BYVALVER",
+            description="Proposes a novel BYVALVER strategy based on the current mode",
             capabilities=[
                 "Strategy gap analysis",
                 "Novel technique ideation",
                 "x86/x64 instruction encoding knowledge",
                 "Shellcode engineering",
+                "Obfuscation design",
             ],
             config=config,
         )
@@ -61,7 +63,13 @@ class TechniqueProposalAgent(BaseAgent):
         active_categories = catalog.get("active_categories", [])
         strategy_names = catalog.get("strategy_names", [])
         llm_summary = catalog.get("llm_summary", "")
+        mode = catalog.get("mode", (context or {}).get("mode", "bad_byte"))
         arch_hint = (context or {}).get("arch", "both")
+        
+        # Profile-specific context
+        profile_name = (context or {}).get("profile_name", "none")
+        bad_bytes = (context or {}).get("bad_bytes", [])
+        bad_bytes_hex = ", ".join([f"0x{b:02X}" for b in bad_bytes]) if bad_bytes else "0x00 (NULL only)"
 
         # Narrow down categories to include in the prompt (avoid token overflow)
         all_cats = sorted(set(categories + active_categories))
@@ -86,18 +94,49 @@ class TechniqueProposalAgent(BaseAgent):
             except (ValueError, json.JSONDecodeError):
                 pass
 
+        # Adjust role and task based on mode
+        if mode == "obfuscation":
+            role_focus = "**code obfuscation and pattern breaking**"
+            task_desc = f"novel obfuscation strategy for {arch_hint} that breaks static signatures and makes analysis difficult"
+            constraints_extra = """**OBLIVION** — The replacement code SHOULD perform the same semantic action but with different instructions or junk inserted.
+**ENTROPY** — The output MUST increase the complexity of the code pattern."""
+            ideation_axes = """- Junk instruction insertion (no-ops, dead-code)
+- Register shuffling (XCHG) to break register-specific signatures
+- Control-flow flattening or opaque predicates
+- Instruction substitution with rare/obscure equivalents
+- Multibyte NOP interlacing
+- Mutated stack frame manipulation"""
+        elif mode == "profile":
+            role_focus = f"**bad-byte elimination for the '{profile_name}' profile**"
+            task_desc = f"novel bad-byte elimination strategy for {arch_hint} that SPECIFICALLY avoids these bytes: {bad_bytes_hex}"
+            constraints_extra = f"**RESTRICTED BYTES** — The `generate` output MUST NOT contain ANY of the following bytes: {bad_bytes_hex}."
+            ideation_axes = """- Alternative opcodes that do not contain the restricted bytes
+- Using different registers whose ModR/M or REX encodings avoid the restricted values
+- Multi-stage value construction (XOR/ADD/SUB) to avoid certain constants
+- Segment-override prefixes to shift byte alignment"""
+        else: # bad_byte
+            role_focus = "**bad-byte and null-byte elimination**"
+            task_desc = f"novel bad-byte elimination strategy for {arch_hint} targeting gaps in existing coverage"
+            constraints_extra = "**NULL-FREE OUTPUT** — The `generate` output MUST contain ZERO null bytes (0x00)."
+            ideation_axes = """- Instruction fields that carry bad bytes in unusual positions
+- REX prefix bit manipulation to avoid bad byte values
+- Operand-size or address-size prefix (0x66 / 0x67) to shift byte layout
+- BMI1/BMI2 instructions for bitmask construction
+- FPU/SIMD registers as intermediate storage"""
+
         prompt = f"""<role>
-You are an expert x86/x64 shellcode engineer. Your specialisation is **bad-byte and null-byte elimination** at the machine-code level. You have deep knowledge of x86/x64 instruction encoding: opcodes, prefixes, ModR/M, SIB, REX, VEX, EVEX, displacement fields, and immediate fields.
+You are an expert x86/x64 shellcode engineer. Your specialisation is {role_focus} at the machine-code level. You have deep knowledge of x86/x64 instruction encoding.
 </role>
 
 <system_context>
 BYVALVER rewrites shellcode one instruction at a time. Each transformation strategy implements three functions:
   can_handle(cs_insn*)  — returns 1 if the strategy applies to this instruction
   get_size(cs_insn*)    — returns the upper-bound byte count of the replacement
-  generate(buffer*, cs_insn*) — writes the null-byte-free replacement bytes
+  generate(buffer*, cs_insn*) — writes the replacement bytes
 </system_context>
 
 <existing_coverage>
+<mode>{mode}</mode>
 <categories total="{len(all_cats)}">
 {chr(10).join(f'  {c}' for c in all_cats[:90])}
 </categories>
@@ -112,31 +151,18 @@ BYVALVER rewrites shellcode one instruction at a time. Each transformation strat
 <constraints>
 **UNIQUENESS** — The `strategy_name` field **MUST NOT** match any name in `<implemented_strategy_names>` above.
 **IMPLEMENTABILITY** — The proposed strategy **MUST** be implementable as a `can_handle` / `get_size` / `generate` triplet.
-**NULL-FREE OUTPUT** — The `generate` output **MUST** contain **ZERO null bytes (0x00)** and zero bad bytes.
+{constraints_extra}
 **ARCHITECTURE** — The `architecture` field **MUST** be exactly one of: `x86`, `x64`, or `both`.
 **NOVELTY** — The strategy **MUST NOT** duplicate any category or technique family already listed above.
 </constraints>
 
 <ideation_axes>
-CONSIDER these dimensions — but **ONLY if not already covered above**:
-- Instruction fields that carry bad bytes in unusual positions (prefix bytes, escape bytes, secondary opcode maps)
-- REX prefix bit manipulation to rearrange ModR/M register encoding and avoid bad byte values
-- Operand-size or address-size prefix (0x66 / 0x67) used to shift the byte layout of an instruction
-- Two-instruction carry/borrow propagation sequences as arithmetic alternatives
-- EFLAGS manipulation idioms (LAHF/SAHF, PUSHF/POPF combinations) not yet covered
-- BOUND / ENTER / LEAVE alternative encodings with non-null operands
-- String-instruction prefix overloading (REPNE on non-string opcodes)
-- FPU control-word manipulation (FSTCW/FLDCW) as an integer-value carrier
-- BMI1/BMI2 instructions (ANDN, BLSI, BLSR, BEXTR, PEXT, PDEP) for bitmask construction
-- XCHG-based register rotation to avoid bad-byte register encodings
-- TEST/BT instruction variants where the immediate field carries bad bytes
-- LOOP / LOOPcc as alternative branching encodings
-- IMUL 3-operand form for constant multiplication without MOV + MUL
-- IN/OUT port I/O instructions for value construction in ring-3-accessible contexts
+CONSIDER these dimensions:
+{ideation_axes}
 </ideation_axes>
 
 <task>
-PROPOSE **EXACTLY ONE** novel bad-byte elimination strategy not covered by the existing categories or strategy names.
+PROPOSE **EXACTLY ONE** {task_desc}.
 SELECT a technique that is maximally different from all listed implemented strategies.
 </task>
 <!-- run-nonce: {nonce} -->
@@ -147,7 +173,13 @@ RESPOND with a **single raw JSON object** — no markdown fences, no prose outsi
   "strategy_name": "descriptive_snake_case_strategies",
   "display_name": "Human-Readable Strategy Name",
   "description": "One to two sentences stating exactly what this strategy does.",
-  "target_instruction": "x86 mnemonic(s) targeted, e.g. MOV, PUSH, ADD",
+  "target_instruction": "x86 mnemonic(s) targeted",
+  "architecture": "x86|x64|both",
+  "priority": 10-100,
+  "approach": "Detailed technical explanation of the transformation.",
+  "example_transformation": "MOV EAX, 0 -> XOR EAX, EAX"
+}}
+</output_format>"""
   "approach": "Precise technical description of the byte-level substitution, including which fields are affected and how.",
   "architecture": "x86 | x64 | both",
   "priority": <integer 70-95>,

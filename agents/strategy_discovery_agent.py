@@ -15,7 +15,7 @@ from framework import BaseAgent, ToolDefinitions
 
 class StrategyDiscoveryAgent(BaseAgent):
     """
-    Catalogs all existing BYVALVER bad-byte elimination strategies by scanning src/.
+    Catalogs existing BYVALVER strategies (bad-byte or obfuscation) by scanning src/.
     Reads the strategy registry to extract category names, strategy counts, and
     interface details needed by downstream agents.
     """
@@ -24,7 +24,7 @@ class StrategyDiscoveryAgent(BaseAgent):
         super().__init__(
             agent_id="strategy_discovery_agent",
             name="Strategy Discovery Agent",
-            description="Catalogs all existing BYVALVER bad-byte elimination strategies by scanning src/",
+            description="Catalogs existing BYVALVER strategies by scanning src/",
             capabilities=[
                 "File system scanning",
                 "Strategy name extraction",
@@ -42,7 +42,8 @@ class StrategyDiscoveryAgent(BaseAgent):
         ]
 
     async def run(self, task: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        print(f"[StrategyDiscoveryAgent] Scanning {self.src_dir} for existing strategies...")
+        mode = (context or {}).get("mode", "bad_byte")
+        print(f"[StrategyDiscoveryAgent] Scanning {self.src_dir} for existing {mode} strategies...")
 
         try:
             # 1. List all strategy .c source files
@@ -88,8 +89,12 @@ class StrategyDiscoveryAgent(BaseAgent):
             })
 
             # 6. Read a canonical example implementation for code gen reference
+            example_file = "mov_strategies.c" if mode == "bad_byte" else "mutated_junk_insertion_obfuscation.c"
+            if not (self.src_dir / example_file).exists():
+                example_file = "mov_strategies.c"
+
             example_c = await self.tool_executor.execute_tool("file_read", {
-                "path": str(self.src_dir / "mov_strategies.c")
+                "path": str(self.src_dir / example_file)
             })
 
             catalog = {
@@ -103,11 +108,13 @@ class StrategyDiscoveryAgent(BaseAgent):
                 "registry_includes": includes,
                 "total_strategies": len(strategy_names),
                 "total_categories": len(forward_decls),
+                "mode": mode
             }
 
             # 7. Summarise with LLM for the proposal agent
+            role_desc = "bad-byte (null/restricted byte) elimination tool" if mode == "bad_byte" else "code obfuscation engine"
             summary_prompt = f"""<role>
-You are a BYVALVER strategy corpus analyst. BYVALVER is a shellcode bad-byte (null/restricted byte) elimination tool that rewrites x86/x64 instructions using a ranked registry of transformation strategies.
+You are a BYVALVER strategy corpus analyst. BYVALVER is a {role_desc} that rewrites x86/x64 instructions.
 </role>
 
 <corpus>
@@ -121,15 +128,16 @@ You are a BYVALVER strategy corpus analyst. BYVALVER is a shellcode bad-byte (nu
 </corpus>
 
 <task>
-PRODUCE a concise structured JSON summary of the technique families already covered.
-ORGANIZE by approach type: MOV variants, arithmetic transforms, PEB/API resolution, stack construction, flag manipulation, SIMD/FPU, bit operations, encoding tricks, etc.
+PRODUCE a concise structured JSON summary of the technique families already covered, focusing on {mode} techniques.
+If mode is 'bad_byte', focus on instruction rewriting to avoid restricted bytes.
+If mode is 'obfuscation', focus on signature evasion, junk insertion, control-flow mutation, and pattern breaking.
 </task>
 
 <output_format>
 RESPOND with a **JSON object only** — no prose, no markdown fences — with exactly these keys:
 - "covered_families": array of technique family name strings
 - "approach_summary": 2–3 sentence description of overall coverage breadth
-- "notable_gaps": array of x86/x64 technique areas **NOT YET COVERED**
+- "notable_gaps": array of x86/x64 technique areas **NOT YET COVERED** in the context of {mode}
 </output_format>"""
 
             llm_summary = await self.call_llm(

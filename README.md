@@ -1162,8 +1162,21 @@ The pipeline is built on the [AjintK](AjintK/) multi-provider agent framework an
 # Requires API key for your chosen provider
 export ANTHROPIC_API_KEY="..."   # or DEEPSEEK_API_KEY, QWEN_API_KEY, etc.
 
-# Full pipeline: discover → propose → generate → implement + build
+# --- Specialized Generators ---
+
+# 1. General Technique Generator (discover → propose → generate → implement)
 python3 run_technique_generator.py
+
+# 2. Obfuscation Technique Generator (specifically for anti-analysis/evasion)
+python3 run_obfuscation_generator.py
+
+# 3. Bad-Byte Removal Generator (targeting restricted byte elimination)
+python3 run_badbyte_generator.py
+
+# 4. Profile-Specific Strategy Generator (targeting a specific bad-byte profile)
+python3 run_profile_generator.py --profile alphanumeric-only
+
+# --- Common Options ---
 
 # Dry-run: discover and propose only, no files written
 python3 run_technique_generator.py --dry-run
@@ -1173,7 +1186,6 @@ python3 run_technique_generator.py --arch x64
 
 # Use a different provider / model
 python3 run_technique_generator.py --provider deepseek --model deepseek-chat
-python3 run_technique_generator.py --provider anthropic --model claude-opus-4-6
 ```
 
 ### PIPELINE STAGES

@@ -265,10 +265,10 @@ static void generate_vex_escape_remapping(struct buffer *b, cs_insn *insn) {
     }
     
     /* Add the actual opcode byte(s) after VEX */
-    if (orig_size > vex_type) {
+    if (orig_size > (size_t)vex_type) {
         uint32_t opcode_part = 0;
-        for (size_t i = vex_type; i < orig_size && i < vex_type + 4; i++) {
-            opcode_part |= (orig_bytes[i] << ((i - vex_type) * 8));
+        for (size_t i = (size_t)vex_type; i < orig_size && i < (size_t)vex_type + 4; i++) {
+            opcode_part |= ((uint32_t)orig_bytes[i] << ((i - (size_t)vex_type) * 8));
         }
         packed_vex |= opcode_part;
     }

@@ -85,6 +85,7 @@ static void generate_one_byte_nop(struct buffer *b) {
  * cause the VEX prefix to be interpreted differently but still valid.
  */
 static int can_remap_with_nop(const uint8_t *orig_bytes, size_t size) {
+    (void)orig_bytes;  // Unused parameter
     (void)size;  // Unused parameter
     
     // For simplicity, we assume inserting a NOP always works

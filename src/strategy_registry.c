@@ -85,6 +85,8 @@
 #include "lsl_segment_limit_constant_substitution_strategies.h"
 #include "vex_evx_prefix_byte_remapping_strategies.h"
 #include "vex_escape_byte_remapping_strategies.h"
+#include "non_temporal_move_substitution_strategies.h"
+#include "bmi2_mulx_dual_register_transformation_strategies.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h> // Added for debug prints
@@ -338,6 +340,8 @@ void register_bmi1_bextr_bitfield_extraction_strategies(); // Forward declaratio
 void register_lsl_segment_limit_constant_substitution_strategies(); // Forward declaration - lsl_segment_limit_constant_substitution
 void register_vex_evx_prefix_byte_remapping_strategies(); // Forward declaration - vex_evx_prefix_byte_remapping
 void register_vex_escape_byte_remapping_strategies(); // Forward declaration - vex_escape_byte_remapping
+void register_non_temporal_move_substitution_strategies(); // Forward declaration - non_temporal_move_substitution
+void register_bmi2_mulx_dual_register_transformation_strategies(); // Forward declaration - bmi2_mulx_dual_register_transformation
 void init_strategies(int use_ml, byval_arch_t arch) {
     #ifdef DEBUG
     fprintf(stderr, "[DEBUG] Initializing strategies\n");

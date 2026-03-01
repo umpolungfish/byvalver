@@ -1,36 +1,24 @@
-fix: Resolve vex_evx build error and harden CodeGenerationAgent prompt
+feat: Generalize agent pipeline and add specialized technique generators
 
-Changes:
+Summary:
 ========
 
-1. Generated Strategy Build Error Fix
-   - vex_evx_prefix_byte_remapping_strategies.c
-     * Removed conflicting static get_reg_index — core.h:72 declares it
-       as a non-static global; redefining it static caused:
-       "error: static declaration of 'get_reg_index' follows non-static
-       declaration"
-     * Removed unused static is_vex_evex_instruction
-     * Removed unused static get_reg_class
-     * Removed unused local variables bad_third_byte (generate_vex_remapping)
-       and bad_byte2, bad_byte3 (generate_evex_remapping)
-     * Zero-initialized EVEX field variables (evex_r, evex_x, evex_b,
-       evex_r2, evex_mm, evex_w, evex_vvvv, evex_pp, evex_z, evex_bc,
-       evex_aaa) to suppress false "may be used uninitialized" warnings
-       from GCC — values are always set via extract_evex_fields() pointer
-       params before use
+1. Specialized Technique Generators
+   - Added `run_obfuscation_generator.py`: Targets anti-analysis, signature evasion, and pattern breaking techniques.
+   - Added `run_badbyte_generator.py`: Specifically targets novel restricted byte elimination strategies.
+   - Added `run_profile_generator.py`: Dynamically extracts restricted byte sets from `src/badbyte_profiles.h` to propose profile-specific strategies (e.g., alphanumeric-only, url-safe).
 
-2. CodeGenerationAgent Prompt Hardening
-   - agents/code_generation_agent.py
-     * Added hard constraint covering core.h functions alongside the
-       existing utils.h constraint — core.h is transitively included via
-       strategy.h and declares get_reg_index, is_rip_relative_operand,
-       is_relative_jump, and all fallback_* functions; redefining any of
-       these as static triggers the same "static declaration follows
-       non-static declaration" error class
-     * Rewrote all hard constraints from passive/title-prefixed framing to
-       second-person authoritative framing throughout — every constraint
-       now opens with a direct "You MUST" / "You MUST NOT" declaration and
-       uses EXPRESSLY PROHIBITED for categorical prohibitions
+2. Agent Pipeline Generalization
+   - `agents/strategy_discovery_agent.py`: Updated to be mode-aware (bad_byte vs. obfuscation) with context-sensitive summary prompts.
+   - `agents/technique_proposal_agent.py`: Enhanced to support 'obfuscation' and 'profile' modes. Proposals now respect specific bad-byte constraints for profile-specific targets.
+   - `agents/code_generation_agent.py`: Updated to handle mode-specific hard constraints and role-focus in C code generation.
 
-Validated: make — zero errors, zero warnings on strategy object files
-(pre-existing tui/ permission error unrelated).
+3. Compiler Warning Fixes
+   - `src/vex_escape_byte_remapping_for_simd_mov_strategies.c`: Fixed `-Wunused-parameter` for `orig_bytes` in `can_remap_with_nop`.
+   - `src/vex_escape_byte_remapping_strategies.c`: Fixed `-Wsign-compare` in `generate_vex_escape_remapping` by casting `vex_type` to `size_t`.
+
+4. Documentation Updates
+   - `README.md`: Updated "Agent Menagerie" section with specialized generator usage.
+   - `docs/USAGE.md`: Expanded "What's New in v4.3" with details on specialized obfuscation and profile-specific generators.
+
+Validated: `make` clean build successful with zero warnings in modified files. Profile-specific byte extraction verified with `run_profile_generator.py` logic test.

@@ -31,8 +31,25 @@ pip install anthropic tenacity httpx pyyaml
 export ANTHROPIC_API_KEY="..."    # Anthropic
 export DEEPSEEK_API_KEY="..."     # DeepSeek (alternative)
 
-# Full pipeline — runs all four stages
+# --- Available Generators ---
+
+# 1. General Technique Generator
+# Full pipeline — runs all four stages for general bad-byte elimination
 python3 run_technique_generator.py
+
+# 2. Obfuscation Technique Generator
+# Specifically targets anti-analysis, evasion, and signature breaking
+python3 run_obfuscation_generator.py
+
+# 3. Bad-Byte Removal Generator
+# Focused on finding new ways to eliminate restricted bytes
+python3 run_badbyte_generator.py
+
+# 4. Profile-Specific Strategy Generator
+# Targets a specific bad-byte profile (e.g., alphanumeric-only)
+python3 run_profile_generator.py --profile url-safe
+
+# --- Common Options ---
 
 # Preview mode — discover and propose, no code written
 python3 run_technique_generator.py --dry-run
@@ -42,10 +59,16 @@ python3 run_technique_generator.py --arch x64
 
 # Use DeepSeek instead of Anthropic
 python3 run_technique_generator.py --provider deepseek
-
-# Full option list
-python3 run_technique_generator.py --help
 ```
+
+#### Specialized Generators
+
+While `run_technique_generator.py` is the general-purpose entry point, three specialized scripts provide more targeted ideation:
+
+- **`run_obfuscation_generator.py`**: Configures the agents to prioritize "entropy" and "oblivion" over simple byte elimination. It focuses on junk insertion, control-flow mutation, and pattern breaking.
+- **`run_badbyte_generator.py`**: Explicitly directs the agents toward novel instruction rewriting techniques for restricted byte elimination.
+- **`run_profile_generator.py`**: Dynamically extracts the restricted byte set for a given profile (e.g. `sql-injection`) from `src/badbyte_profiles.h` and tasks the agents with finding a strategy that specifically avoids those bytes.
+
 
 #### Command-Line Options
 
